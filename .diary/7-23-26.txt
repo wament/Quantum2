@@ -1,0 +1,42 @@
+I've made a lot of progress on this game so far. Initally it started as my stubborn attempt to learn c++ myself and make a game with the sfml library. I saw a tutorial on youtube and saw how simple it can be.
+It might be a little harder the where I started with java in the "processing" ide, but my hope is I can setup some cool parallelization later on with the power of c++. Also maybe hookup ollama? 
+
+I've been using ai throughout my development and its been awesome. It did a lot in the beginning to get me off the ground and now I've been coding freely and asking for tips with CMakeLists and best way to save profile data.
+I haven't gotten into pointers too much. It did have my write an auto unique pointer for the player profile. So from here on out I might need to do some more reading on modern pointers. It seems like auto is just magic. 
+Not sure if that's a problem or not, we will see.
+
+Finished this round: 
+    Migrated to a new folder with better structure and newfound knowledge on how to setup cmakelists.
+    Added the outline for the player profile.
+    Refined some bugs with dealer hitting when they shouldn't
+    Added basic strategy tips for the player
+
+To Do:
+    Write evaluteHand() function to determine if the player wins, and payout or take their bet.
+    Save the player data and gamerecord to a save file.
+    Integrate basic strategy function into the main gameplay. Have an option for player to ask.
+    Keep track of the count. Add this to the gamerecord. -> Calculate when the player has advantage.
+
+
+Far Future:
+    Make a algorithm that will speedrun a shoe and log the entire action sequence + profits + count + statistics + as aisnd asjc oaskco0ka
+    Make it parallel to run multiple games at the same time.
+    Make a recursive seeking absolute win algorithm that will determine the best possible sequence of actions given varying levels of information (none, dealers card, next card, next 2 cards, dealer card and next card, all cards)
+        ^^^ My brain is juicing to the idea of quantifying the number to represent the greatest possible blackjack session win possible. 
+
+    Add more players to the table. -> Possibly allow the player to play multiple hands (1-6)
+        -> Create an ai agent that will play with me and the dealer. A third ai. Not necessarily llm at first, but later.
+    Compare RE-ko count to hi-lo count.
+    
+
+
+    Conduct analysis on novel questions. 
+        "Does a player jumping in for 1-2 hands ruin the shoe"
+        "Does standing on 16 or hitting on 12 when you shouldn't, really matter?
+        "How often does the dealer have 20?"
+
+
+
+
+
+

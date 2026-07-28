@@ -1,0 +1,58 @@
+
+Things I'm unsure of 
+    How to use pointers here. I'm still not sure if I need to use pointers for the profile. I think I do because it is something I need to load into memory from disk after the program has started.
+        I want to update the profile throughout the play session, save it periodically, and also save before closing.
+    What asset to use for chips. I think I'm going to stay very basic for now.
+
+
+
+
+Finished This Round:
+    Added betting and controls to increase/decrease.
+    Changed the roundstate flow a bit. added a betting phase. The use now triggers the beginning of the round by placing a bet.
+    Added more definition to the profile idea. Still haven't done the saving part. I want to do json serialization but I haven't nailed it down.
+    chips graphics to the screen (untested)
+
+Leftover from last round:
+    Integrate basic strategy function into the main gameplay. Have an option for player to ask.
+    Keep track of the count. Add this to the gamerecord. -> Calculate when the player has advantage.
+
+To Do
+    Things from last round ^^^
+    Save the player profile to a json file.
+        including the shoe history and player stats
+        understand what type of memory allocation I should be using, and how to manage it.
+    Find some assets
+        We need a font to use for the HUD and also menus/messages. I think finding 2 main ones (one bold, one regular) and a third one (itallics) is good. They can be whatever.
+        We can explore a chip texure if the primitve SFML circles don't work.
+        Card sounds for hitting or busting or getting paid on a double down. 
+    Properly archive my first iteration. I think there was a readme with the original deck texture. I could get a new one, but I also want to archive my code. This will be the new home.
+    
+    MAKE A GIT REPO YOU MONKEY
+    MAKE A GIT REPO YOU MONKEY
+    MAKE A GIT REPO YOU MONKEY
+    MAKE A GIT REPO YOU MONKEY
+    MAKE A GIT REPO YOU MONKEY
+    MAKE A GIT REPO YOU MONKEY
+    MAKE A GIT REPO YOU MONKEY
+    MAKE A GIT REPO YOU MONKEY
+    MAKE A GIT REPO YOU MONKEY
+    MAKE A GIT REPO YOU MONKEY
+    MAKE A GIT REPO YOU MONKEY
+    MAKE A GIT REPO YOU MONKEY
+    MAKE A GIT REPO YOU MONKEY
+    MAKE A GIT REPO YOU MONKEY
+    MAKE A GIT REPO YOU MONKEY
+
+
+
+Far Future
+    A menu of some kind. Something graphical. A way for the player to know their profile is loaded.
+        I want to see a HUD with:
+            bankroll and current bet
+            stats window for current hand value and count etc
+            menu buttons to change the settings
+                settings: card size, text size, music, color themes?,
+    animations? right now everything is happening instantly. card just appear in the players hand, and when the dealer hits, they all the sudden have 6 cards.
+        what does it take for even a simple animation?
+    
