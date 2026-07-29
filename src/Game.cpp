@@ -624,36 +624,27 @@ void Game::evaluateHands()
             player.pushBet(hand.getBet());
         }else
         if (hand.isBlackjack()){
-            player.winBet(hand.getBet()  + (hand.getBet() * Constants::BLACKJACK_PAYOUT));
+            player.winBet(hand.getBet() * Constants::BLACKJACK_PAYOUT);
             currentRoundRecord.payout += (hand.getBet() * Constants::BLACKJACK_PAYOUT);
         }else
-        if (dealer.isBlackjack()){
+        if (dealer.isBlackjack() || hand.isBust() || (hand.getValue() < dealer.getValue() && !dealer.isBust())){
             player.loseBet();
         }
-
-
-        if (hand.isBust()){
-            player.loseBet(); //do nothing, money was removed in player::placebet()
-        }else
+ 
         if (hand.surrendered){
             player.winBet(hand.getBet() / 2); // return 1/2 inital bet
             currentRoundRecord.payout += (hand.getBet() / 2);
-        }else 
-
-
+        }else  
         if(hand.getValue() > dealer.getValue() || dealer.isBust()){
             player.winBet(hand.getBet() * 2); // return inital bet + payment
             currentRoundRecord.payout += hand.getBet();
-        }else 
-        if (hand.getValue() < dealer.getValue()){
-            player.loseBet();
-        }else{
+        }else  {
             player.pushBet(hand.getBet()); //return inital bet
         }
         index++;
     } 
 
-    std::cout << player.getBankroll() << std::endl;
+    std::cout << "Exiting evaluation with " << player.getBankroll() << std::endl;
     
     currentRoundRecord.won = currentRoundRecord.isWin();
     PlayerProfile profile = player.getProfile();
