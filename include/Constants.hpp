@@ -25,6 +25,7 @@ namespace Constants
 
     // Betting Constants
     constexpr int MINIMUM_BET = 10;
+    constexpr int MAXIMUM_BET = 500;
 
     // Drawing positions
     constexpr float DEALER_X = 680.f;

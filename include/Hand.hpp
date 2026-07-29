@@ -33,10 +33,10 @@ public:
     bool surrendered = false;
     bool split = false;
 
+    int currentBet = 0;
 private:
     std::vector<Card> cards;
-    
-    int currentBet = 0;
+     
 };
 
 /*

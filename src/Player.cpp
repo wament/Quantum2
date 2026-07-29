@@ -1,5 +1,6 @@
 #include "Player.hpp"
 #include "Constants.hpp"
+#include <iostream>
 
 
 
@@ -29,6 +30,9 @@ void Player::resetRound(){
     currentHand = 0;
 } 
 
+int Player::getBankroll() const {
+    return bankroll;
+}
 
 bool Player::placeBet(int amount)
 {
@@ -44,9 +48,9 @@ void Player::winBet(int amount)
     bankroll += amount;
 }
 
-void Player::loseBet(int amount)
+void Player::loseBet()
 {
-    bankroll -= amount;
+    return;
 }
 
 void Player::pushBet(int amount)

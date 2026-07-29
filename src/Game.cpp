@@ -76,11 +76,16 @@ void Game::run()
 void Game::loadAssets()
 {
 
-std::cout << "Current working directory: "
+    std::cout << "Current working directory: "
           << std::filesystem::current_path() << '\n';
           
-std::cout << std::filesystem::exists("assets/felt.png") << '\n';
-
+    std::cout << std::filesystem::exists("assets/felt.png") << '\n';
+ 
+    if (!font.loadFromFile("assets/fonts/roboto/RobotoFlex-VariableFont.ttf"))
+    {
+        std::cout << "Failed to load font!\n";
+        return;
+    }
 
     if(!backgroundTexture.loadFromFile(
         "assets/felt.png"))
@@ -288,7 +293,7 @@ void Game::hit()
     std::cout 
         << "Hit! You have "
         << hand.getValue()
-        <<". ";
+        <<". " << std::endl;
 
     if(deck.reachedCutCard())
     {
@@ -299,7 +304,7 @@ void Game::hit()
     if(hand.isBust())
     {
         std::cout
-            << "Bust!\n";
+            << "Bust!\n" << std::endl;
 
         hand.finished = true;
     }
@@ -326,19 +331,24 @@ void Game::stand()
 void Game::doubleDown()
 {
     Hand& hand = player.hands[player.currentHand];
-
+    int initalbet = hand.getBet();
 
     if(!hand.canDouble())
         return;
 
 
     hand.doubledDown = true;
+    if(!player.placeBet(initalbet))
+        return;
 
 
-    
+    hand.currentBet = initalbet * 2;
+    //hand.setBet(initalbet*2); // this doesn't work
     dealCardToPlayer(hand);
     std::cout 
-        << "Double trouble... Oh! It's a "
+        << "Doubling "
+        << initalbet << " to " << hand.getBet()
+        << " on a "
         << hand.getValue()
         <<"!\n";
 
@@ -410,29 +420,42 @@ void Game::surrender()
 
 void Game::increaseBet()
 {
-    std::cout << "Increased bet to "
-        << player.hands[player.currentHand].getBet()
-        << ".\n";
-    player.hands[0].setBet(player.hands[0].getBet() + 5);
+    
+    if (player.hands[0].getBet() < Constants::MAXIMUM_BET)
+    {
+        player.hands[0].setBet(player.hands[0].getBet() + 5);
+        std::cout << "Increased bet to "
+            << player.hands[player.currentHand].getBet()
+            << ".\n";
+    }
+        
 }
 
 void Game::decreaseBet()
 {
-    std::cout << "Decreased bet to "
-        << player.hands[player.currentHand].getBet()
-        << ".\n";
-    if (player.hands[0].getBet() >= 5)
+    
+    if (player.hands[0].getBet() >= Constants::MINIMUM_BET)
+    { 
         player.hands[0].setBet(player.hands[0].getBet() - 5);
+        std::cout << "Decreased bet to "
+            << player.hands[player.currentHand].getBet()
+            << ".\n";
+    }
 }
 
 void Game::confirmBet()
-{
-    std::cout << "You bet "
-        << player.hands[player.currentHand].getBet()
-        << ". All bets are down.\n";
-    if(player.hands[0].getBet() <= Constants::MINIMUM_BET)
+{ 
+    int currentBet = player.hands[0].getBet();
+    if(currentBet < Constants::MINIMUM_BET || currentBet > Constants::MAXIMUM_BET)
         return;
 
+
+    player.placeBet(currentBet);
+    std::cout << "You bet "
+        << player.hands[player.currentHand].getBet()
+        << ". Your remaining bankroll is: "
+        << player.getBankroll()
+        << "\n";
     deal();
 }
 
@@ -505,8 +528,7 @@ void Game::dealerTurn()
         if(hand.isBust()){
             numBusted++;
         }
-    }
-    std::cout << numBusted << " " << player.currentHand << std::endl;
+    } 
     if(numBusted == player.hands.size())
         doNotDraw = true;
 
@@ -592,31 +614,46 @@ void Game::dealerTurn()
 
 void Game::evaluateHands()
 {
+    int index = 1;
     for (Hand hand : player.hands){
+ 
+        std::cout << "Entering evaluateHands() on hand " << index << ". Bankroll = "<< player.getBankroll() << std::endl;
         currentRoundRecord.wager += hand.getBet();
-        if (hand.isBust()){
-            player.loseBet(hand.getBet());
-        }else
-        if (hand.surrendered){
-            player.winBet(hand.getBet() / 2);
-            currentRoundRecord.payout += (hand.getBet() / 2);
+
+        if (hand.isBlackjack() && dealer.isBlackjack()){
+            player.pushBet(hand.getBet());
         }else
         if (hand.isBlackjack()){
-            player.winBet(hand.getBet() * Constants::BLACKJACK_PAYOUT);
+            player.winBet(hand.getBet()  + (hand.getBet() * Constants::BLACKJACK_PAYOUT));
             currentRoundRecord.payout += (hand.getBet() * Constants::BLACKJACK_PAYOUT);
         }else
+        if (dealer.isBlackjack()){
+            player.loseBet();
+        }
 
 
-        if(hand.getValue() > dealer.getValue()){
+        if (hand.isBust()){
+            player.loseBet(); //do nothing, money was removed in player::placebet()
+        }else
+        if (hand.surrendered){
+            player.winBet(hand.getBet() / 2); // return 1/2 inital bet
+            currentRoundRecord.payout += (hand.getBet() / 2);
+        }else 
+
+
+        if(hand.getValue() > dealer.getValue() || dealer.isBust()){
+            player.winBet(hand.getBet() * 2); // return inital bet + payment
             currentRoundRecord.payout += hand.getBet();
-            player.winBet(hand.getBet());
         }else 
         if (hand.getValue() < dealer.getValue()){
-            player.loseBet(hand.getBet());
+            player.loseBet();
         }else{
-            player.pushBet(hand.getBet());
+            player.pushBet(hand.getBet()); //return inital bet
         }
-    }
+        index++;
+    } 
+
+    std::cout << player.getBankroll() << std::endl;
     
     currentRoundRecord.won = currentRoundRecord.isWin();
     PlayerProfile profile = player.getProfile();
@@ -905,6 +942,7 @@ void Game::drawChips()
         //
         // Draw total bet
         //
+        
         sf::Text text;
 
         text.setFont(font);

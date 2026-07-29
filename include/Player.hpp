@@ -20,13 +20,13 @@ public:
     // Betting
     bool placeBet(int amount);
     void winBet(int amount);
-    void loseBet(int amount);
+    void loseBet();
     void pushBet(int amount);
 
 
     // Getters
     const std::string& getName() const;
-    int getMoney() const;
+    int getBankroll() const;
     PlayerProfile getProfile();
     PlayerProfile updateProfile(PlayerProfile profile);
     void saveProfile();

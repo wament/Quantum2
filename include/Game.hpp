@@ -46,7 +46,7 @@ private:
     sf::Sprite backgroundSprite;
 
     sf::Texture cardTexture;
-
+    sf::Font font;
 
     // ---------------- Blackjack ----------------
 
