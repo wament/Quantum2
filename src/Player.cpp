@@ -24,9 +24,10 @@ void Player::saveProfile(){
 }
 
 
-void Player::resetRound(){
+void Player::resetRound(int previousBet){
     hands.clear();
     hands.resize(1);
+    hands[0].setBet(previousBet);
     currentHand = 0;
 } 
 

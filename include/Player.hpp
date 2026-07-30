@@ -12,7 +12,7 @@ class Player
 public: 
     Player(const std::string& playerName);
 
-    void resetRound();  
+    void resetRound(int previousBet);  
 
     int currentHand = 0; 
     std::vector<Hand> hands;

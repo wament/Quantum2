@@ -1,0 +1,31 @@
+I consulted chatgpt and did some reading and it seems like pointers are unecessary for me at the moment.
+I made a git repo finally.
+
+
+Finished This Round:
+    Make a git repo
+    I found some fonts. I added just 1 to the project but have 2 more saved.
+    Refined betting controls and chips on the screen. doubling works.
+    Added insurance on dealer ace.
+    Added basic strategy advice option for the player.
+    added count tracking system to the game internals. not integrated into any algorithm.
+
+Leftover from last round:
+    Sounds. Card hitting, win sound, etc. (I am going to deprioritize this.)
+    Save the player profile to a json file.
+        including the shoe history and player stats
+        understand what type of memory allocation I should be using, and how to manage it.
+
+To Do:
+    Make chips move when splitting hands (currently no chips are added, splitting has no cost?)
+    Properly scope the member variables I added on the last round. Many varibles ought to be private and setter/getter
+        there was a bug with setbet() for doubling down. I rememeber I made one of them public because i was confused as to why the amount wasn't being set.
+    A menu of some kind. Something graphical. A way for the player to know their profile is loaded.
+        I want to see a HUD with:
+            bankroll and current bet
+            stats window for current hand value and count etc
+            menu buttons to change the settings
+                settings: card size, text size, music, color themes?,
+    Add AI
+        explore llm for dealer yap?
+        what does a 'pro player' AI look like? i think it's not an LLM, but a reinforcement learning machine learning algorithm.

@@ -34,6 +34,7 @@ public:
     bool split = false;
 
     int currentBet = 0;
+    int insuranceBet = 0;
 private:
     std::vector<Card> cards;
      

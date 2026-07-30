@@ -35,9 +35,10 @@ namespace Constants
     constexpr float PLAYER_Y = 470.f;
 
     constexpr float DECK_X = 10.f;
-    constexpr float DECK_Y = 580.f;
+    constexpr float DECK_Y = 640.f;
 
-
+    constexpr float CHIP_RADIUS = 18.f;
+    constexpr float CHIP_SPACING = 6.f;
 
 
     // Basic Strategy 
@@ -65,20 +66,7 @@ enum class HandType {
     HARD,
     SOFT,
     PAIR
-};
-
-/*
-int dealerIndex(int dealer)
-{
-    if (dealer >= 10)
-        return 8; // 10,J,Q,K
-
-    if (dealer == 1)
-        return 9; // Ace
-
-    return dealer - 2;
-}
- */
+}; 
 
 const char HARD[10][10] =
 {

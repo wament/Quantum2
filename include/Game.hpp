@@ -11,6 +11,7 @@
 enum class RoundState
 {
     PlaceBets,
+    OfferInsurance,
     PlayerTurn,
     DealerTurn,
     Cleanup
@@ -36,6 +37,9 @@ public:
     void decreaseBet();
     void confirmBet();
     Player player;
+ 
+    int initalBet = 0;
+    int runningCount = 0;
 private:
 
     // ---------------- SFML ----------------
@@ -74,8 +78,6 @@ private:
 
     void deal();
 
-    
-
     // ---------------- Game Loop ----------------
 
     void processEvents();
@@ -84,16 +86,10 @@ private:
 
     void draw();
 
-    void dealCardToPlayer(Hand& hand);
-    
-    void dealCardToDealer();
-
     void finishRound();
-
-    void evaluateHands();
-
     
     // ---------------- Player Actions ----------------
+
     void hit();
 
     void stand();
@@ -104,12 +100,32 @@ private:
 
     void surrender();
 
+    void increaseInsurance();
+
+    void decreaseInsurance();
+
+    void confirmInsurance();
+
+    void declineInsurance();
+
 
     // ---------------- Dealer ----------------
 
+    void dealCardToPlayer(Hand& hand);
+    
+    void dealCardToDealer();
+
     void dealerTurn();
 
-    std::string giveBasicStrategyAdvice(Hand& playerHand, Hand& dealerHand);
+    void offerInsurance();
+
+    void evaluateHands();
+
+    void evaluateBlackjack();
+
+    const int getMaxInsurance();
+
+    char giveBasicStrategyAdvice(Hand& playerHand, Hand& dealerHand);
 
     // ---------------- Drawing ----------------
 
@@ -120,4 +136,6 @@ private:
     void drawChips();
 
     void drawDeck();
+
+    void drawInsurance();
 };
