@@ -6,30 +6,6 @@
 
 #include "GameRecord.hpp"
 
-struct PlayerStats
-{
-    int shoesFinished = 0;
-    int handsFinished = 0;
-
-    int wins = 0;
-    int losses = 0;
-    int pushes = 0;
-    int blackjacks = 0;
-    int splits = 0;
-    int doubles = 0;
-
-    int betsPlaced = 0;
-    int betSum = 0;
-    int largestHand = 0;
-
-    int greatestWin = 0;
-    int greatestLoss = 0;
-
-    int greatestSessionWin = 0;
-    int greatestSessionLoss = 0;
-};
-
-
 
 using json = nlohmann::json;
 class PlayerProfile

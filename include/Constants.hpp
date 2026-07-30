@@ -6,6 +6,7 @@ namespace Constants
     constexpr unsigned WINDOW_WIDTH  = 1400;
     constexpr unsigned WINDOW_HEIGHT = 800;
     constexpr const char* WINDOW_TITLE = "Blackjack";
+    constexpr const float FONT_SIZE = 14.f;
 
     // Card sprite sheet
     constexpr int CARD_WIDTH  = 64;
@@ -18,6 +19,7 @@ namespace Constants
     constexpr int CUT_CARD_VALUE = 14;
 
     // Game rules
+    constexpr int NUM_DECKS = 2;
     constexpr int BLACKJACK = 21;
     constexpr int DEALER_STAND = 17;
     constexpr int MAX_SPLIT_HANDS = 4;

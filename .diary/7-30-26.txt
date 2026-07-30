@@ -26,6 +26,7 @@ To Do:
             stats window for current hand value and count etc
             menu buttons to change the settings
                 settings: card size, text size, music, color themes?,
+            chat window to display the console output (toggle hide)
     Add AI
         explore llm for dealer yap?
         what does a 'pro player' AI look like? i think it's not an LLM, but a reinforcement learning machine learning algorithm.

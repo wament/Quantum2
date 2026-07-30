@@ -7,6 +7,9 @@
 #include "Hand.hpp"
 #include "Player.hpp"
 #include "GameRecord.hpp"
+#include "HUD.hpp"
+#include "HUDState.hpp" 
+
 
 enum class RoundState
 {
@@ -37,11 +40,20 @@ public:
     void decreaseBet();
     void confirmBet();
     Player player;
- 
+    HUD hud;
+    HUDState hudState;
+    
+    sf::View gameView;
     int initalBet = 0;
     int runningCount = 0;
-private:
+    float trueCount = 0;
 
+    
+private:
+    float findTrueCount() const
+    {
+        return runningCount / (deck.size() / 52);
+    }
     // ---------------- SFML ----------------
 
     sf::RenderWindow window;
@@ -83,6 +95,8 @@ private:
     void processEvents();
 
     void update();
+
+    void updateHUDState();
 
     void draw();
 
@@ -130,6 +144,8 @@ private:
     // ---------------- Drawing ----------------
 
     void drawDealer();
+
+    void resizeView(sf::RenderWindow& window, sf::View& view);
 
     void drawPlayers();
 

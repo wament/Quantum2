@@ -29,6 +29,9 @@ target_sources(Blackjack2 PRIVATE
     src/Hand.cpp
     src/Player.cpp
     src/PlayerProfile.cpp
+    src/HUD.cpp
+    src/Panel.cpp
+    src/StatBox.cpp
 )
 # assets
 add_custom_command(TARGET Blackjack2 POST_BUILD

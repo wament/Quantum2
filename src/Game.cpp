@@ -9,11 +9,14 @@
 #include "Player.hpp"
  
 
-Game::Game():window(sf::VideoMode(Constants::WINDOW_WIDTH, Constants::WINDOW_HEIGHT), Constants::WINDOW_TITLE), player("William")
+Game::Game():window(sf::VideoMode(Constants::WINDOW_WIDTH, Constants::WINDOW_HEIGHT), Constants::WINDOW_TITLE), gameView(sf::FloatRect(0, 0, Constants::WINDOW_WIDTH, Constants::WINDOW_HEIGHT)), player("William")
 {
+
+    
+    window.setView(gameView);
     currentShoeRecord = {};
     loadAssets();
-    deck.create(2);
+    deck.create(Constants::NUM_DECKS);
     deck.shuffle();
     currentShoeRecord.deck = deck; 
     nextRound();
@@ -74,12 +77,10 @@ void Game::run()
 
 void Game::loadAssets()
 {
-
     std::cout << "Current working directory: "
           << std::filesystem::current_path() << '\n';
           
-    std::cout << std::filesystem::exists("assets/felt.png") << '\n';
- 
+    hud.initialize(font);
     if (!font.loadFromFile("assets/fonts/roboto/RobotoFlex-VariableFont.ttf"))
     {
         std::cout << "Failed to load font!\n";
@@ -94,15 +95,12 @@ void Game::loadAssets()
     }
 
 
-    backgroundSprite.setTexture(
-        backgroundTexture);
+    backgroundSprite.setTexture(backgroundTexture);
 
 
-    sf::Vector2u textureSize =
-        backgroundTexture.getSize();
+    sf::Vector2u textureSize = backgroundTexture.getSize();
 
-    sf::Vector2u windowSize =
-        window.getSize();
+    sf::Vector2u windowSize = window.getSize();
 
 
     backgroundSprite.setScale(
@@ -120,6 +118,7 @@ void Game::loadAssets()
         throw std::runtime_error(
             "Failed to load card texture");
     }
+    
 }
 
 
@@ -150,6 +149,10 @@ void Game::processEvents()
             window.close();
         }
 
+        if (event.type == sf::Event::Resized)
+        {
+            resizeView(window, gameView);
+        }
 
         if(event.type !=
            sf::Event::KeyPressed)
@@ -249,7 +252,7 @@ void Game::processEvents()
             if(gameState ==
                GameState::GameOver)
             {
-                deck.create(2);
+                deck.create(Constants::NUM_DECKS);
                 deck.shuffle();
                 currentShoeRecord.deck = deck;
 
@@ -299,6 +302,26 @@ void Game::update()
     {
         dealerTurn();
     }
+}
+
+void Game::updateHUDState()
+{
+    hudState.bankroll = player.getBankroll();
+
+    hudState.currentBet = player.hands[0].getBet();
+
+    hudState.runningCount = runningCount;
+
+    hudState.trueCount = findTrueCount();
+
+    hudState.cardsRemaining = deck.size();
+
+    //hudState.statusMessage = gameMessage;
+
+    //uh-oh, pointers
+    //hudState.playerStats = &playerStats;
+
+    //hudState.currentShoe = &currentShoeRecord;
 }
 
 
@@ -879,14 +902,48 @@ void Game::draw()
     drawDealer();
     drawPlayers();
     drawChips();
-    drawDeck();
+    //drawDeck();
     if(roundState == RoundState::OfferInsurance)
-        drawInsurance(); //doesn't work
+        drawInsurance();
 
+
+    updateHUDState();
+    hud.update(hudState);
+    hud.draw(window);
     
     window.display();
 }
 
+void Game::resizeView(sf::RenderWindow& window, sf::View& view)
+{
+    float windowRatio = static_cast<float>(window.getSize().x) /
+                        static_cast<float>(window.getSize().y);
+
+    float viewRatio = view.getSize().x / view.getSize().y;
+
+    if (windowRatio > viewRatio)
+    {
+        // Window is wider: add horizontal space
+        view.setViewport(sf::FloatRect(
+            (1.f - viewRatio / windowRatio) / 2.f,
+            0.f,
+            viewRatio / windowRatio,
+            1.f
+        ));
+    }
+    else
+    {
+        // Window is taller: add vertical space
+        view.setViewport(sf::FloatRect(
+            0.f,
+            (1.f - windowRatio / viewRatio) / 2.f,
+            1.f,
+            windowRatio / viewRatio
+        ));
+    }
+
+    window.setView(view);
+}
 
 
 void Game::drawDealer()
@@ -1184,7 +1241,7 @@ void Game::drawInsurance(){
         "Enter : Confirm\n"
         "Esc : Decline");
 
-    text.setPosition(700.f, 500.f);
+    text.setPosition(400.f, 500.f);
 
     window.draw(text);
 }
