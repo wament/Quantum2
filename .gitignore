@@ -14,3 +14,8 @@ build/
 # OS files
 .DS_Store
 Thumbs.db
+
+# personal local files
+.ai-responses
+.continue-gens
+.junk
