@@ -9,22 +9,23 @@ public:
 
     StatBox();
 
-    void initialize(
-        sf::Font& font,
-        const std::string& title);
+    void initialize(sf::Font& font, const std::string& title);
 
-    void setValue(
-        const std::string& value);
+    void setTitle(const std::string& title);
 
-    void setPosition(
-        sf::Vector2f position);
+    std::string getTitle() const;
 
-    void draw(
-        sf::RenderWindow& window);
+    void setValue(const std::string& value);
+
+    void setPosition(sf::Vector2f position);
+
+    void draw(sf::RenderWindow& window);
 
 private:
 
     sf::Text m_title;
 
     sf::Text m_value;
+
+    std::string m_titleText;
 };

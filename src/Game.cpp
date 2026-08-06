@@ -271,10 +271,10 @@ void Game::processEvents()
 }
 
 
-
 // --------------------------------------------------
-// Update
+// Betting
 // --------------------------------------------------
+ 
 
 void Game::update()
 {
@@ -282,7 +282,7 @@ void Game::update()
     {
         // Advance to the next unfinished hand.
         while (player.currentHand < player.hands.size() &&
-            player.hands[player.currentHand].finished)
+            player.hands[player.currentHand].isFinished())
         {
             ++player.currentHand;
         }
@@ -292,9 +292,17 @@ void Game::update()
         {
             roundState = RoundState::DealerTurn;
         }
+        else
+        {
+            // After advancing, ensure the current hand has at least two cards.
+            // This handles split hands: each split hand must receive its second
+            // card before the player can take an action on it.
+            if (player.hands[player.currentHand].size() == 1)
+            {
+                dealCardToPlayer(player.hands[player.currentHand]);
+            }
+        }
     }
-
-
 
 
     if(roundState ==
@@ -303,7 +311,7 @@ void Game::update()
         dealerTurn();
     }
 }
-
+ 
 void Game::updateHUDState()
 {
     hudState.bankroll = player.getBankroll();
@@ -336,7 +344,7 @@ void Game::hit()
         player.hands[player.currentHand];
 
 
-    if(hand.finished)
+    if(hand.isFinished())
         return;
 
     dealCardToPlayer(hand);
@@ -357,7 +365,7 @@ void Game::hit()
         std::cout
             << "Bust!\n" << std::endl;
 
-        hand.finished = true;
+        hand.setFinished(true);
     }
 
     currentRoundRecord.actionSequence.push_back("H");
@@ -372,7 +380,7 @@ void Game::stand()
         << "Stand on "
         << hand.getValue()
         <<".\n";
-    hand.finished = true;
+    hand.setFinished(true);
     
     currentRoundRecord.actionSequence.push_back("S");    
 }
@@ -388,13 +396,12 @@ void Game::doubleDown()
         return;
 
 
-    hand.doubledDown = true;
+    hand.setDoubledDown(true);
     if(!player.placeBet(initalbet))
         return;
 
 
-    hand.currentBet = initalbet * 2;
-    //hand.setBet(initalbet*2); // this doesn't work
+    hand.setBet(initalbet * 2);
     dealCardToPlayer(hand);
     std::cout 
         << "Doubling "
@@ -403,7 +410,7 @@ void Game::doubleDown()
         << hand.getValue()
         <<"!\n";
 
-    hand.finished = true;
+    hand.setFinished(true);
     
     currentRoundRecord.actionSequence.push_back("D");
 }
@@ -438,8 +445,8 @@ void Game::split()
 
     dealCardToPlayer(hand);
     player.hands.push_back(newHand);
-    hand.split = true;
-    newHand.split = true;
+    hand.setSplit(true);
+    newHand.setSplit(true);
 }
 
 void Game::surrender()
@@ -447,7 +454,7 @@ void Game::surrender()
     Hand& hand = player.hands[player.currentHand];
 
     // Cannot surrender a finished hand
-    if(hand.finished)
+    if(hand.isFinished())
         return;
 
     // Only allowed on the first two cards
@@ -457,8 +464,8 @@ void Game::surrender()
     std::cout
         << "Surrender. You lose half your bet.\n";
 
-    hand.surrendered = true;
-    hand.finished = true;
+    hand.setSurrendered(true);
+    hand.setFinished(true);
 
     currentRoundRecord.actionSequence.push_back("R");
 }
@@ -495,13 +502,18 @@ void Game::decreaseBet()
 }
 
 void Game::confirmBet()
-{ 
+{
     int currentBet = player.hands[0].getBet();
     if(currentBet < Constants::MINIMUM_BET || currentBet > Constants::MAXIMUM_BET)
         return;
 
+    if(!player.placeBet(currentBet))
+    {
+        std::cout << "Not enough bankroll. " << player.getBankroll() << " is your max. Or "
+           << player.getBankroll() / 2 << " if you want to double.\n";
+        return;
+    }
 
-    player.placeBet(currentBet);
     initalBet = currentBet;
     std::cout << "You bet "
         << player.hands[player.currentHand].getBet()
@@ -521,33 +533,35 @@ void Game::confirmBet()
 
 void Game::increaseInsurance()
 {
-    if (player.hands[player.currentHand].insuranceBet < getMaxInsurance()){
+    if (player.hands[player.currentHand].getInsuranceBet() < getMaxInsurance()){
 
-        player.hands[player.currentHand].insuranceBet++;
+        player.hands[player.currentHand].setInsuranceBet(
+            player.hands[player.currentHand].getInsuranceBet() + 1);
         std::cout << "Increased insurance to "
-            << player.hands[player.currentHand].insuranceBet
+            << player.hands[player.currentHand].getInsuranceBet()
             << ".\n";
     }
 }
 
 void Game::decreaseInsurance()
 {
-    if (player.hands[player.currentHand].insuranceBet > 0){
+    if (player.hands[player.currentHand].getInsuranceBet() > 0){
+        player.hands[player.currentHand].setInsuranceBet(
+            player.hands[player.currentHand].getInsuranceBet() - 1);
         std::cout << "Decreased insurance to "
-            << player.hands[player.currentHand].insuranceBet
+            << player.hands[player.currentHand].getInsuranceBet()
             << ".\n";
     }
-        player.hands[player.currentHand].insuranceBet--;
 }
 
 void Game::confirmInsurance()
 {
-    if (player.hands[player.currentHand].insuranceBet > 0)
+    int insBet = player.hands[player.currentHand].getInsuranceBet();
+    if (insBet > 0)
     {
-        player.placeBet(player.hands[player.currentHand].insuranceBet);
-        player.hands[player.currentHand].insuranceBet = player.hands[player.currentHand].insuranceBet;
+        player.placeBet(insBet);
         std::cout << "Placed insurance bet of"
-            << player.hands[player.currentHand].insuranceBet
+            << insBet
             << ".\n";
     }
 
@@ -556,7 +570,7 @@ void Game::confirmInsurance()
 
 void Game::declineInsurance()
 {
-    player.hands[player.currentHand].insuranceBet  = 0;
+    player.hands[player.currentHand].setInsuranceBet(0);
     std::cout << "Insurance Denied" << std::endl;
     evaluateBlackjack();
 }
@@ -611,10 +625,10 @@ void Game::evaluateBlackjack()
 
     if (dealer.isBlackjack())
     {
-        if (hand.insuranceBet > 0)
+        if (hand.getInsuranceBet() > 0)
         {
             // Pays 2:1, plus the original insurance bet back.
-            player.winBet(hand.insuranceBet * 3);
+            player.winBet(hand.getInsuranceBet() * 3);
 
             std::cout << "Insurance wins!\n";
         }
@@ -633,10 +647,10 @@ void Game::evaluateBlackjack()
     }
 
     // Dealer does not have blackjack.
-    if (hand.insuranceBet > 0)
+    if (hand.getInsuranceBet() > 0)
     {
         std::cout << "Insurance lost.\n";
-        hand.insuranceBet = 0;
+        hand.setInsuranceBet(0);
     }else{
         roundState = RoundState::PlayerTurn;
     }
@@ -679,7 +693,7 @@ void Game::offerInsurance()
 
     } while (insurance < 0 || insurance > maxInsurance);
 
-    hand.insuranceBet = insurance;
+    hand.setInsuranceBet(insurance);
 
     player.placeBet(insurance);
 
@@ -722,8 +736,8 @@ void Game::dealerTurn()
     bool doNotDraw = false;
     int numBusted = 0;
     for(Hand hand: player.hands){
-        if((hand.isBlackjack() && hand.split == false)
-            || (hand.surrendered && hand.split == false)
+        if((hand.isBlackjack() && !hand.isSplit())
+            || (hand.isSurrendered() && !hand.isSplit())
         ){
             doNotDraw = true;
         }
@@ -823,7 +837,7 @@ void Game::evaluateHands()
         std::cout << "Entering evaluateHands() on hand " << index << ". Bankroll = "<< player.getBankroll() << std::endl;
         currentRoundRecord.wager += hand.getBet();
         
-        if (hand.surrendered){
+        if (hand.isSurrendered()){
             player.winBet(hand.getBet() / 2); // return 1/2 inital bet
             currentRoundRecord.payout += (hand.getBet() / 2);
         }else  
@@ -1043,7 +1057,7 @@ void Game::drawChips()
     for(Hand& hand: player.hands)
     {  
         int totalBet = hand.getBet();
-        int stackBet = hand.doubledDown ? totalBet / 2 : totalBet;
+        int stackBet = hand.isDoubledDown() ? totalBet / 2 : totalBet;
 
         if(totalBet <= 0)
             continue;
@@ -1172,7 +1186,7 @@ void Game::drawChips()
         //
         // Draw second stack when doubled
         //
-        if(hand.doubledDown)
+        if(hand.isDoubledDown())
         {
             float secondX =
                 chipX + 35.f;
@@ -1235,7 +1249,7 @@ void Game::drawInsurance(){
 
     text.setString(
         "Dealer shows an Ace\n\n"
-        "Insurance Bet: $" + std::to_string(player.hands[player.currentHand].insuranceBet) +
+        "Insurance Bet: $" + std::to_string(player.hands[player.currentHand].getInsuranceBet()) +
         "\n\n"
         "Up/Down : Change\n"
         "Enter : Confirm\n"

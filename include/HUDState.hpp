@@ -10,6 +10,9 @@ struct HUDState
     int bankroll = 0;
     int currentBet = 0;
 
+    int streak = 0;      // positive = wins, negative = losses, 0 = no streak
+    bool streakIsWin = false;
+
     int runningCount = 0;
     float trueCount = 0.f;
 

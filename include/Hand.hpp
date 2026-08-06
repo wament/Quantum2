@@ -7,6 +7,8 @@
 class Hand
 {
 public:
+    Hand();
+
     void addCard(const Card& card);
     void clear();
 
@@ -25,8 +27,27 @@ public:
     const std::string getDealerUpCardToString() const;
 
     Card takeLastCard();
+
     void setBet(int amount);
-    int getBet();
+    [[nodiscard]] int getBet() const;
+
+    void setInsuranceBet(int amount);
+    [[nodiscard]] int getInsuranceBet() const;
+
+    void setFinished(bool value);
+    [[nodiscard]] bool isFinished() const;
+
+    void setDoubledDown(bool value);
+    [[nodiscard]] bool isDoubledDown() const;
+
+    void setSurrendered(bool value);
+    [[nodiscard]] bool isSurrendered() const;
+
+    void setSplit(bool value);
+    [[nodiscard]] bool isSplit() const;
+
+private:
+    std::vector<Card> cards;
 
     bool finished = false;
     bool doubledDown = false;
@@ -35,9 +56,6 @@ public:
 
     int currentBet = 0;
     int insuranceBet = 0;
-private:
-    std::vector<Card> cards;
-     
 };
 
 /*
@@ -50,33 +68,33 @@ inline void to_json(json& j, const Hand& h)
 
     j =
     {
-        {"cards", cards},
-        {"bet", h.getBet()},
-        {"finished", h.finished},
-        {"doubledDown", h.doubledDown},
-        {"surrendered", h.surrendered},
-        {"split", h.split}
+        {\"cards\", cards},
+        {\"bet\", h.getBet()},
+        {\"finished\", h.finished},
+        {\"doubledDown\", h.doubledDown},
+        {\"surrendered\", h.surrendered},
+        {\"split\", h.split}
     };
 }
 inline void from_json(const json& j, Hand& h)
 {
     h.clear();
 
-    for (const Card& c : j.at("cards"))
+    for (const Card& c : j.at(\"cards\"))
         h.addCard(c);
 
-    h.setBet(j.value("bet",0));
+    h.setBet(j.value(\"bet\",0));
 
     h.finished =
-        j.value("finished",false);
+        j.value(\"finished\",false);
 
     h.doubledDown =
-        j.value("doubledDown",false);
+        j.value(\"doubledDown\",false);
 
     h.surrendered =
-        j.value("surrendered",false);
+        j.value(\"surrendered\",false);
 
     h.split =
-        j.value("split",false);
+        j.value(\"split\",false);
 }
  */

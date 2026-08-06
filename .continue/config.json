@@ -1,0 +1,27 @@
+{
+  "models": [
+    {
+      "title": "Qwen3.6 Local",
+      "model":"Qwen3.6-27B-Fable-Fus-711-UnHeretic-NM-DAU-NEO-MAX-NEO-MTP-Q4_K_M",
+      "provider": "llama.cpp",
+      "apiBase": "http://localhost:8080"
+    }
+  ],
+  "contextProviders": [
+    { "name": "code" },
+    { "name": "docs" },
+    { "name": "terminal" },
+    { "name": "open" },
+    { "name": "grep" }
+  ],
+  "embeddingsProvider": {
+    "provider": "transformers.js",
+    "model": "all-MiniLM-L6-v2"
+  },
+  "indexes": {
+    "code": {
+      "includeGlobs": ["**/*.cpp", "**/*.hpp", "**/*.h"],
+      "excludeGlobs": ["out/**", "build/**", ".git/**", "*.o", "*.so", "*.a"]
+    }
+  }
+}

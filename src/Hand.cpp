@@ -1,5 +1,9 @@
 #include "Hand.hpp"
 
+Hand::Hand()
+{
+}
+
 void Hand::addCard(const Card& card)
 {
     cards.push_back(card);
@@ -11,6 +15,11 @@ void Hand::clear()
 
     finished = false;
     doubledDown = false;
+    surrendered = false;
+    split = false;
+
+    currentBet = 0;
+    insuranceBet = 0;
 }
 
 int Hand::getValue() const
@@ -98,6 +107,56 @@ void Hand::setBet(int amount){
     currentBet = amount;
 }
 
-int Hand::getBet(){
+int Hand::getBet() const {
     return currentBet;
+}
+
+void Hand::setInsuranceBet(int amount)
+{
+    insuranceBet = amount;
+}
+
+int Hand::getInsuranceBet() const
+{
+    return insuranceBet;
+}
+
+void Hand::setFinished(bool value)
+{
+    finished = value;
+}
+
+bool Hand::isFinished() const
+{
+    return finished;
+}
+
+void Hand::setDoubledDown(bool value)
+{
+    doubledDown = value;
+}
+
+bool Hand::isDoubledDown() const
+{
+    return doubledDown;
+}
+
+void Hand::setSurrendered(bool value)
+{
+    surrendered = value;
+}
+
+bool Hand::isSurrendered() const
+{
+    return surrendered;
+}
+
+void Hand::setSplit(bool value)
+{
+    split = value;
+}
+
+bool Hand::isSplit() const
+{
+    return split;
 }

@@ -8,6 +8,14 @@ HUD::HUD()
 
 }
 
+HUD::~HUD()
+{
+    // Clean up stat boxes owned by panels
+    delete m_bankrollBox;
+    delete m_betBox;
+    delete m_statusBox;
+}
+
 void HUD::initialize(sf::Font& font)
 {
     constexpr float SIDE = 220.f;
@@ -32,27 +40,36 @@ void HUD::initialize(sf::Font& font)
     m_leftPanel.initialize(font);
     m_rightPanel.initialize(font);
     m_bottomPanel.initialize(font);
+
+    // Create bottom panel stat boxes
+    m_bankrollBox = m_bottomPanel.addStatBox("Bankroll");
+    m_betBox = m_bottomPanel.addStatBox("Bet");
+    m_statusBox = m_bottomPanel.addStatBox("");
+
+    // Position: Bankroll left, Bet center, Status right
+    m_bankrollBox->setPosition({15.f, 15.f});
+    m_betBox->setPosition({Constants::WINDOW_WIDTH * 0.5f - 40.f, 15.f});
+    m_statusBox->setPosition({Constants::WINDOW_WIDTH - 250.f, 15.f});
 }
 
 void HUD::update(const HUDState& state)
 {
-    /*
-    bankrollBox.setValue(
+    m_bankrollBox->setValue(
         "$" + std::to_string(state.bankroll));
 
-    betBox.setValue(
+    m_betBox->setValue(
         "$" + std::to_string(state.currentBet));
 
-    runningCountBox.setValue(
-        std::to_string(state.runningCount));
-
-    trueCountBox.setValue(
-        formatFloat(state.trueCount));
-
-    statusBox.setValue(
-        state.statusMessage);
-
-    */
+    if (!state.statusMessage.empty())
+    {
+        m_statusBox->setValue(state.statusMessage);
+        m_statusBox->setPosition({Constants::WINDOW_WIDTH - 250.f, 45.f});
+    }
+    else
+    {
+        m_statusBox->setValue("");
+        m_statusBox->setPosition({Constants::WINDOW_WIDTH - 250.f, 15.f});
+    }
 }
 
 void HUD::draw(sf::RenderWindow& window)

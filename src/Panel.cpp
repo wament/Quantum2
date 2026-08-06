@@ -1,5 +1,9 @@
 #include "Panel.hpp"
 
+Panel::Panel()
+{
+}
+
 void Panel::initialize(sf::Font& font)
 {
     m_background.setFillColor(
@@ -9,6 +13,10 @@ void Panel::initialize(sf::Font& font)
 
     m_background.setOutlineColor(
         sf::Color(80,80,80));
+
+    // Initialize existing stat boxes with this font
+    for(auto* box : m_stats)
+        box->initialize(font, box->getTitle());
 }
 
 void Panel::setBounds(
@@ -19,15 +27,18 @@ void Panel::setBounds(
     m_background.setSize(size);
 }
 
+StatBox* Panel::addStatBox(const std::string& title)
+{
+    auto* box = new StatBox();
+    box->setTitle(title);
+    m_stats.push_back(box);
+    return box;
+}
+
 void Panel::draw(sf::RenderWindow& window)
 {
     window.draw(m_background);
 
-    for(auto& stat : m_stats)
-        stat.draw(window);
-}
-
-void Panel::addStat(const StatBox& stat)
-{
-    m_stats.push_back(stat);
+    for(auto* stat : m_stats)
+        stat->draw(window);
 }

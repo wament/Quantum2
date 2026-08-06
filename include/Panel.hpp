@@ -9,19 +9,21 @@ class Panel
 {
 public:
 
+    Panel();
+
     void initialize(sf::Font& font);
 
     void setBounds(
         sf::Vector2f position,
         sf::Vector2f size);
 
-    void draw(sf::RenderWindow& window);
+    StatBox* addStatBox(const std::string& title);
 
-    void addStat(const StatBox& stat);
+    void draw(sf::RenderWindow& window);
 
 private:
 
     sf::RectangleShape m_background;
 
-    std::vector<StatBox> m_stats;
+    std::vector<StatBox*> m_stats;
 };

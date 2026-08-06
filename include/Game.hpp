@@ -36,27 +36,17 @@ public:
 
     void run();
 
-    void increaseBet();
-    void decreaseBet();
-    void confirmBet();
-    Player player;
-    HUD hud;
-    HUDState hudState;
-    
-    sf::View gameView;
-    int initalBet = 0;
-    int runningCount = 0;
-    float trueCount = 0;
-
-    
 private:
     float findTrueCount() const
     {
-        return runningCount / (deck.size() / 52);
+        return static_cast<float>(runningCount) / static_cast<float>((deck.size() / 52.f));
     }
+
     // ---------------- SFML ----------------
 
     sf::RenderWindow window;
+
+    sf::View gameView;
 
     sf::Texture backgroundTexture;
     sf::Sprite backgroundSprite;
@@ -64,19 +54,26 @@ private:
     sf::Texture cardTexture;
     sf::Font font;
 
+    // ---------------- UI ----------------
+
+    HUD hud;
+    HUDState hudState;
+
     // ---------------- Blackjack ----------------
 
     Deck deck;
 
+    Hand dealer;
 
-    Hand dealer; 
+    Player player;
 
+    RoundState roundState = RoundState::PlayerTurn;
 
-    RoundState roundState =
-        RoundState::PlayerTurn;
+    GameState gameState = GameState::Started;
 
-    GameState gameState =
-        GameState::Started;
+    int initalBet = 0;
+    int runningCount = 0;
+    float trueCount = 0;
 
     RoundRecord currentRoundRecord;
     ShoeRecord currentShoeRecord;
@@ -102,6 +99,12 @@ private:
 
     void finishRound();
     
+    // ---------------- Betting ----------------
+
+    void increaseBet();
+    void decreaseBet();
+    void confirmBet();
+
     // ---------------- Player Actions ----------------
 
     void hit();

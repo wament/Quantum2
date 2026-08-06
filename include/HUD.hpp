@@ -6,11 +6,12 @@
 #include "HUDState.hpp"
 
 
-
 class HUD
 {
 public:
     HUD();
+
+    ~HUD();
 
     void initialize(sf::Font& font);
 
@@ -32,5 +33,8 @@ private:
     Panel m_leftPanel;
     Panel m_rightPanel;
     Panel m_bottomPanel;
-};
 
+    StatBox* m_bankrollBox = nullptr;
+    StatBox* m_betBox = nullptr;
+    StatBox* m_statusBox = nullptr;
+};
