@@ -7,6 +7,7 @@
 #include "Constants.hpp"
 #include "Graphics.hpp"
 #include "Player.hpp"
+#include "FontManager.hpp"
  
 
 Game::Game():window(sf::VideoMode(Constants::WINDOW_WIDTH, Constants::WINDOW_HEIGHT), Constants::WINDOW_TITLE), gameView(sf::FloatRect(0, 0, Constants::WINDOW_WIDTH, Constants::WINDOW_HEIGHT)), player("William")
@@ -18,7 +19,7 @@ Game::Game():window(sf::VideoMode(Constants::WINDOW_WIDTH, Constants::WINDOW_HEI
     loadAssets();
     deck.create(Constants::NUM_DECKS);
     deck.shuffle();
-    currentShoeRecord.deck = deck; 
+    currentShoeRecord.initialDeck = deck.getCards();
     nextRound();
     #pragma region 
     std::cout << R"(
@@ -32,6 +33,7 @@ BETTING PHASE
 -------------
   ↑  Up Arrow      Increase Bet
   ↓  Down Arrow    Decrease Bet
+  →  Right Arrow   Auto Kelly Bet (3% RoR, H17, 3:2)
   Enter            Confirm Bet
 
 PLAYER TURN
@@ -40,7 +42,7 @@ PLAYER TURN
   S                Stand
   D                Double Down
   P                Split
-  R                Surrender
+  G                Surrender
 
 ROUND / GAME
 ------------
@@ -80,12 +82,13 @@ void Game::loadAssets()
     std::cout << "Current working directory: "
           << std::filesystem::current_path() << '\n';
           
-    hud.initialize(font);
-    if (!font.loadFromFile("assets/fonts/roboto/RobotoFlex-VariableFont.ttf"))
+    if (!FontManager::load("assets/fonts/roboto/RobotoFlex-VariableFont.ttf"))
     {
         std::cout << "Failed to load font!\n";
         return;
     }
+
+    hud.initialize(FontManager::get());
 
     if(!backgroundTexture.loadFromFile(
         "assets/images/felt.png"))
@@ -128,6 +131,8 @@ void Game::nextRound()
     player.resetRound(initalBet); //also clear bets
     dealer.clear(); 
     currentRoundRecord = {};
+    handActions.clear();
+    handActions.resize(1); // start with one hand's actions
     roundState = RoundState::PlaceBets;
 }
 
@@ -138,20 +143,60 @@ void Game::nextRound()
 
 void Game::processEvents()
 {
-    sf::Event event;
-
+    sf::Event event; 
+    const sf::FloatRect& slider = hud.getRiskSliderBounds();
 
     while(window.pollEvent(event))
     {
-        if(event.type ==
-           sf::Event::Closed)
+        if(event.type == sf::Event::Closed)
         {
+            // Save current shoe and profile before exiting
+            if (!currentShoeRecord.rounds.empty())
+            {
+                currentShoeRecord.completed = false; // quit mid-shoe
+            }
+            PlayerProfile profile = player.getProfile();
+            profile.addShoeRecord(currentShoeRecord);
+            player.updateProfile(profile);
+            player.saveProfile();
             window.close();
         }
 
         if (event.type == sf::Event::Resized)
         {
             resizeView(window, gameView);
+        }
+
+        if(event.type == sf::Event::MouseButtonPressed)
+        {
+            if(event.mouseButton.button == sf::Mouse::Left &&
+               slider.contains(sf::Vector2f(
+                   static_cast<float>(event.mouseButton.x),
+                   static_cast<float>(event.mouseButton.y))))
+            {
+                hudState.riskSliderDragging = true;
+            }
+        }
+
+        if(event.type == sf::Event::MouseButtonReleased &&
+           event.mouseButton.button == sf::Mouse::Left &&
+           hudState.riskSliderDragging)
+        {
+            hudState.riskSliderDragging = false;
+        }
+
+        if(event.type == sf::Event::MouseMoved && hudState.riskSliderDragging)
+        {
+            sf::Vector2f mousePos(
+                static_cast<float>(event.mouseMove.x),
+                static_cast<float>(event.mouseMove.y)
+            );
+
+            float frac = (mousePos.x - slider.left) / slider.width;
+            frac = std::max(0.0f, std::min(1.0f, frac));
+
+            hudState.kellyFraction = frac;
+            kellyFraction = frac;
         }
 
         if(event.type !=
@@ -171,6 +216,17 @@ void Game::processEvents()
                 case sf::Keyboard::Down:
                     decreaseBet();
                     break;
+
+                case sf::Keyboard::Right:
+                {
+                    float tc = findTrueCount();
+                    int optimal = calculateOptimalBet(tc, player.getBankroll() + player.hands[0].getBet(),
+                                                      Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
+                    player.hands[0].setBet(optimal);
+                    std::cout << "Optimal bet (TC=" << tc << ") set to "
+                              << optimal << ".\n";
+                    break;
+                }
 
                 case sf::Keyboard::Enter:
                     confirmBet();
@@ -254,17 +310,25 @@ void Game::processEvents()
             {
                 deck.create(Constants::NUM_DECKS);
                 deck.shuffle();
-                currentShoeRecord.deck = deck;
+                currentShoeRecord.initialDeck = deck.getCards();
 
                 gameState =
                     GameState::Started;
-            } 
-             
-            if(roundState == RoundState::PlayerTurn){ 
-                surrender();
+
+
+
+
             }else if(roundState == RoundState::Cleanup)
             {
                 nextRound();
+            }
+        }
+
+        if(event.key.code ==
+           sf::Keyboard::G)
+        {
+            if(roundState == RoundState::PlayerTurn){ 
+                surrender();
             }
         }
     }
@@ -324,12 +388,13 @@ void Game::updateHUDState()
 
     hudState.cardsRemaining = deck.size();
 
-    //hudState.statusMessage = gameMessage;
+    hudState.kellyFraction = kellyFraction;
+    
+    hudState.statusMessage = gameMessage;
 
-    //uh-oh, pointers
-    //hudState.playerStats = &playerStats;
+    hudState.playerStats = &getStats();
 
-    //hudState.currentShoe = &currentShoeRecord;
+    hudState.currentShoe = &currentShoeRecord;
 }
 
 
@@ -368,7 +433,7 @@ void Game::hit()
         hand.setFinished(true);
     }
 
-    currentRoundRecord.actionSequence.push_back("H");
+    handActions[player.currentHand].push_back("H");
 }
 
 
@@ -382,7 +447,7 @@ void Game::stand()
         <<".\n";
     hand.setFinished(true);
     
-    currentRoundRecord.actionSequence.push_back("S");    
+    handActions[player.currentHand].push_back("S");    
 }
 
 
@@ -403,6 +468,13 @@ void Game::doubleDown()
 
     hand.setBet(initalbet * 2);
     dealCardToPlayer(hand);
+
+    // Track double stats
+    PlayerStats& stats = getStats();
+    stats.doubles++;
+    stats.betsPlaced++;
+    stats.betSum += initalbet;
+
     std::cout 
         << "Doubling "
         << initalbet << " to " << hand.getBet()
@@ -412,9 +484,8 @@ void Game::doubleDown()
 
     hand.setFinished(true);
     
-    currentRoundRecord.actionSequence.push_back("D");
-}
-
+        handActions[player.currentHand].push_back("D");
+    }
 
 
 void Game::split()
@@ -441,12 +512,19 @@ void Game::split()
         <<"s.\n";
     newHand.addCard(splitCard);
 
-    currentRoundRecord.actionSequence.push_back("P");
+    handActions[player.currentHand].push_back("P");
 
     dealCardToPlayer(hand);
     player.hands.push_back(newHand);
+    handActions.push_back({}); // new action vector for the split hand
     hand.setSplit(true);
     newHand.setSplit(true);
+
+    // Track split stats
+    PlayerStats& stats = getStats();
+    stats.splits++;
+    stats.betsPlaced++;
+    stats.betSum += hand.getBet(); // new hand inherits bet amount
 }
 
 void Game::surrender()
@@ -467,7 +545,7 @@ void Game::surrender()
     hand.setSurrendered(true);
     hand.setFinished(true);
 
-    currentRoundRecord.actionSequence.push_back("R");
+    handActions[player.currentHand].push_back("R");
 }
 
 
@@ -501,6 +579,31 @@ void Game::decreaseBet()
     }
 }
 
+int Game::calculateOptimalBet(float trueCount, int bankroll, int minBet, int maxBet) const
+{
+    // Only use positive edge (TC >= 2)
+    if (trueCount < 2.0f)
+    {
+        return minBet;
+    }
+
+    // Step 1: Calculate player edge for H17, 3:2 conditions
+    // Player Edge = 0.005 * (TC - 1) - 0.0005
+    float playerEdge = 0.005f * (trueCount - 1.0f) - 0.0005f;
+
+    // Step 2: Apply 1/3 Kelly fraction to hit 3% Risk of Ruin
+    float kellyFraction = 0.33f;
+
+    // Step 3: Raw bet = KellyFraction * Bankroll * PlayerEdge
+    float rawBet = kellyFraction * static_cast<float>(bankroll) * playerEdge;
+
+    // Step 4: Clamp to table limits
+    int wager = static_cast<int>(rawBet);
+    wager = std::max(minBet, std::min(maxBet, wager));
+
+    return wager;
+}
+
 void Game::confirmBet()
 {
     int currentBet = player.hands[0].getBet();
@@ -515,6 +618,12 @@ void Game::confirmBet()
     }
 
     initalBet = currentBet;
+
+    // Track bet stats
+    PlayerStats& stats = getStats();
+    stats.betsPlaced++;
+    stats.betSum += currentBet;
+
     std::cout << "You bet "
         << player.hands[player.currentHand].getBet()
         << ". Your remaining bankroll is: "
@@ -594,9 +703,6 @@ void Game::deal()
     dealCardToPlayer(player.hands[0]);
     dealCardToDealer();
 
-    currentRoundRecord.player = player.hands[player.currentHand];
-    currentRoundRecord.dealer = dealer;
-
     roundState = RoundState::PlayerTurn;
 
     
@@ -655,11 +761,15 @@ void Game::evaluateBlackjack()
         roundState = RoundState::PlayerTurn;
     }
 
-    if (hand.isBlackjack())
+    // Only natural (non-split) blackjack pays 3:2
+    if (hand.isBlackjack() && !hand.isSplit())
     {
         player.winBet(bet * Constants::BLACKJACK_PAYOUT);
 
         std::cout << "Blackjack!\n";
+
+        // Track blackjack (non-split only)
+        getStats().blackjacks++;
 
         roundState = RoundState::DealerTurn;
     }
@@ -736,9 +846,7 @@ void Game::dealerTurn()
     bool doNotDraw = false;
     int numBusted = 0;
     for(Hand hand: player.hands){
-        if((hand.isBlackjack() && !hand.isSplit())
-            || (hand.isSurrendered() && !hand.isSplit())
-        ){
+        if(hand.isBlackjack() && !hand.isSplit()){
             doNotDraw = true;
         }
 
@@ -750,7 +858,10 @@ void Game::dealerTurn()
         doNotDraw = true;
 
     
-    while(dealer.getValue() < Constants::DEALER_STAND && !doNotDraw)
+    // Hit soft 17 (H17 rule): dealer must draw when total is 17 and soft.
+    while((dealer.getValue() < Constants::DEALER_STAND ||
+           (dealer.getValue() == Constants::DEALER_STAND && dealer.isSoft())) &&
+           !doNotDraw)
     {
         std::cout
         << "Dealer has "
@@ -813,6 +924,10 @@ void Game::dealerTurn()
         gameState =
             GameState::GameOver;
 
+        // End of shoe stats
+        getStats().shoesFinished++;
+        shoeCumulativeWinLoss = 0; // reset for next shoe
+
         //do end game saving here
 
         PlayerProfile profile = player.getProfile();
@@ -831,36 +946,107 @@ void Game::dealerTurn()
 
 void Game::evaluateHands()
 {
-    int index = 1;
-    for (Hand hand : player.hands){
- 
-        std::cout << "Entering evaluateHands() on hand " << index << ". Bankroll = "<< player.getBankroll() << std::endl;
-        currentRoundRecord.wager += hand.getBet();
-        
-        if (hand.isSurrendered()){
-            player.winBet(hand.getBet() / 2); // return 1/2 inital bet
-            currentRoundRecord.payout += (hand.getBet() / 2);
-        }else  
-        if (hand.isBust() || (hand.getValue() < dealer.getValue() && !dealer.isBust())){
-            player.loseBet();
-        }else
-        if(hand.getValue() > dealer.getValue() || dealer.isBust()){
-            player.winBet(hand.getBet() * 2); // return inital bet + payment
-            currentRoundRecord.payout += hand.getBet();
-        }else  {
-            player.pushBet(hand.getBet()); //return inital bet
+    PlayerStats& stats = getStats();
+
+    // Build the new RoundRecord
+    currentRoundRecord.dealerCards.clear();
+    for (size_t i = 0; i < dealer.size(); i++)
+        currentRoundRecord.dealerCards.push_back(dealer.getCard(i));
+
+    currentRoundRecord.playerHands.clear();
+    currentRoundRecord.runningCount = runningCount;
+    currentRoundRecord.trueCount = findTrueCount();
+    currentRoundRecord.cardsRemaining = deck.size();
+    currentRoundRecord.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
+    // Evaluate each hand
+    for (size_t handIndex = 0; handIndex < player.hands.size(); handIndex++)
+    {
+        const Hand& hand = player.hands[handIndex];
+
+        std::cout << "Entering evaluateHands() on hand " << (handIndex+1)
+                  << ". Bankroll = " << player.getBankroll() << std::endl;
+
+        HandOutcome outcome;
+        outcome.wager = hand.getBet();
+        outcome.actions = handActions[handIndex];
+
+        int netProfitOnHand = 0;
+
+        if (hand.isSurrendered())
+        {
+            player.winBet(hand.getBet() / 2);
+            outcome.payout = hand.getBet() / 2;
+            outcome.won = false;
+            stats.losses++;
+            netProfitOnHand = hand.getBet() / 2 - hand.getBet();
         }
-        index++;
-    } 
+        else if (hand.isBust() || (hand.getValue() < dealer.getValue() && !dealer.isBust()))
+        {
+            player.loseBet();
+            outcome.payout = 0;
+            outcome.won = false;
+            stats.losses++;
+            netProfitOnHand = -hand.getBet();
+        }
+        else if (hand.getValue() > dealer.getValue() || dealer.isBust())
+        {
+            player.winBet(hand.getBet() * 2);
+            outcome.payout = hand.getBet();
+            outcome.won = true;
+            stats.wins++;
+            netProfitOnHand = hand.getBet();
+        }
+        else
+        {
+            player.pushBet(hand.getBet());
+            outcome.payout = hand.getBet();
+            outcome.won = true; // push counts as non-loss
+            stats.pushes++;
+            netProfitOnHand = 0;
+        }
+
+        // Capture the cards for this hand
+        for (size_t c = 0; c < hand.size(); c++)
+            outcome.cards.push_back(hand.getCard(c));
+
+        currentRoundRecord.playerHands.push_back(outcome);
+
+        // Track hands finished
+        stats.handsFinished++;
+
+        // Track greatest single hand win
+        if (netProfitOnHand > stats.greatestHand)
+            stats.greatestHand = netProfitOnHand;
+
+        // Update cumulative trackers
+        shoeCumulativeWinLoss += netProfitOnHand;
+        sessionCumulativeWinLoss += netProfitOnHand;
+
+        // Update shoe-level extremes
+        if (shoeCumulativeWinLoss > stats.greatestWin)
+            stats.greatestWin = shoeCumulativeWinLoss;
+        if (shoeCumulativeWinLoss < stats.greatestLoss)
+            stats.greatestLoss = shoeCumulativeWinLoss;
+
+        // Update session-level extremes
+        if (sessionCumulativeWinLoss > stats.greatestSessionWin)
+            stats.greatestSessionWin = sessionCumulativeWinLoss;
+        if (sessionCumulativeWinLoss < stats.greatestSessionLoss)
+            stats.greatestSessionLoss = sessionCumulativeWinLoss;
+    }
 
     std::cout << "Exiting evaluation with " << player.getBankroll() << std::endl;
-    
-    currentRoundRecord.won = currentRoundRecord.isWin();
+
+    // Save to profile and shoe record
     PlayerProfile profile = player.getProfile();
     profile.addRoundRecord(currentRoundRecord);
     player.updateProfile(profile);
 
     currentShoeRecord.rounds.push_back(currentRoundRecord);
+
+    handActions.clear();
     roundState = RoundState::Cleanup;
 }
 
@@ -1151,7 +1337,7 @@ void Game::drawChips()
         
         sf::Text text;
 
-        text.setFont(font);
+        text.setFont(FontManager::get());
 
         text.setCharacterSize(16);
 
@@ -1243,7 +1429,7 @@ void Game::drawDeck()
 void Game::drawInsurance(){
     sf::Text text;
 
-    text.setFont(font);
+    text.setFont(FontManager::get());
     text.setCharacterSize(12);
     text.setFillColor(sf::Color::White);
 

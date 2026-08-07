@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <stdexcept>
 #include <cstddef>
 #include "Card.hpp"
 
@@ -14,43 +15,38 @@ public:
 
     [[nodiscard]] Card draw();
     const Card& getCard(std::size_t index) const;
+    const std::vector<Card>& getCards() const;
 
     [[nodiscard]] bool empty() const;
     [[nodiscard]] std::size_t size() const;
 
     [[nodiscard]] bool reachedCutCard() const;
+
+    /**
+     * @brief Returns the shoe record from the previous cycle.
+     * 
+     * This should be called BEFORE reshuffling in your game logic.
+     * Returns nullptr if there is no previous record (e.g., start of game).
+     * Resets the internal flag so the record is only retrieved once.
+     */
+    [[nodiscard]] const std::vector<Card>* getPreviousShoeRecord();
+
+    /**
+     * @brief Returns the shoe record currently in play (or most recently shuffled).
+     * 
+     * Use this when the player exits the game to save the final shoe state.
+     */
+    [[nodiscard]] const std::vector<Card>& getFinalShoeRecord() const;
+
 private:
     std::vector<Card> cards;
 
     bool cutCardReached = false;
 
-};
-
-/*
-
-    friend void to_json(nlohmann::json&, const Deck&);
-    friend void from_json(const nlohmann::json&, Deck&);
-
-
+    // The record of the currently active shoe
+    std::vector<Card> activeShoeRecord;
     
-inline void to_json(json& j, const Deck& d)
-{
-    std::vector<Card> cards;
-
-    for(size_t i=0;i<d.size();i++)
-        cards.push_back(d.getCard(i));
-
-    j =
-    {
-        {"cards",cards}
-    };
-}
-inline void from_json(const json& j, Deck& d)
-{
-    d = Deck();
-
-    for(const Card& c : j.at("cards"))
-        d.draw(); // <-- impossible
-}
-
-*/
+    // The record of the previous shoe, waiting to be saved
+    std::vector<Card> previousShoeRecord;
+    bool hasPreviousRecord = false;
+};

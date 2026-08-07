@@ -4,7 +4,7 @@
 
 #include "Panel.hpp"
 #include "HUDState.hpp"
-
+#include "StatBox.hpp"
 
 class HUD
 {
@@ -25,6 +25,9 @@ public:
     bool leftVisible() const;
     bool rightVisible() const;
 
+    // Expose slider bounds so Game can handle input
+    const sf::FloatRect& getRiskSliderBounds() const;
+
 private:
 
     bool m_showLeft = true;
@@ -37,4 +40,22 @@ private:
     StatBox* m_bankrollBox = nullptr;
     StatBox* m_betBox = nullptr;
     StatBox* m_statusBox = nullptr;
+
+    // Counting/stat boxes
+    StatBox* m_countBox = nullptr;
+    StatBox* m_trueCountBox = nullptr;
+    StatBox* m_cardsRemainingBox = nullptr;
+    StatBox* m_streakBox = nullptr;
+
+    // Slider state from HUDState (for rendering)
+    float sliderValue = 0.33f;
+    bool sliderDragging = false;
+
+    // Slider geometry (owned by HUD)
+    sf::FloatRect riskSliderBounds;
+
+    // Persistent slider label (set font once, reuse every frame)
+    sf::Text m_sliderLabel;
+
+    void drawRiskSlider(sf::RenderWindow& window);
 };

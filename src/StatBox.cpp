@@ -1,4 +1,5 @@
 #include "StatBox.hpp"
+#include "Constants.hpp"
 
 StatBox::StatBox()
 {
@@ -10,11 +11,13 @@ void StatBox::initialize(sf::Font& font, const std::string& title)
     m_titleText = title;
 
     m_title.setFont(font);
-    m_title.setCharacterSize(18);
+    m_title.setColor(sf::Color::White);
+    m_title.setCharacterSize(Constants::HUD_FONT_SIZE);
     m_title.setString(title);
 
     m_value.setFont(font);
-    m_value.setCharacterSize(24);
+    m_value.setColor(sf::Color::White);
+    m_value.setCharacterSize(Constants::HUD_FONT_SIZE);
 }
 
 void StatBox::setTitle(const std::string& title)
@@ -38,7 +41,7 @@ void StatBox::setPosition(sf::Vector2f position)
 
     m_value.setPosition(
         position.x,
-        position.y + 22.f);
+        position.y + 18.f);
 }
 
 void StatBox::draw(sf::RenderWindow& window)

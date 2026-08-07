@@ -8,6 +8,12 @@ namespace Constants
     constexpr const char* WINDOW_TITLE = "Blackjack";
     constexpr const float FONT_SIZE = 14.f;
 
+    // Panel layout
+    constexpr float PANEL_MARGIN = 15.f;
+
+    // HUD text font size
+    constexpr int HUD_FONT_SIZE = 20;
+
     // Card sprite sheet
     constexpr int CARD_WIDTH  = 64;
     constexpr int CARD_HEIGHT = 64;
@@ -42,10 +48,14 @@ namespace Constants
     constexpr float CHIP_RADIUS = 18.f;
     constexpr float CHIP_SPACING = 6.f;
 
-
-    // Basic Strategy 
+    // Persistence
+    constexpr const char* PLAYER_FILE = "/saves/player_profile.json";
+ 
+    
 }
 
+
+// Basic Strategy 
 namespace BasicStrategy {
     enum class Action
 {

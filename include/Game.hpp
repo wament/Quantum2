@@ -27,7 +27,6 @@ enum class GameState
     GameOver
 };
 
-
 class Game
 {
 public:
@@ -35,7 +34,7 @@ public:
     Game();
 
     void run();
-
+    std::string gameMessage;
 private:
     float findTrueCount() const
     {
@@ -59,6 +58,18 @@ private:
     HUD hud;
     HUDState hudState;
 
+    // ---------------- Kelly / Risk of Ruin Slider ----------------
+
+    float kellyFraction = 0.33f; // 1/3 Kelly ≈ 3% RoR
+
+    struct SliderState
+    {
+        bool dragging = false;
+        sf::FloatRect bounds; // x, y, w, h (w is track width)
+        float value = 0.33f;  // 0.0..1.0 = Kelly fraction
+    };
+
+    SliderState riskSlider;
     // ---------------- Blackjack ----------------
 
     Deck deck;
@@ -78,6 +89,18 @@ private:
     RoundRecord currentRoundRecord;
     ShoeRecord currentShoeRecord;
 
+    // Per-hand action tracking (parallel to player.hands)
+    std::vector<std::vector<std::string>> handActions;
+
+    // ---------------- Stats Tracking ----------------
+
+    int shoeCumulativeWinLoss = 0;   // running win/loss for current shoe
+    int sessionCumulativeWinLoss = 0; // running win/loss for entire session
+
+    PlayerStats& getStats()
+    {
+        return player.getStats();
+    }
 
     // ---------------- Setup ----------------
 
@@ -104,6 +127,9 @@ private:
     void increaseBet();
     void decreaseBet();
     void confirmBet();
+
+    // Kelly-based optimal bet calculation (uses kellyFraction)
+    int calculateOptimalBet(float trueCount, int bankroll, int minBet, int maxBet) const;
 
     // ---------------- Player Actions ----------------
 

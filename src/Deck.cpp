@@ -8,6 +8,9 @@ void Deck::create(int numberOfDecks)
 {
     cards.clear();
     cutCardReached = false;
+    activeShoeRecord.clear();
+    previousShoeRecord.clear();
+    hasPreviousRecord = false;
 
     for (int deck = 0; deck < numberOfDecks; deck++)
     {
@@ -26,6 +29,15 @@ void Deck::create(int numberOfDecks)
 
 void Deck::shuffle()
 {
+    // 1. If we already have an active record from a prior shoe,
+    //    move it to "previous" so it's ready to be saved before we start this new one.
+    if (!activeShoeRecord.empty())
+    {
+        previousShoeRecord = activeShoeRecord;
+        hasPreviousRecord = true;
+    }
+
+    // 2. Perform the shuffle
     std::shuffle(
         cards.begin(),
         cards.end(),
@@ -41,6 +53,9 @@ void Deck::shuffle()
         cards.begin() + cutPosition,
         { Constants::CUT_CARD_VALUE, Suit::Spades }
     );
+
+    // 3. Capture the new active shoe record immediately
+    activeShoeRecord = cards;
 }
 
 Card Deck::draw()
@@ -64,6 +79,11 @@ const Card& Deck::getCard(std::size_t index) const
     return cards.at(index);
 }
 
+const std::vector<Card>& Deck::getCards() const
+{
+    return cards;
+}
+
 bool Deck::empty() const
 {
     return cards.empty();
@@ -77,4 +97,21 @@ std::size_t Deck::size() const
 bool Deck::reachedCutCard() const
 {
     return cutCardReached;
+}
+
+const std::vector<Card>* Deck::getPreviousShoeRecord()
+{
+    if (!hasPreviousRecord)
+    {
+        return nullptr;
+    }
+
+    // Mark as retrieved so we don't save it twice
+    hasPreviousRecord = false;
+    return &previousShoeRecord;
+}
+
+const std::vector<Card>& Deck::getFinalShoeRecord() const
+{
+    return activeShoeRecord;
 }

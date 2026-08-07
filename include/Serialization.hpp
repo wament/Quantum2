@@ -10,4 +10,151 @@
 
 using json = nlohmann::json;
 
+// Card serialization
+inline void to_json(json& j, const Card& c)
+{
+    j = {
+        {"value", c.value},
+        {"suit", static_cast<int>(c.suit)}
+    };
+}
 
+inline void from_json(const json& j, Card& c)
+{
+    c.value = j.at("value").get<int>();
+    c.suit = static_cast<Suit>(j.at("suit").get<int>());
+}
+
+// Suit serialization (helper, in case needed standalone)
+inline void to_json(json& j, const Suit& s)
+{
+    j = static_cast<int>(s);
+}
+
+inline void from_json(const json& j, Suit& s)
+{
+    s = static_cast<Suit>(j.get<int>());
+}
+
+// PlayerStats serialization
+inline void to_json(json& j, const PlayerStats& s)
+{
+    j = {
+        {"shoesFinished", s.shoesFinished},
+        {"handsFinished", s.handsFinished},
+        {"wins", s.wins},
+        {"losses", s.losses},
+        {"pushes", s.pushes},
+        {"blackjacks", s.blackjacks},
+        {"splits", s.splits},
+        {"doubles", s.doubles},
+        {"betsPlaced", s.betsPlaced},
+        {"betSum", s.betSum},
+        {"greatestHand", s.greatestHand},
+        {"greatestWin", s.greatestWin},
+        {"greatestLoss", s.greatestLoss},
+        {"greatestSessionWin", s.greatestSessionWin},
+        {"greatestSessionLoss", s.greatestSessionLoss}
+    };
+}
+
+inline void from_json(const json& j, PlayerStats& s)
+{
+    j.at("shoesFinished").get_to(s.shoesFinished);
+    j.at("handsFinished").get_to(s.handsFinished);
+    j.at("wins").get_to(s.wins);
+    j.at("losses").get_to(s.losses);
+    j.at("pushes").get_to(s.pushes);
+    j.at("blackjacks").get_to(s.blackjacks);
+    j.at("splits").get_to(s.splits);
+    j.at("doubles").get_to(s.doubles);
+    j.at("betsPlaced").get_to(s.betsPlaced);
+    j.at("betSum").get_to(s.betSum);
+    j.at("greatestHand").get_to(s.greatestHand);
+    j.at("greatestWin").get_to(s.greatestWin);
+    j.at("greatestLoss").get_to(s.greatestLoss);
+    j.at("greatestSessionWin").get_to(s.greatestSessionWin);
+    j.at("greatestSessionLoss").get_to(s.greatestSessionLoss);
+}
+
+// HandOutcome serialization
+inline void to_json(json& j, const HandOutcome& h)
+{
+    j = {
+        {"cards", h.cards},
+        {"actions", h.actions},
+        {"wager", h.wager},
+        {"payout", h.payout},
+        {"won", h.won}
+    };
+}
+
+inline void from_json(const json& j, HandOutcome& h)
+{
+    j.at("cards").get_to(h.cards);
+    j.at("actions").get_to(h.actions);
+    j.at("wager").get_to(h.wager);
+    j.at("payout").get_to(h.payout);
+    j.at("won").get_to(h.won);
+}
+
+// RoundRecord serialization
+inline void to_json(json& j, const RoundRecord& r)
+{
+    j = {
+        {"dealerCards", r.dealerCards},
+        {"playerHands", r.playerHands},
+        {"runningCount", r.runningCount},
+        {"trueCount", r.trueCount},
+        {"cardsRemaining", r.cardsRemaining},
+        {"timestamp", r.timestamp}
+    };
+}
+
+inline void from_json(const json& j, RoundRecord& r)
+{
+    j.at("dealerCards").get_to(r.dealerCards);
+    j.at("playerHands").get_to(r.playerHands);
+    j.at("runningCount").get_to(r.runningCount);
+    j.at("trueCount").get_to(r.trueCount);
+    j.at("cardsRemaining").get_to(r.cardsRemaining);
+    j.at("timestamp").get_to(r.timestamp);
+}
+
+// ShoeRecord serialization
+inline void to_json(json& j, const ShoeRecord& s)
+{
+    j = {
+        {"initialDeck", s.initialDeck},
+        {"rounds", s.rounds},
+        {"completed", s.completed}
+    };
+}
+
+inline void from_json(const json& j, ShoeRecord& s)
+{
+    j.at("initialDeck").get_to(s.initialDeck);
+    j.at("rounds").get_to(s.rounds);
+    if (j.contains("completed"))
+        j.at("completed").get_to(s.completed);
+    // else defaults to true for backward compatibility
+}
+
+// PlayerProfile serialization
+inline void to_json(json& j, const PlayerProfile& p)
+{
+    j = {
+        {"name", p.name},
+        {"bankroll", p.bankroll},
+        {"stats", p.stats},
+        {"longHistory", p.longHistory}
+    };
+}
+
+inline void from_json(const json& j, PlayerProfile& p)
+{
+    j.at("name").get_to(p.name);
+    j.at("bankroll").get_to(p.bankroll);
+    j.at("stats").get_to(p.stats);
+    j.at("longHistory").get_to(p.longHistory);
+}

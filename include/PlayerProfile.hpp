@@ -8,6 +8,7 @@
 
 
 using json = nlohmann::json;
+
 class PlayerProfile
 {
 public:
@@ -22,9 +23,7 @@ public:
     PlayerStats stats;
     const std::string& getName() const;
     int getBankroll() const; 
-    //void setBankroll(int amount);
-    //void addMoney(int amount);
-    //bool removeMoney(int amount);
+    void setBankroll(int amount); 
 
     // ---------------- Records ----------------
     std::vector<RoundRecord> getCurrentHistory();
@@ -37,52 +36,10 @@ private:
 
     std::vector<RoundRecord> currentHistory;
     std::vector<ShoeRecord> longHistory;
+
+    // Allow JSON serialization/deserialization
+    friend void to_json(json& j, const PlayerProfile& p);
+    friend void from_json(const json& j, PlayerProfile& p);
 };
 
-/*
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(
-    PlayerStats,
-    shoesFinished,
-    handsFinished,
-    wins,
-    losses,
-    pushes,
-    blackjacks,
-    splits,
-    doubles,
-    betsPlaced,
-    betSum,
-    largestHand,
-    greatestWin,
-    greatestLoss,
-    greatestSessionWin,
-    greatestSessionLoss
-)
 
-
-inline void to_json(json& j,const PlayerProfile& p)
-{
-    j =
-    {
-        {"name",p.getName()},
-        {"bankroll",p.getBankroll()},
-        {"stats",p.stats},
-        {"currentHistory",p.currentHistory},
-        {"longHistory",p.longHistory}
-    };
-}
-
-void save()
-{
-    json j = *this;
-    std::ofstream(filename) << j.dump(4);
-}
-
-PlayerProfile load()
-{
-    json j;
-    std::ifstream(filename) >> j;
-
-    return j.get<PlayerProfile>();
-}
-*/

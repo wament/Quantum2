@@ -28,6 +28,10 @@
   - Basic strategy advisor
   - Card counting (Hi-Lo system)
   - Drawing all game elements
+- Tracks PlayerStats live during gameplay (wins, losses, pushes, splits, doubles, etc.)
+- Tracks cumulative win/loss for shoe and session (shoeCumulativeWinLoss, sessionCumulativeWinLoss)
+- Captures initial deck after shuffle for later reconstruction
+- Builds per-hand action vectors for RoundRecord (hit, stand, double, split, surrender)
 
 #### Card (Card.hpp/cpp)
 - Simple struct: value (1-13) + Suit enum
@@ -53,8 +57,8 @@
 #### Player (Player.hpp/cpp)
 - Player instance with bankroll (starts at 1000)
 - Properties: name, bankroll, hands vector, currentHand index
-- Methods: placeBet(), winBet(), loseBet(), pushBet(), resetRound()
-- Profile management (partially implemented)
+- Methods: placeBet(), winBet(), loseBet(), pushBet(), resetRound(), getStats()
+- Profile management via PlayerProfile
 - Note: loseBet() is currently empty - no money deducted on loss!
 
 #### PlayerProfile (PlayerProfile.hpp/cpp)
@@ -66,18 +70,22 @@
 #### HUD (HUD.hpp/cpp)
 - Heads-up display with 3 panels: left, right, bottom
 - Properties: m_showLeft, m_showRight, Panel instances
-- Methods: initialize(), update(HUDState), draw(), toggle panels
-- Update method mostly commented out - not fully implemented
+- Methods: initialize(sf::Font&), update(HUDState), draw(), toggle panels
+- Bottom panel has Bankroll, Bet, Status statboxes
+- Panels drawn in order: left (if visible), right (if visible), bottom (always visible)
+- Note: initialize() must be called with font BEFORE adding statboxes to panels
 
 #### Panel (Panel.hpp/cpp)
 - UI container with background rectangle and stat boxes
 - Properties: m_background (RectangleShape), m_stats (vector of StatBox*)
-- Methods: initialize(), setBounds(), draw()
+- Methods: initialize(sf::Font&), setBounds(), addStatBox(title), draw()
+- initialize() applies font to existing statboxes — must be called before adding statboxes or call StatBox::initialize() afterward
 
 #### StatBox (StatBox.hpp/cpp)
 - Individual display element: title + value text
-- Properties: m_title, m_value (SFML Text)
-- Methods: initialize(), setValue(), setPosition(), draw()
+- Properties: m_title, m_value (SFML Text), m_titleText
+- Methods: initialize(font, title), setTitle(), setValue(), setPosition(), draw()
+- Bug fix: statboxes must have initialize() called with font after creation, otherwise text doesn't render
 
 #### HUDState (HUDState.hpp)
 - Data struct passed to HUD for display
@@ -91,9 +99,11 @@
 
 #### GameRecord (GameRecord.hpp)
 - Data structures for tracking game history
-- **PlayerStats**: shoesFinished, handsFinished, wins/losses/pushes/blackjacks/splits/doubles, betsPlaced, betSum, largestHand, greatestWin/Loss, greatestSessionWin/Loss
-- **RoundRecord**: dealer hand, player hand, actionSequence, wager, payout, won flag, netProfit()
-- **ShoeRecord**: deck, vector of RoundRecords
+- **PlayerStats**: shoesFinished, handsFinished, wins/losses/pushes/blackjacks/splits/doubles, betsPlaced, betSum, greatestHand, greatestWin/Loss (shoe-level), greatestSessionWin/Loss
+- **HandOutcome**: cards dealt, actions taken, wager, payout, win/loss for a single hand (supports splits)
+- **RoundRecord**: dealerCards, playerHands[], runningCount, trueCount, cardsRemaining, timestamp. Methods: totalWager(), totalPayout(), netProfit(), overallWin()
+- **ShoeRecord**: initialDeck (vector of Card), rounds[]. Enables deck reconstruction at any point via reconstructDeckAtRound()
+- PlayerStats are tracked live during gameplay and persisted via PlayerProfile
 
 #### Constants (Constants.hpp)
 - Central configuration

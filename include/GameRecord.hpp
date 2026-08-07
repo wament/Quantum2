@@ -1,9 +1,11 @@
 #pragma once
 
 #include <vector>
+#include <deque>
 #include <string>
+#include <chrono>
 
-#include "Hand.hpp"
+#include "Card.hpp"
 #include "Deck.hpp"
 
 struct PlayerStats
@@ -18,104 +20,101 @@ struct PlayerStats
     int splits = 0;
     int doubles = 0;
 
-    int betsPlaced = 0;
-    int betSum = 0;
-    int largestHand = 0;
+    int betsPlaced = 0; //+1 for each hand played, and +1 anytime a hand is doubled, or split
+    int betSum = 0; //total sum of bets places
+    int greatestHand = 0; //greatest single hand win
 
-    int greatestWin = 0;
-    int greatestLoss = 0;
+    int greatestWin = 0; //cumulative win for the whole shoe
+    int greatestLoss = 0; //cumulative loss for the whole shoe
 
-    int greatestSessionWin = 0;
-    int greatestSessionLoss = 0;
+    int greatestSessionWin = 0; //cumulative win for all shoes in program session 
+    int greatestSessionLoss = 0; //cumulative loss for all shoes in program session 
 };
 
-
+struct HandOutcome
+{
+    std::vector<Card> cards;
+    std::vector<std::string> actions;
+    int wager = 0;
+    int payout = 0;
+    bool won = false;
+};
 
 struct RoundRecord
 {
-    Hand dealer;
-    Hand player;
+    std::vector<Card> dealerCards;
+    std::vector<HandOutcome> playerHands;
 
-    std::vector<std::string> actionSequence;
+    int runningCount = 0;
+    float trueCount = 0;
+    int cardsRemaining = 0;
 
-    int wager = 0;
-    int payout = 0;
+    long long timestamp = 0;
 
-    bool won = false;
-
-    int netProfit() const
-    {
-        return payout - wager;
-    }
-
-    bool isWin() const 
-    {
-        return netProfit() >= 0; // a push is a win! don't let anyone tell you different.
-    }
+    int totalWager() const;
+    int totalPayout() const;
+    int netProfit() const;
+    bool overallWin() const;
 };
 
-
-
-    //time
-    //$$$
-    //peak count
-    //avg count
-    //hands until TC=2 hit
-    //hands at TC>=2
-    //
 struct ShoeRecord
-{ 
-    Deck deck;
+{
+    std::vector<Card> initialDeck;
     std::vector<RoundRecord> rounds;
+    
+    bool completed = true; // true if cut card reached, false if player quit mid-shoe
 };
 
-/*
-inline void to_json(json& j, const RoundRecord& r)
+// Inline implementations for RoundRecord computed methods
+inline int RoundRecord::totalWager() const
 {
-    j =
+    int sum = 0;
+    for (const auto& hand : playerHands)
+        sum += hand.wager;
+    return sum;
+}
+
+inline int RoundRecord::totalPayout() const
+{
+    int sum = 0;
+    for (const auto& hand : playerHands)
+        sum += hand.payout;
+    return sum;
+}
+
+inline int RoundRecord::netProfit() const
+{
+    return totalPayout() - totalWager();
+}
+
+inline bool RoundRecord::overallWin() const
+{
+    return netProfit() >= 0;
+}
+
+// Reconstructs the deck state at the start of a specific round
+// by removing all cards dealt in rounds [0, roundIndex)
+inline std::deque<Card> reconstructDeckAtRound(
+    const ShoeRecord& shoe, 
+    size_t roundIndex)
+{
+    std::deque<Card> deck(shoe.initialDeck.begin(), shoe.initialDeck.end());
+
+    for (size_t r = 0; r < roundIndex; ++r)
     {
-        {"dealer",r.dealer},
-        {"player",r.player},
-        {"actions",r.actionSequence},
-        {"wager",r.wager},
-        {"payout",r.payout},
-        {"won",r.won}
-    };
+        const auto& round = shoe.rounds[r];
+
+        // Remove dealer cards
+        for (size_t i = 0; i < round.dealerCards.size(); ++i)
+            deck.pop_front();
+
+        // Remove each player hand's cards
+        for (const auto& hand : round.playerHands)
+        {
+            for (size_t i = 0; i < hand.cards.size(); ++i)
+                deck.pop_front();
+        }
+    }
+
+    return deck;
 }
-inline void from_json(const json& j, RoundRecord& r)
-{
-    r.dealer =
-        j.at("dealer");
-
-    r.player =
-        j.at("player");
-
-    r.actionSequence =
-        j.at("actions");
-
-    r.wager =
-        j.at("wager");
-
-    r.payout =
-        j.at("payout");
-
-    r.won =
-        j.at("won");
-}
-inline void to_json(json& j,const ShoeRecord& s)
-{
-    j =
-    {
-        {"deck",s.deck},
-        {"rounds",s.rounds}
-    };
-}
-inline void from_json(const json& j,ShoeRecord& s)
-{
-    s.deck =
-        j.at("deck");
-
-    s.rounds =
-        j.at("rounds");
-}
- */

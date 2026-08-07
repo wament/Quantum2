@@ -28,6 +28,7 @@ public:
     const std::string& getName() const;
     int getBankroll() const;
     PlayerProfile getProfile();
+    PlayerStats& getStats();
     PlayerProfile updateProfile(PlayerProfile profile);
     void saveProfile();
 private:

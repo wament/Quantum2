@@ -32,6 +32,7 @@ target_sources(Blackjack2 PRIVATE
     src/HUD.cpp
     src/Panel.cpp
     src/StatBox.cpp
+    src/FontManager.cpp
 )
 # assets
 add_custom_command(TARGET Blackjack2 POST_BUILD

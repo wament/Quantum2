@@ -50,6 +50,31 @@ bool Hand::isBlackjack() const
            getValue() == 21;
 }
 
+bool Hand::isSoft() const
+{
+    // A hand is "soft" if it contains an Ace counting as 11.
+    // After calculating value, if any Aces remain unconverted,
+    // the hand is soft.
+    int total = 0;
+    int aces = 0;
+
+    for (const Card& card : cards)
+    {
+        total += card.getBlackjackValue();
+
+        if (card.isAce())
+            aces++;
+    }
+
+    while (total > 21 && aces > 0)
+    {
+        total -= 10;
+        aces--;
+    }
+
+    return aces > 0;
+}
+
 bool Hand::isBust() const
 {
     return getValue() > 21;
