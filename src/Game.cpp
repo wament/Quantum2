@@ -41,8 +41,8 @@ PLAYER TURN
   H                Hit
   S                Stand
   D                Double Down
-  P                Split
-  U                Surrender
+      P                Split
+      Y                Surrender
 
 ROUND / GAME
 ------------
@@ -220,7 +220,7 @@ void Game::processEvents()
                 case sf::Keyboard::Left:
                 {
                     float tc = findTrueCount();
-                    int optimal = calculateOptimalBet(tc, player.getBankroll() + player.hands[0].getBet(),
+                    int optimal = calculateOptimalBet(tc, kellyFraction, player.getBankroll() + player.hands[0].getBet(),
                                                       Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
                     player.hands[0].setBet(optimal);
                     std::cout << "Optimal bet (TC=" << tc << ") set to "
@@ -318,8 +318,11 @@ void Game::processEvents()
 
 
 
-            }else if(roundState == RoundState::Cleanup)
+            }else if(roundState == RoundState::Cleanup &&
+                     gameState != GameState::LastHand)
             {
+                // Don't start a new round if cut card was reached -
+                // the shoe ends after this hand
                 nextRound();
             }
         }
@@ -418,12 +421,6 @@ void Game::hit()
         << "Hit! You have "
         << hand.getValue()
         <<". " << std::endl;
-
-    if(deck.reachedCutCard())
-    {
-        gameState =
-            GameState::LastHand;
-    }
  
     if(hand.isBust())
     {
@@ -515,6 +512,7 @@ void Game::split()
     handActions[player.currentHand].push_back("P");
 
     dealCardToPlayer(hand);
+
     player.hands.push_back(newHand);
     handActions.push_back({}); // new action vector for the split hand
     hand.setSplit(true);
@@ -579,25 +577,21 @@ void Game::decreaseBet()
     }
 }
 
-int Game::calculateOptimalBet(float trueCount, int bankroll, int minBet, int maxBet) const
+int Game::calculateOptimalBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet) const
 {
-    // Only use positive edge (TC >= 2)
+    // Only use positive edge (TC >= 2) TC = 1 is fair. TC < 1 the house has the advantage.
     if (trueCount < 2.0f)
     {
         return minBet;
     }
 
-    // Step 1: Calculate player edge for H17, 3:2 conditions
+    // Calculate player edge for H17, 3:2 conditions
     // Player Edge = 0.005 * (TC - 1) - 0.0005
-    float playerEdge = 0.005f * (trueCount - 1.0f) - 0.0005f;
+    float playerEdge = 0.005f * (trueCount - 1.0f) - 0.0005f; 
 
-    // Step 2: Apply 1/3 Kelly fraction to hit 3% Risk of Ruin
-    float kellyFraction = 0.33f;
-
-    // Step 3: Raw bet = KellyFraction * Bankroll * PlayerEdge
+    // Raw bet = KellyFraction * Bankroll * PlayerEdge
     float rawBet = kellyFraction * static_cast<float>(bankroll) * playerEdge;
-
-    // Step 4: Clamp to table limits
+ 
     int wager = static_cast<int>(rawBet);
     wager = std::max(minBet, std::min(maxBet, wager));
 
@@ -705,8 +699,6 @@ void Game::deal()
 
     roundState = RoundState::PlayerTurn;
 
-    
-    
     if (dealer.getDealerUpCard().isAce()){
         std::cout << "offered insurance" << std::endl;
         roundState = RoundState::OfferInsurance; 
@@ -813,14 +805,29 @@ void Game::offerInsurance()
 }
 
 
+// Central helper: apply Hi-Lo count update and check for cut card after drawing
+void Game::afterDraw(Card card)
+{
+    if (card.getBlackjackValue() > 1 && card.getBlackjackValue() < 7)
+    {
+        runningCount++;
+    }
+    else if (card.getBlackjackValue() > 9)
+    {
+        runningCount--;
+    }
+
+    if (deck.reachedCutCard())
+    {
+        gameState = GameState::LastHand;
+    }
+}
+
+
 void Game::dealCardToPlayer(Hand& hand)
 {
     Card card = deck.draw();
-    if(card.getBlackjackValue() > 1 && card.getBlackjackValue() < 7 ){
-        runningCount++;
-    }else if(card.getBlackjackValue() > 9){
-        runningCount--;
-    }
+    afterDraw(card);
     hand.addCard(card);
 }
 
@@ -828,11 +835,7 @@ void Game::dealCardToPlayer(Hand& hand)
 void Game::dealCardToDealer()
 {
     Card card = deck.draw();
-    if(card.getBlackjackValue() > 1 && card.getBlackjackValue() < 7 ){
-        runningCount++;
-    }else if(card.getBlackjackValue() > 9){
-        runningCount--;
-    }
+    afterDraw(card);
     dealer.addCard(card);
 }
 

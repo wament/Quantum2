@@ -129,7 +129,7 @@ private:
     void confirmBet();
 
     // Kelly-based optimal bet calculation (uses kellyFraction)
-    int calculateOptimalBet(float trueCount, int bankroll, int minBet, int maxBet) const;
+    int calculateOptimalBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet) const;
 
     // ---------------- Player Actions ----------------
 
@@ -153,6 +153,9 @@ private:
 
 
     // ---------------- Dealer ----------------
+
+    // Central helper: update running count and check cut card after each draw
+    void afterDraw(Card card);
 
     void dealCardToPlayer(Hand& hand);
     

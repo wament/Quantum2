@@ -102,7 +102,7 @@ void HUD::updateControls(sf::Font& font)
     // Build a single-line controls display
     std::string controls = 
         " [Up/Down | Adjust Bet]   [ <- | Auto Kelly]   [ -> | Confirm]                     "
-        "[H | Hit]    [S | Stand]    [D | Double]    [P | Split]    [U | Surrender]                     "
+        "[H | Hit]    [S | Stand]    [D | Double]    [P | Split]    [Y | Surrender]                     "
         "[R | Next Round/Restart]";
     
     m_controlsText.setString(controls);

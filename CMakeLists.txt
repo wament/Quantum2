@@ -3,6 +3,9 @@ cmake_minimum_required(VERSION 3.10)
 
 project(Blackjack2 VERSION 0.1.0 LANGUAGES CXX)
 
+# Enable testing
+enable_testing()
+
 add_executable(Blackjack2)
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~ // libraries // ~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -83,4 +86,37 @@ add_custom_command(TARGET Blackjack2 POST_BUILD
         ${CMAKE_SOURCE_DIR}/assets
         $<TARGET_FILE_DIR:Blackjack2>/assets
 )
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~ // testing // ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+include(FetchContent)
+
+FetchContent_Declare(
+    Catch2
+    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+    GIT_TAG v3.6.0
+)
+
+FetchContent_MakeAvailable(Catch2)
+
+add_executable(Blackjack2Tests)
+
+target_link_libraries(Blackjack2Tests PRIVATE Catch2::Catch2WithMain)
+
+target_include_directories(Blackjack2Tests PRIVATE include)
+
+target_sources(Blackjack2Tests PRIVATE
+    src/Card.cpp
+    src/Deck.cpp
+    src/Hand.cpp
+    tests/test_card.cpp
+    tests/test_deck.cpp
+    tests/test_hand.cpp
+)
+
+include(CTest)
+include(Catch)
+catch_discover_tests(Blackjack2Tests)
+
+set_target_properties(Blackjack2Tests PROPERTIES CXX_STANDARD 17)
 
