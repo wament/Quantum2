@@ -57,5 +57,10 @@ private:
     // Persistent slider label (set font once, reuse every frame)
     sf::Text m_sliderLabel;
 
+    // Controls display
+    sf::Text m_controlsText;
+
     void drawRiskSlider(sf::RenderWindow& window);
+
+    void updateControls(sf::Font& font);
 };

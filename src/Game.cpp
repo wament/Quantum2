@@ -33,8 +33,8 @@ BETTING PHASE
 -------------
   ↑  Up Arrow      Increase Bet
   ↓  Down Arrow    Decrease Bet
-  →  Right Arrow   Auto Kelly Bet (3% RoR, H17, 3:2)
-  Enter            Confirm Bet
+  <-  Right Arrow   Auto Kelly Bet (3% RoR, H17, 3:2)
+  ->            Confirm Bet
 
 PLAYER TURN
 -----------
@@ -42,7 +42,7 @@ PLAYER TURN
   S                Stand
   D                Double Down
   P                Split
-  G                Surrender
+  U                Surrender
 
 ROUND / GAME
 ------------
@@ -217,7 +217,7 @@ void Game::processEvents()
                     decreaseBet();
                     break;
 
-                case sf::Keyboard::Right:
+                case sf::Keyboard::Left:
                 {
                     float tc = findTrueCount();
                     int optimal = calculateOptimalBet(tc, player.getBankroll() + player.hands[0].getBet(),
@@ -228,7 +228,7 @@ void Game::processEvents()
                     break;
                 }
 
-                case sf::Keyboard::Enter:
+                case sf::Keyboard::Right:
                     confirmBet();
                     break;
 
@@ -252,11 +252,11 @@ void Game::processEvents()
                     decreaseInsurance();
                     break;
 
-                case sf::Keyboard::Enter:
+                case sf::Keyboard::Right:
                     confirmInsurance();
                     break;
 
-                case sf::Keyboard::Escape:
+                case sf::Keyboard::Left:
                     declineInsurance();
                     break;
             }
@@ -325,7 +325,7 @@ void Game::processEvents()
         }
 
         if(event.key.code ==
-           sf::Keyboard::G)
+           sf::Keyboard::Y)
         {
             if(roundState == RoundState::PlayerTurn){ 
                 surrender();

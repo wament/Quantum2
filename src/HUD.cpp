@@ -87,6 +87,30 @@ void HUD::initialize(sf::Font& font)
     const float sliderWidth = 350.f;
     const float sliderHeight = 14.f;
     riskSliderBounds = sf::FloatRect(sliderX, sliderY, sliderWidth, sliderHeight);
+
+    // Initialize controls text
+    updateControls(font);
+}
+
+void HUD::updateControls(sf::Font& font)
+{
+    m_controlsText.setFont(font);
+    m_controlsText.setCharacterSize(13);
+    m_controlsText.setFillColor(sf::Color(200, 200, 200));
+    m_controlsText.setPosition(0.f, Constants::WINDOW_HEIGHT - 80.f - 20.f);
+    
+    // Build a single-line controls display
+    std::string controls = 
+        " [Up/Down | Adjust Bet]   [ <- | Auto Kelly]   [ -> | Confirm]                     "
+        "[H | Hit]    [S | Stand]    [D | Double]    [P | Split]    [U | Surrender]                     "
+        "[R | Next Round/Restart]";
+    
+    m_controlsText.setString(controls);
+    
+    // Center horizontally
+    sf::FloatRect bounds = m_controlsText.getLocalBounds();
+    m_controlsText.setOrigin(bounds.width / 2.f, 0.f);
+    m_controlsText.setPosition(Constants::WINDOW_WIDTH / 2.f, Constants::WINDOW_HEIGHT - 80.f - 20.f);
 }
 
 void HUD::update(const HUDState& hudState)
@@ -149,6 +173,9 @@ void HUD::draw(sf::RenderWindow& window)
     m_bottomPanel.draw(window);
 
     drawRiskSlider(window);
+    
+    // Draw controls above bottom panel
+    window.draw(m_controlsText);
 }
 
 const sf::FloatRect& HUD::getRiskSliderBounds() const
@@ -200,8 +227,8 @@ void HUD::drawRiskSlider(sf::RenderWindow& window)
     std::ostringstream labelStr;
     labelStr << "Kelly: " << static_cast<int>(kellyPct) << "%";
     if (kellyPct > 50.f)
-    {
-        labelStr << " | press it";
+    { 
+        labelStr << " (~" << static_cast<int>(rorApprox * 100.f) << "% RoR) PRESS IT!" ;
     }
     else
     {

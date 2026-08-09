@@ -163,10 +163,10 @@
 
 ## Controls
 
-- **Betting Phase**: ↑ (increase), ↓ (decrease), Enter (confirm)
+- **Betting Phase**: ↑ (increase), ↓ (decrease), -> (confirm)
 - **Player Turn**: H (hit), S (stand), D (double down), P (split), R (surrender)
 - **Round Management**: R (next round after cleanup, restart after game over)
-- **Insurance**: ↑↓ (adjust), Enter (confirm), Esc (decline)
+- **Insurance**: ↑↓ (adjust), -> (confirm), <- (decline)
 
 ## Card Counting
 

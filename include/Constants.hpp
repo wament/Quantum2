@@ -49,7 +49,7 @@ namespace Constants
     constexpr float CHIP_SPACING = 6.f;
 
     // Persistence
-    constexpr const char* PLAYER_FILE = "/saves/player_profile.json";
+    constexpr const char* PLAYER_FILE = "../saves/player_profile.json";
  
     
 }
