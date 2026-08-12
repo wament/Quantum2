@@ -4,6 +4,11 @@ Hand::Hand()
 {
 }
 
+Hand::Hand(const std::vector<Card>& cards)
+{
+    this->cards = cards;
+}
+
 void Hand::addCard(const Card& card)
 {
     cards.push_back(card);

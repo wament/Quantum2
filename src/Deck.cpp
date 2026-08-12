@@ -38,11 +38,10 @@ void Deck::shuffle()
     }
 
     // 2. Perform the shuffle
-    std::shuffle(
-        cards.begin(),
-        cards.end(),
-        std::mt19937(std::random_device{}())
-    );
+    lastShuffleSeed = std::random_device{}();
+    rng = std::mt19937(lastShuffleSeed);
+    std::shuffle(cards.begin(), cards.end(), rng);
+
 
     cutCardReached = false;
 
@@ -114,4 +113,9 @@ const std::vector<Card>* Deck::getPreviousShoeRecord()
 const std::vector<Card>& Deck::getFinalShoeRecord() const
 {
     return activeShoeRecord;
+}
+
+const unsigned long long Deck::getlastShuffleSeed() const 
+{
+    return lastShuffleSeed;
 }

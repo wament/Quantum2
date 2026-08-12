@@ -8,7 +8,8 @@ class Hand
 {
 public:
     Hand();
-
+    explicit Hand(const std::vector<Card>& cards);  // construct from existing cards
+    
     void addCard(const Card& card);
     void clear();
 

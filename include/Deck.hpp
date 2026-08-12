@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <cstddef>
 #include "Card.hpp"
+#include <random>
 
 class Deck
 {
@@ -38,9 +39,13 @@ public:
      */
     [[nodiscard]] const std::vector<Card>& getFinalShoeRecord() const;
 
+
+    [[nodiscard]] const unsigned long long getLastShuffleSeed() const;
+
 private:
     std::vector<Card> cards;
-
+    std::mt19937 rng;
+    unsigned long long lastShuffleSeed;
     bool cutCardReached = false;
 
     // The record of the currently active shoe

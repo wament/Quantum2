@@ -37,3 +37,11 @@ bool Card::isCutCard() const
 {
     return value == Constants::CUT_CARD_VALUE;
 }
+
+[[nodiscard]] int Card::getHiLoValue() const
+{
+    int val = getBlackjackValue();
+    if (val >= 2 && val <= 6) return +1;
+    if (val >= 10) return -1;  // 10, J, Q, K
+    return 0;  // 7, 8, 9, A
+}

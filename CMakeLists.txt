@@ -78,6 +78,7 @@ target_sources(Blackjack2 PRIVATE
     src/Panel.cpp
     src/StatBox.cpp
     src/FontManager.cpp
+    src/Replay.cpp
 )
 
 # Copy assets
