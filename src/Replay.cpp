@@ -17,9 +17,9 @@
 // Construction / Initialization
 // --------------------------------------------------
 
-Replay::Replay(sf::RenderWindow& window,
-               sf::Texture& cardTexture,
-               sf::Font& font)
+Replay::Replay(sf::RenderWindow &window,
+               sf::Texture &cardTexture,
+               sf::Font &font)
     : window(window),
       cardTexture(cardTexture),
       font(font)
@@ -27,9 +27,9 @@ Replay::Replay(sf::RenderWindow& window,
     mode = Mode::HistoryList;
 }
 
-void Replay::loadHistory(const std::vector<ShoeRecord>& shoes)
+void Replay::loadHistory(const std::vector<ShoeRecord> &shoes)
 {
-    allShoes = shoes;  // store full records so we can load them later
+    allShoes = shoes; // store full records so we can load them later
     historyEntries.clear();
     selectedHistoryIndex = 0;
     mode = Mode::HistoryList;
@@ -39,15 +39,15 @@ void Replay::loadHistory(const std::vector<ShoeRecord>& shoes)
 
     for (size_t i = 0; i < shoes.size(); ++i)
     {
-        const auto& shoe = shoes[i];
+        const auto &shoe = shoes[i];
         int net = 0;
         int cards = 0;
 
-        for (const auto& round : shoe.rounds)
+        for (const auto &round : shoe.rounds)
         {
             net += round.netProfit();
             cards += static_cast<int>(round.dealerCards.size());
-            for (const auto& hand : round.playerHands)
+            for (const auto &hand : round.playerHands)
                 cards += static_cast<int>(hand.cards.size());
         }
 
@@ -80,7 +80,7 @@ void Replay::loadHistory(const std::vector<ShoeRecord>& shoes)
     }
 }
 
-void Replay::loadShoe(const ShoeRecord& shoe, int shoeIndex)
+void Replay::loadShoe(const ShoeRecord &shoe, int shoeIndex)
 {
     if (shoe.rounds.empty())
         return;
@@ -93,7 +93,7 @@ void Replay::loadShoe(const ShoeRecord& shoe, int shoeIndex)
     autoPlayTimer = 0.0f;
 
     roundInfos.clear();
-    for (const auto& round : shoe.rounds)
+    for (const auto &round : shoe.rounds)
     {
         RoundInfo info;
         info.netProfit = round.netProfit();
@@ -104,7 +104,7 @@ void Replay::loadShoe(const ShoeRecord& shoe, int shoeIndex)
 
     // Start before first step so the first stepForward() shows the first card dealt
     currentStepIndex = -1;
-    currentState = ReplayState();
+    currentState = ReplayInternals::ReplayState();
     // currentStepIndex already set to -1 above
     currentState.totalSteps = static_cast<int>(steps.size());
     currentState.totalRounds = static_cast<int>(shoe.rounds.size());
@@ -126,27 +126,29 @@ void Replay::exitReplay()
 // --------------------------------------------------
 
 std::vector<ReplayInternals::ReplayStep>
-Replay::buildSteps(const ShoeRecord& shoe)
+Replay::buildSteps(const ShoeRecord &shoe)
 {
     std::vector<ReplayInternals::ReplayStep> result;
     int shoeProfit = 0;
-    int runningCount = 0;        // track count incrementally
+    int runningCount = 0; // track count incrementally
     int totalCards = static_cast<int>(shoe.initialDeck.size());
     int cardsDealtSoFar = 0;
 
     // Helper to add a step and update count after a card is dealt
-    auto addCardStep = [&](ReplayInternals::ReplayStep& step) {
+    auto addCardStep = [&](ReplayInternals::ReplayStep &step)
+    {
         step.runningCount = runningCount;
         step.cardsRemaining = totalCards - cardsDealtSoFar;
         step.trueCount = computeTrueCount(runningCount, step.cardsRemaining);
         step.cumulativeProfit = shoeProfit;
         result.push_back(step);
-        runningCount += step.card.getHiLoValue();  // update after card dealt
+        runningCount += step.card.getHiLoValue(); // update after card dealt
         cardsDealtSoFar++;
     };
 
     // Helper for non-card steps
-    auto addNonCardStep = [&](ReplayInternals::ReplayStep& step) {
+    auto addNonCardStep = [&](ReplayInternals::ReplayStep &step)
+    {
         step.runningCount = runningCount;
         step.cardsRemaining = totalCards - cardsDealtSoFar;
         step.trueCount = computeTrueCount(runningCount, step.cardsRemaining);
@@ -156,7 +158,7 @@ Replay::buildSteps(const ShoeRecord& shoe)
 
     for (int r = 0; r < static_cast<int>(shoe.rounds.size()); ++r)
     {
-        const auto& round = shoe.rounds[r];
+        const auto &round = shoe.rounds[r];
 
         // --- Initial deal: player hand 0 card 0, dealer hole, player hand 0 card 1, dealer up ---
         // We replay the exact deal order from Game::deal().
@@ -216,9 +218,8 @@ Replay::buildSteps(const ShoeRecord& shoe)
             int insAmount = 0;
             if (!round.playerHands.empty())
             {
-                const auto& actions = round.playerHands[0].actions;
-                // Insurance is tracked as first action "I" or "N" if we ever record it.
-                // For now, we'll skip explicit insurance step — can be enhanced later.
+                insuranceTaken = round.playerHands[0].insuranceTaken;
+                insAmount = round.playerHands[0].insuranceBet;
             }
 
             ReplayInternals::ReplayStep decStep;
@@ -233,7 +234,7 @@ Replay::buildSteps(const ShoeRecord& shoe)
         // --- Player turns (hand by hand) ---
         for (size_t h = 0; h < round.playerHands.size(); ++h)
         {
-            const auto& hand = round.playerHands[h];
+            const auto &hand = round.playerHands[h];
 
             // Deal additional cards beyond initial two
             for (size_t c = 2; c < hand.cards.size(); ++c)
@@ -244,7 +245,7 @@ Replay::buildSteps(const ShoeRecord& shoe)
                 // Find matching action from actions list
                 int hitCount = 0;
                 int cardIndex = 2;
-                for (const auto& a : hand.actions)
+                for (const auto &a : hand.actions)
                 {
                     if (a == "H")
                     {
@@ -277,7 +278,7 @@ Replay::buildSteps(const ShoeRecord& shoe)
             // Final action (Stand/Double/Split/Surrender)
             if (!hand.actions.empty())
             {
-                const std::string& lastAction = hand.actions.back();
+                const std::string &lastAction = hand.actions.back();
 
                 ReplayInternals::ReplayStep decStep;
                 decStep.roundIndex = r;
@@ -327,7 +328,7 @@ ReplayInternals::ReplayState Replay::buildStateAtStep(int stepIndex) const
     if (steps.empty() || stepIndex < 0)
         return state;
 
-    const auto& currentStep = steps[stepIndex];
+    const auto &currentStep = steps[stepIndex];
     state.roundIndex = currentStep.roundIndex;
     state.runningCount = currentStep.runningCount;
     state.trueCount = currentStep.trueCount;
@@ -336,13 +337,13 @@ ReplayInternals::ReplayState Replay::buildStateAtStep(int stepIndex) const
     state.isLastRound = (state.roundIndex == state.totalRounds - 1);
     state.shoeCompleted = currentShoe.completed;
 
-    const auto& round = currentShoe.rounds[state.roundIndex];
+    const auto &round = currentShoe.rounds[state.roundIndex];
 
     // --- Count how many dealer cards have been dealt up to this step ---
     int dealerCardsDealt = 0;
     for (int i = 0; i <= stepIndex; ++i)
     {
-        const auto& s = steps[i];
+        const auto &s = steps[i];
         if (s.roundIndex == state.roundIndex && s.isDealerCard &&
             (s.type == ReplayInternals::ReplayStep::Type::DealCard ||
              s.type == ReplayInternals::ReplayStep::Type::DealerDraw))
@@ -356,21 +357,20 @@ ReplayInternals::ReplayState Replay::buildStateAtStep(int stepIndex) const
     {
         std::vector<Card> dealerSlice(
             round.dealerCards.begin(),
-            round.dealerCards.begin() + std::min(dealerCardsDealt, static_cast<int>(round.dealerCards.size()))
-        );
+            round.dealerCards.begin() + std::min(dealerCardsDealt, static_cast<int>(round.dealerCards.size())));
         state.dealerHand = Hand(dealerSlice);
     }
 
     // --- Build each player Hand from HandOutcome cards ---
     for (size_t h = 0; h < round.playerHands.size(); ++h)
     {
-        const auto& ho = round.playerHands[h];
+        const auto &ho = round.playerHands[h];
 
         // Count how many cards have been dealt to this hand up to stepIndex
         int cardsDealtToHand = 0;
         for (int i = 0; i <= stepIndex; ++i)
         {
-            const auto& s = steps[i];
+            const auto &s = steps[i];
             if (s.roundIndex == state.roundIndex &&
                 s.handIndex == static_cast<int>(h) &&
                 !s.isDealerCard &&
@@ -384,8 +384,8 @@ ReplayInternals::ReplayState Replay::buildStateAtStep(int stepIndex) const
         ReplayInternals::ReplayState::HandSnapshot hs;
         hs.bet = ho.wager;
         hs.actionsTaken = ho.actions;
-        hs.isFinished = true;  // will be refined if mid-hand
-        hs.isSplit = false;    // infer if needed
+        hs.isFinished = true; // will be refined if mid-hand
+        hs.isSplit = false;   // infer if needed
         hs.isDoubledDown = false;
         hs.isSurrendered = false;
 
@@ -400,9 +400,11 @@ ReplayInternals::ReplayState Replay::buildStateAtStep(int stepIndex) const
         // Metadata from HandOutcome
         if (!ho.actions.empty())
         {
-            const std::string& lastAction = ho.actions.back();
-            if (lastAction == "D") hs.isDoubledDown = true;
-            if (lastAction == "R") hs.isSurrendered = true;
+            const std::string &lastAction = ho.actions.back();
+            if (lastAction == "D")
+                hs.isDoubledDown = true;
+            if (lastAction == "R")
+                hs.isSurrendered = true;
         }
 
         state.playerHands.push_back(hs);
@@ -445,7 +447,7 @@ int Replay::findHandStartStep(int roundIndex, int handIndex) const
 {
     for (int i = 0; i < static_cast<int>(steps.size()); ++i)
     {
-        const auto& s = steps[i];
+        const auto &s = steps[i];
         if (s.roundIndex == roundIndex && s.handIndex == handIndex &&
             s.type == ReplayInternals::ReplayStep::Type::DealCard &&
             !s.isDealerCard)
@@ -523,7 +525,7 @@ void Replay::goToRound(int roundIndex)
 void Replay::skipHand()
 {
     // Jump to the next hand's start, or to dealer turn if no more hands.
-    const auto& state = getCurrentState();
+    const auto &state = getCurrentState();
     int nextHand = state.currentHandIndex + 1;
 
     if (nextHand < static_cast<int>(currentShoe.rounds[state.roundIndex].playerHands.size()))
@@ -603,12 +605,12 @@ Replay::Mode Replay::getMode() const
     return mode;
 }
 
-const ReplayInternals::ReplayState& Replay::getCurrentState() const
+const ReplayInternals::ReplayState &Replay::getCurrentState() const
 {
     return currentState;
 }
 
-const std::vector<ReplayHistoryEntry>& Replay::getHistoryEntries() const
+const std::vector<ReplayHistoryEntry> &Replay::getHistoryEntries() const
 {
     return historyEntries;
 }
@@ -632,7 +634,7 @@ bool Replay::isAtEnd() const
 // Event Processing
 // --------------------------------------------------
 
-void Replay::processEvents(sf::Event& event)
+void Replay::processEvents(sf::Event &event)
 {
     if (event.type != sf::Event::KeyPressed &&
         event.type != sf::Event::MouseButtonPressed &&
@@ -655,26 +657,26 @@ void Replay::processEvents(sf::Event& event)
         {
             switch (event.key.code)
             {
-                case sf::Keyboard::Up:
-                    selectPreviousShoe();
-                    break;
-                case sf::Keyboard::Down:
-                    selectNextShoe();
-                    break;
-                case sf::Keyboard::Enter:
-                case sf::Keyboard::Return:
-                case sf::Keyboard::Right:
-                    if (!historyEntries.empty())
-                    {
-                        const auto& entry = historyEntries[selectedHistoryIndex];
-                        loadShoe(allShoes[entry.index], entry.index);  // load from stored records
-                    }
-                    break;
-                case sf::Keyboard::Escape:
-                    exitReplay();
-                    break;
-                default:
-                    break;
+            case sf::Keyboard::Up:
+                selectPreviousShoe();
+                break;
+            case sf::Keyboard::Down:
+                selectNextShoe();
+                break;
+            case sf::Keyboard::Enter:
+            // case sf::Keyboard::Return:
+            case sf::Keyboard::Right:
+                if (!historyEntries.empty())
+                {
+                    const auto &entry = historyEntries[selectedHistoryIndex];
+                    loadShoe(allShoes[entry.index], entry.index); // load from stored records
+                }
+                break;
+            case sf::Keyboard::Escape:
+                exitReplay();
+                break;
+            default:
+                break;
             }
         }
         return;
@@ -687,8 +689,7 @@ void Replay::processEvents(sf::Event& event)
     {
         sf::Vector2f mousePos(
             static_cast<float>(event.mouseButton.x),
-            static_cast<float>(event.mouseButton.y)
-        );
+            static_cast<float>(event.mouseButton.y));
         if (sliderDragging || sliderBounds.contains(mousePos))
         {
             sliderDragging = true;
@@ -705,8 +706,7 @@ void Replay::processEvents(sf::Event& event)
     {
         sf::Vector2f mousePos(
             static_cast<float>(event.mouseMove.x),
-            static_cast<float>(event.mouseMove.y)
-        );
+            static_cast<float>(event.mouseMove.y));
 
         float frac = (mousePos.x - sliderBounds.left) / sliderBounds.width;
         frac = std::max(0.0f, std::min(1.0f, frac));
@@ -720,82 +720,82 @@ void Replay::processEvents(sf::Event& event)
     {
         switch (event.key.code)
         {
-            case sf::Keyboard::Right:
-            case sf::Keyboard::ArrowRight:
-                stepForward();
-                break;
+        case sf::Keyboard::Right:
+            // case sf::Keyboard::ArrowRight:
+            stepForward();
+            break;
 
-            case sf::Keyboard::Left:
-            case sf::Keyboard::ArrowLeft:
-                stepBackward();
-                break;
+        case sf::Keyboard::Left:
+            // case sf::Keyboard::ArrowLeft:
+            stepBackward();
+            break;
 
-            case sf::Keyboard::Space:
-                setAutoPlay(!autoPlay);
-                break;
+        case sf::Keyboard::Space:
+            setAutoPlay(!autoPlay);
+            break;
 
-            case sf::Keyboard::H:
-                skipHand();
-                break;
+        case sf::Keyboard::H:
+            skipHand();
+            break;
 
-            case sf::Keyboard::R:
-                skipRound();
-                break;
+        case sf::Keyboard::R:
+            skipRound();
+            break;
 
-            case sf::Keyboard::Escape:
-            case sf::Keyboard::Backspace:
-                exitReplay();
-                break;
+        case sf::Keyboard::Escape:
+        case sf::Keyboard::Backspace:
+            exitReplay();
+            break;
 
-            // Jump to specific round by number (1-9)
-            case sf::Keyboard::Num1:
-            case sf::Keyboard::Numpad1:
-                if (currentState.totalRounds > 0)
-                    goToRound(std::min(1, currentState.totalRounds - 1));
-                break;
-            case sf::Keyboard::Num2:
-            case sf::Keyboard::Numpad2:
-                if (currentState.totalRounds > 1)
-                    goToRound(std::min(2, currentState.totalRounds - 1));
-                break;
-            case sf::Keyboard::Num3:
-            case sf::Keyboard::Numpad3:
-                if (currentState.totalRounds > 2)
-                    goToRound(std::min(3, currentState.totalRounds - 1));
-                break;
-            case sf::Keyboard::Num4:
-            case sf::Keyboard::Numpad4:
-                if (currentState.totalRounds > 3)
-                    goToRound(std::min(4, currentState.totalRounds - 1));
-                break;
-            case sf::Keyboard::Num5:
-            case sf::Keyboard::Numpad5:
-                if (currentState.totalRounds > 4)
-                    goToRound(std::min(5, currentState.totalRounds - 1));
-                break;
-            case sf::Keyboard::Num6:
-            case sf::Keyboard::Numpad6:
-                if (currentState.totalRounds > 5)
-                    goToRound(std::min(6, currentState.totalRounds - 1));
-                break;
-            case sf::Keyboard::Num7:
-            case sf::Keyboard::Numpad7:
-                if (currentState.totalRounds > 6)
-                    goToRound(std::min(7, currentState.totalRounds - 1));
-                break;
-            case sf::Keyboard::Num8:
-            case sf::Keyboard::Numpad8:
-                if (currentState.totalRounds > 7)
-                    goToRound(std::min(8, currentState.totalRounds - 1));
-                break;
-            case sf::Keyboard::Num9:
-            case sf::Keyboard::Numpad9:
-                if (currentState.totalRounds > 8)
-                    goToRound(std::min(9, currentState.totalRounds - 1));
-                break;
+        // Jump to specific round by number (1-9)
+        case sf::Keyboard::Num1:
+        case sf::Keyboard::Numpad1:
+            if (currentState.totalRounds > 0)
+                goToRound(std::min(1, currentState.totalRounds - 1));
+            break;
+        case sf::Keyboard::Num2:
+        case sf::Keyboard::Numpad2:
+            if (currentState.totalRounds > 1)
+                goToRound(std::min(2, currentState.totalRounds - 1));
+            break;
+        case sf::Keyboard::Num3:
+        case sf::Keyboard::Numpad3:
+            if (currentState.totalRounds > 2)
+                goToRound(std::min(3, currentState.totalRounds - 1));
+            break;
+        case sf::Keyboard::Num4:
+        case sf::Keyboard::Numpad4:
+            if (currentState.totalRounds > 3)
+                goToRound(std::min(4, currentState.totalRounds - 1));
+            break;
+        case sf::Keyboard::Num5:
+        case sf::Keyboard::Numpad5:
+            if (currentState.totalRounds > 4)
+                goToRound(std::min(5, currentState.totalRounds - 1));
+            break;
+        case sf::Keyboard::Num6:
+        case sf::Keyboard::Numpad6:
+            if (currentState.totalRounds > 5)
+                goToRound(std::min(6, currentState.totalRounds - 1));
+            break;
+        case sf::Keyboard::Num7:
+        case sf::Keyboard::Numpad7:
+            if (currentState.totalRounds > 6)
+                goToRound(std::min(7, currentState.totalRounds - 1));
+            break;
+        case sf::Keyboard::Num8:
+        case sf::Keyboard::Numpad8:
+            if (currentState.totalRounds > 7)
+                goToRound(std::min(8, currentState.totalRounds - 1));
+            break;
+        case sf::Keyboard::Num9:
+        case sf::Keyboard::Numpad9:
+            if (currentState.totalRounds > 8)
+                goToRound(std::min(9, currentState.totalRounds - 1));
+            break;
 
-            default:
-                break;
+        default:
+            break;
         }
     }
 }
@@ -882,7 +882,7 @@ void Replay::drawHistoryList()
 
     for (int i = 0; i < static_cast<int>(historyEntries.size()); ++i)
     {
-        const auto& entry = historyEntries[i];
+        const auto &entry = historyEntries[i];
 
         bool selected = (i == selectedHistoryIndex);
 
@@ -917,7 +917,7 @@ void Replay::drawHistoryList()
 
 void Replay::drawReplayView()
 {
-    const auto& state = currentState;
+    const auto &state = currentState;
 
     // Background (reuse game's table feel)
     sf::RectangleShape table(sf::Vector2f(window.getSize().x, window.getSize().y));
@@ -951,7 +951,7 @@ void Replay::drawReplayView()
     drawStepSummary(state);
 }
 
-void Replay::drawTable(const ReplayInternals::ReplayState& state)
+void Replay::drawTable(const ReplayInternals::ReplayState &state)
 {
     sf::Vector2u size = window.getSize();
     float centerX = size.x / 2.0f - 200.0f;
@@ -977,7 +977,6 @@ void Replay::drawTable(const ReplayInternals::ReplayState& state)
         }
     }
 
-
     // Dealer total label
     if (state.dealerHand.size() > 0)
     {
@@ -996,7 +995,7 @@ void Replay::drawTable(const ReplayInternals::ReplayState& state)
     // --- Player hands ---
     for (size_t h = 0; h < state.playerHands.size(); ++h)
     {
-        const auto& hand = state.playerHands[h];
+        const auto &hand = state.playerHands[h];
         float handX = centerX - 100.f + static_cast<float>(h) * 140.f;
 
         for (size_t c = 0; c < hand.cards.size(); ++c)
@@ -1028,7 +1027,7 @@ void Replay::drawTable(const ReplayInternals::ReplayState& state)
     }
 }
 
-void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState& state)
+void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState &state)
 {
     sf::Vector2u size = window.getSize();
     float panelX = size.x - 280.f;
@@ -1087,7 +1086,9 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState& state)
 
     // --- Basic Strategy overlay ---
     if (!state.playerHands.empty() && state.dealerHand.size() >= 2 &&
-        !state.playerHands[0].isFinished)
+        state.currentHandIndex >= 0 &&
+        state.currentHandIndex < static_cast<int>(state.playerHands.size()) &&
+        !state.playerHands[state.currentHandIndex].isFinished)
     {
         sf::Text bsTitle;
         bsTitle.setFont(font);
@@ -1107,13 +1108,25 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState& state)
         std::string actionStr;
         switch (bookAction)
         {
-            case 'H': actionStr = "Hit"; break;
-            case 'S': actionStr = "Stand"; break;
-            case 'D': actionStr = "Double"; break;
-            case 'P':
-            case 'A': actionStr = "Split"; break;
-            case 'R': actionStr = "Surrender"; break;
-            default: actionStr = "—"; break;
+        case 'H':
+            actionStr = "Hit";
+            break;
+        case 'S':
+            actionStr = "Stand";
+            break;
+        case 'D':
+            actionStr = "Double";
+            break;
+        case 'P':
+        case 'A':
+            actionStr = "Split";
+            break;
+        case 'R':
+            actionStr = "Surrender";
+            break;
+        default:
+            actionStr = "—";
+            break;
         }
         bsAction.setString(actionStr);
         bsAction.setPosition(panelX + 10.f, y);
@@ -1121,21 +1134,29 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState& state)
         y += lineHeight + 8.f;
 
         // Current actual action
-        if (!state.playerHands[0].actionsTaken.empty())
+        int handIdx = state.currentHandIndex;
+        if (handIdx >= 0 && handIdx < static_cast<int>(state.playerHands.size()) &&
+            !state.playerHands[handIdx].actionsTaken.empty())
         {
-            const std::string& actual = state.playerHands[0].actionsTaken.back();
+            const std::string &actual = state.playerHands[handIdx].actionsTaken.back();
             sf::Text actualLabel;
             actualLabel.setFont(font);
             actualLabel.setCharacterSize(13);
             actualLabel.setFillColor(sf::Color(160, 160, 160));
 
             std::string actualStr;
-            if (actual == "H") actualStr = "Hit";
-            else if (actual == "S") actualStr = "Stand";
-            else if (actual == "D") actualStr = "Double";
-            else if (actual == "P") actualStr = "Split";
-            else if (actual == "R") actualStr = "Surrender";
-            else actualStr = actual;
+            if (actual == "H")
+                actualStr = "Hit";
+            else if (actual == "S")
+                actualStr = "Stand";
+            else if (actual == "D")
+                actualStr = "Double";
+            else if (actual == "P")
+                actualStr = "Split";
+            else if (actual == "R")
+                actualStr = "Surrender";
+            else
+                actualStr = actual;
 
             bool matches = (bookAction == actual[0] || bookAction == tolower(actual[0]));
             actualLabel.setFillColor(matches ? sf::Color(100, 200, 100) : sf::Color(255, 200, 50));
@@ -1146,7 +1167,7 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState& state)
             y += lineHeight + 8.f;
         }
     }
-    
+
     // --- Kelly Bet overlay ---
     sf::Text kellyTitle;
     kellyTitle.setFont(font);
@@ -1163,8 +1184,7 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState& state)
         kellyFraction,
         bankrollAtStep,
         Constants::MINIMUM_BET,
-        Constants::MAXIMUM_BET
-    );
+        Constants::MAXIMUM_BET);
 
     sf::Text kellyLabel;
     kellyLabel.setFont(font);
@@ -1174,7 +1194,23 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState& state)
     kellyLabel.setPosition(panelX + 10.f, y);
     window.draw(kellyLabel);
     y += lineHeight + 8.f;
-    
+
+    if (!state.playerHands.empty())
+    {
+        int actualBet = 0;
+        for (const auto &h : state.playerHands)
+            actualBet += h.bet;
+        bool betMatches = (actualBet == kellyBet || actualBet == 0);
+        sf::Text kellyCompare;
+        kellyCompare.setFont(font);
+        kellyCompare.setCharacterSize(12);
+        kellyCompare.setFillColor(betMatches ? sf::Color(100, 200, 100) : sf::Color(255, 200, 50));
+        kellyCompare.setString(std::string("Actual: $") + std::to_string(actualBet) +
+                               (betMatches ? " ✓" : " (mismatch)"));
+        kellyCompare.setPosition(panelX + 10.f, y);
+        window.draw(kellyCompare);
+        y += lineHeight;
+    }
 
     // --- Profit tracking ---
     sf::Text profitTitle;
@@ -1190,10 +1226,11 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState& state)
     roundProfitLabel.setFont(font);
     roundProfitLabel.setCharacterSize(14);
     roundProfitLabel.setFillColor(state.roundProfit >= 0 ? sf::Color(100, 200, 100)
-                                                        : sf::Color(220, 100, 100));
-    roundProfitLabel.setString("This Round: " +
+                                                         : sf::Color(220, 100, 100));
+    roundProfitLabel.setString(std::string("This Round: ") +
                                (state.roundProfit >= 0 ? "+" : "") +
                                std::to_string(state.roundProfit));
+
     roundProfitLabel.setPosition(panelX + 10.f, y);
     window.draw(roundProfitLabel);
     y += lineHeight;
@@ -1202,8 +1239,8 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState& state)
     shoeProfitLabel.setFont(font);
     shoeProfitLabel.setCharacterSize(14);
     shoeProfitLabel.setFillColor(state.shoeProfit >= 0 ? sf::Color(100, 200, 100)
-                                                      : sf::Color(220, 100, 100));
-    shoeProfitLabel.setString("Shoe So Far: " +
+                                                       : sf::Color(220, 100, 100));
+    shoeProfitLabel.setString(std::string("Shoe So Far: ") +
                               (state.shoeProfit >= 0 ? "+" : "") +
                               std::to_string(state.shoeProfit));
     shoeProfitLabel.setPosition(panelX + 10.f, y);
@@ -1221,7 +1258,7 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState& state)
     y += lineHeight;
 }
 
-void Replay::drawRoundSlider(const ReplayInternals::ReplayState& state)
+void Replay::drawRoundSlider(const ReplayInternals::ReplayState &state)
 {
     sf::Vector2u size = window.getSize();
     sliderBounds.left = 60.0f;
@@ -1248,7 +1285,7 @@ void Replay::drawRoundSlider(const ReplayInternals::ReplayState& state)
         sf::RectangleShape marker(sf::Vector2f(3.f, sliderBounds.height));
         marker.setPosition(x - 1.5f, sliderBounds.top);
 
-        const auto& info = roundInfos[r];
+        const auto &info = roundInfos[r];
         if (info.netProfit > 0)
             marker.setFillColor(sf::Color(80, 180, 80));
         else if (info.netProfit < 0)
@@ -1288,12 +1325,13 @@ void Replay::drawRoundSlider(const ReplayInternals::ReplayState& state)
     if (!roundInfos.empty() && state.roundIndex >= 0 &&
         state.roundIndex < static_cast<int>(roundInfos.size()))
     {
-        const auto& info = roundInfos[state.roundIndex];
+        const auto &info = roundInfos[state.roundIndex];
         sf::Text hoverInfo;
         hoverInfo.setFont(font);
         hoverInfo.setCharacterSize(11);
         hoverInfo.setFillColor(sf::Color(160, 160, 160));
-        hoverInfo.setString("Net: " + (info.netProfit >= 0 ? "+" : "") +
+        hoverInfo.setString(std::string("Net: ") +
+                            (info.netProfit >= 0 ? "+" : "") +
                             std::to_string(info.netProfit) +
                             " | Hands: " + std::to_string(info.handCount) +
                             " | Max TC: " + std::to_string(static_cast<int>(info.maxTrueCount)));
@@ -1302,7 +1340,7 @@ void Replay::drawRoundSlider(const ReplayInternals::ReplayState& state)
     }
 }
 
-void Replay::drawControls(const ReplayInternals::ReplayState& state)
+void Replay::drawControls(const ReplayInternals::ReplayState &state)
 {
     sf::Vector2u size = window.getSize();
     float y = static_cast<float>(size.y) - 80.f;
@@ -1346,49 +1384,55 @@ void Replay::drawControls(const ReplayInternals::ReplayState& state)
     window.draw(legend);
 }
 
-void Replay::drawStepSummary(const ReplayInternals::ReplayState& state)
+void Replay::drawStepSummary(const ReplayInternals::ReplayState &state)
 {
     if (steps.empty() || state.currentStepIndex < 0 ||
         state.currentStepIndex >= static_cast<int>(steps.size()))
         return;
 
-    const auto& step = steps[state.currentStepIndex];
+    const auto &step = steps[state.currentStepIndex];
 
     std::string summary;
     switch (step.type)
     {
-        case ReplayInternals::ReplayStep::Type::DealCard:
-            summary = step.isDealerCard
-                          ? "Dealer receives " + step.card.getBlackjackValueToString()
-                          : "Player hand " + std::to_string(step.handIndex + 1) +
-                                " receives " + step.card.getBlackjackValueToString();
-            break;
-        case ReplayInternals::ReplayStep::Type::PlayerDecision:
-        {
-            std::string actionName;
-            if (step.action == "H") actionName = "Hit";
-            else if (step.action == "S") actionName = "Stand";
-            else if (step.action == "D") actionName = "Double";
-            else if (step.action == "P") actionName = "Split";
-            else if (step.action == "R") actionName = "Surrender";
-            else actionName = step.action;
-            summary = "Player hand " + std::to_string(step.handIndex + 1) + " " + actionName;
-            break;
-        }
-        case ReplayInternals::ReplayStep::Type::InsuranceOffer:
-            summary = "Insurance offered (Dealer shows Ace)";
-            break;
-        case ReplayInternals::ReplayStep::Type::InsuranceDecision:
-            summary = step.insuranceTaken
-                          ? "Insurance taken ($" + std::to_string(step.insuranceAmount) + ")"
-                          : "Insurance declined";
-            break;
-        case ReplayInternals::ReplayStep::Type::DealerDraw:
-            summary = "Dealer draws " + step.card.getBlackjackValueToString();
-            break;
-        case ReplayInternals::ReplayStep::Type::RoundEnd:
-            summary = "Round " + std::to_string(step.roundIndex + 1) + " complete";
-            break;
+    case ReplayInternals::ReplayStep::Type::DealCard:
+        summary = step.isDealerCard
+                      ? "Dealer receives " + step.card.getBlackjackValueToString()
+                      : "Player hand " + std::to_string(step.handIndex + 1) +
+                            " receives " + step.card.getBlackjackValueToString();
+        break;
+    case ReplayInternals::ReplayStep::Type::PlayerDecision:
+    {
+        std::string actionName;
+        if (step.action == "H")
+            actionName = "Hit";
+        else if (step.action == "S")
+            actionName = "Stand";
+        else if (step.action == "D")
+            actionName = "Double";
+        else if (step.action == "P")
+            actionName = "Split";
+        else if (step.action == "R")
+            actionName = "Surrender";
+        else
+            actionName = step.action;
+        summary = "Player hand " + std::to_string(step.handIndex + 1) + " " + actionName;
+        break;
+    }
+    case ReplayInternals::ReplayStep::Type::InsuranceOffer:
+        summary = "Insurance offered (Dealer shows Ace)";
+        break;
+    case ReplayInternals::ReplayStep::Type::InsuranceDecision:
+        summary = step.insuranceTaken
+                      ? "Insurance taken ($" + std::to_string(step.insuranceAmount) + ")"
+                      : "Insurance declined";
+        break;
+    case ReplayInternals::ReplayStep::Type::DealerDraw:
+        summary = "Dealer draws " + step.card.getBlackjackValueToString();
+        break;
+    case ReplayInternals::ReplayStep::Type::RoundEnd:
+        summary = "Round " + std::to_string(step.roundIndex + 1) + " complete";
+        break;
     }
 
     sf::Text summaryText;
@@ -1407,12 +1451,12 @@ void Replay::drawStepSummary(const ReplayInternals::ReplayState& state)
 // --------------------------------------------------
 // Basic Strategy Helper
 // --------------------------------------------------
-char Replay::getBasicStrategyAction(const ReplayInternals::ReplayState& state) const
+char Replay::getBasicStrategyAction(const ReplayInternals::ReplayState &state) const
 {
     if (state.playerHands.empty() || state.dealerHand.size() < 2)
         return 'H';
 
-    const auto& hand = state.playerHands[0];
+    const auto &hand = state.playerHands[state.currentHandIndex];
 
     int playerValue = hand.getValue();
     int dealerUpValue = state.dealerHand.getCard(0).getBlackjackValue();
@@ -1421,7 +1465,7 @@ char Replay::getBasicStrategyAction(const ReplayInternals::ReplayState& state) c
 
     bool isPair = hand.cards.size() == 2 &&
                   hand.cards.getCard(0).getBlackjackValue() ==
-                  hand.cards.getCard(1).getBlackjackValue();
+                      hand.cards.getCard(1).getBlackjackValue();
 
     int pairValue = isPair ? hand.cards.getCard(0).getBlackjackValue() : 0;
 

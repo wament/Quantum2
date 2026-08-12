@@ -7,12 +7,12 @@
 
 namespace fs = std::filesystem;
 
-PlayerProfile::PlayerProfile(const std::string& playerName)
+PlayerProfile::PlayerProfile(const std::string &playerName)
     : name(playerName)
 {
 }
 
-const std::string& PlayerProfile::getName() const
+const std::string &PlayerProfile::getName() const
 {
     return name;
 }
@@ -32,12 +32,12 @@ std::vector<RoundRecord> PlayerProfile::getCurrentHistory()
     return currentHistory;
 }
 
-void PlayerProfile::addRoundRecord(const RoundRecord& record)
+void PlayerProfile::addRoundRecord(const RoundRecord &record)
 {
     currentHistory.push_back(record);
 }
 
-void PlayerProfile::addShoeRecord(const ShoeRecord& record)
+void PlayerProfile::addShoeRecord(const ShoeRecord &record)
 {
     ShoeRecord shoe = record;
     shoe.rounds = currentHistory;
@@ -45,7 +45,7 @@ void PlayerProfile::addShoeRecord(const ShoeRecord& record)
     currentHistory.clear();
 }
 
-PlayerProfile PlayerProfile::load(const std::string& filename)
+PlayerProfile PlayerProfile::load(const std::string &filename)
 {
     std::ifstream file(filename);
     if (!file.is_open())
@@ -61,7 +61,7 @@ PlayerProfile PlayerProfile::load(const std::string& filename)
         file >> j;
         return j.get<PlayerProfile>();
     }
-    catch (const std::exception& e)
+    catch (const std::exception &e)
     {
         std::cerr << "Error loading profile: " << e.what()
                   << ". Starting fresh." << std::endl;
@@ -69,7 +69,7 @@ PlayerProfile PlayerProfile::load(const std::string& filename)
     }
 }
 
-void PlayerProfile::save(const std::string& filename) const
+void PlayerProfile::save(const std::string &filename) const
 {
     // Ensure save directory exists
     fs::path p(filename);
@@ -85,4 +85,9 @@ void PlayerProfile::save(const std::string& filename) const
 
     json j = *this;
     file << j.dump(2);
+}
+
+const std::vector<ShoeRecord> &PlayerProfile::getLongHistory() const
+{
+    return longHistory;
 }

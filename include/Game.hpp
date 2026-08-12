@@ -8,8 +8,8 @@
 #include "Player.hpp"
 #include "GameRecord.hpp"
 #include "HUD.hpp"
-#include "HUDState.hpp" 
-
+#include "HUDState.hpp"
+#include "Replay.hpp"
 
 enum class RoundState
 {
@@ -30,12 +30,14 @@ enum class GameState
 class Game
 {
 public:
-
     Game();
 
     void run();
     std::string gameMessage;
+
 private:
+    std::unique_ptr<Replay> replay;
+    bool inReplayMode = false;
     float findTrueCount() const
     {
         return static_cast<float>(runningCount) / static_cast<float>((deck.size() / 52.f));
@@ -94,10 +96,10 @@ std::unique_ptr<sf::Sprite> backgroundSprite;
 
     // ---------------- Stats Tracking ----------------
 
-    int shoeCumulativeWinLoss = 0;   // running win/loss for current shoe
+    int shoeCumulativeWinLoss = 0;    // running win/loss for current shoe
     int sessionCumulativeWinLoss = 0; // running win/loss for entire session
 
-    PlayerStats& getStats()
+    PlayerStats &getStats()
     {
         return player.getStats();
     }
@@ -121,7 +123,7 @@ std::unique_ptr<sf::Sprite> backgroundSprite;
     void draw();
 
     void finishRound();
-    
+
     // ---------------- Betting ----------------
 
     void increaseBet();
@@ -151,14 +153,13 @@ std::unique_ptr<sf::Sprite> backgroundSprite;
 
     void declineInsurance();
 
-
     // ---------------- Dealer ----------------
 
     // Central helper: update running count and check cut card after each draw
     void afterDraw(Card card);
 
-    void dealCardToPlayer(Hand& hand);
-    
+    void dealCardToPlayer(Hand &hand);
+
     void dealCardToDealer();
 
     void dealerTurn();
@@ -171,13 +172,13 @@ std::unique_ptr<sf::Sprite> backgroundSprite;
 
     const int getMaxInsurance();
 
-    char giveBasicStrategyAdvice(Hand& playerHand, Hand& dealerHand);
+    char giveBasicStrategyAdvice(Hand &playerHand, Hand &dealerHand);
 
     // ---------------- Drawing ----------------
 
     void drawDealer();
 
-    void resizeView(sf::RenderWindow& window, sf::View& view);
+    void resizeView(sf::RenderWindow &window, sf::View &view);
 
     void drawPlayers();
 
