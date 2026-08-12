@@ -145,7 +145,7 @@ inline void from_json(const json& j, ShoeRecord& s)
     if (j.contains("completed"))
         j.at("completed").get_to(s.completed);
     // else defaults to true for backward compatibility
-    j.at("shuffleSeed").get_to(s.shuffleSeed);
+    s.shuffleSeed = j.value("shuffleSeed", 0ull);
 }
 
 // PlayerProfile serialization

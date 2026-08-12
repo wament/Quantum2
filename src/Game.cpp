@@ -1,5 +1,5 @@
 #include "Game.hpp"
-
+#include <memory>
 #include <iostream>
 #include <stdexcept>
 #include <filesystem>
@@ -15,6 +15,7 @@ Game::Game() : window(sf::VideoMode(Constants::WINDOW_WIDTH, Constants::WINDOW_H
     window.setView(gameView);
     currentShoeRecord = {};
     loadAssets();
+    replay = std::make_unique<Replay>(window, cardTexture, FontManager::get());
     deck.create(Constants::NUM_DECKS);
     deck.shuffle();
     currentShoeRecord.shuffleSeed = deck.getLastShuffleSeed();
@@ -58,13 +59,25 @@ Close the window at any time to quit.
 
 void Game::run()
 {
+    sf::Clock clock;
     while (window.isOpen())
     {
+        float dt = clock.restart().asSeconds();
+
         processEvents();
 
-        update();
-
-        draw();
+        if (inReplayMode)
+        {
+            replay->update(dt);
+            replay->draw();
+            if (replay->getMode() == Replay::Mode::HistoryList)
+                inReplayMode = false;
+        }
+        else
+        {
+            update();
+            draw();
+        }
     }
 }
 
@@ -278,6 +291,19 @@ void Game::processEvents()
             }
         }
 
+        if (event.key.code == sf::Keyboard::Tab && roundState == RoundState::Cleanup)
+        {
+            auto profile = player.getProfile();
+            auto history = profile.getLongHistory();
+            if (!history.empty())
+            {
+                replay->loadHistory(history);
+                replay->setStartingBankroll(player.getBankroll());
+                inReplayMode = true;
+            }
+            return;
+        }
+
         if (event.key.code ==
             sf::Keyboard::R)
         {
@@ -370,6 +396,10 @@ void Game::updateHUDState()
     hudState.playerStats = &getStats();
 
     hudState.currentShoe = &currentShoeRecord;
+    if (roundState == RoundState::Cleanup)
+    {
+        gameMessage += " [Tab: Review History]";
+    }
 }
 
 // --------------------------------------------------

@@ -115,7 +115,7 @@ const std::vector<Card>& Deck::getFinalShoeRecord() const
     return activeShoeRecord;
 }
 
-const unsigned long long Deck::getlastShuffleSeed() const 
+const unsigned long long Deck::getLastShuffleSeed() const 
 {
     return lastShuffleSeed;
 }
