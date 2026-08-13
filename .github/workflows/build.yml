@@ -1,0 +1,94 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install SFML via vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          cd vcpkg
+          .\bootstrap-vcpkg.bat
+          .\vcpkg install sfml:x64-windows
+
+      - name: Configure CMake
+        run: |
+          cmake -B build `
+            -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_INSTALL_PREFIX=install
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Package Windows
+        run: |
+          mkdir package
+          Copy-Item build\Release\Blackjack2.exe package\
+          Copy-Item -Recurse install\assets package\assets
+          Compress-Archive -Path package\* -DestinationPath Blackjack2-Windows.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: Blackjack2-Windows.zip
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install SFML
+        run: brew install sfml
+
+      - name: Configure CMake
+        run: |
+          cmake -B build `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_INSTALL_PREFIX=install
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Package macOS
+        run: |
+          mkdir -p Blackjack2.app/Contents/MacOS
+          mkdir -p Blackjack2.app/Contents/Resources/assets
+          cp build/Blackjack2 Blackjack2.app/Contents/MacOS/
+          cp -R assets Blackjack2.app/Contents/Resources/assets
+          hdiutil create -volname "Blackjack2" -srcfolder Blackjack2.app -ov -format UDZO Blackjack2-macOS.dmg
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: Blackjack2-macOS.dmg
+
+  release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ secrets.RELEASE_REPO_OWNER }}/${{ secrets.RELEASE_REPO_NAME }}
+          token: ${{ secrets.RELEASE_REPO_TOKEN }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: |
+            windows-build/Blackjack2-Windows.zip
+            macos-build/Blackjack2-macOS.dmg
+          generate_release_notes: true
