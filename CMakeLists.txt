@@ -1,70 +1,35 @@
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~ // .exe. // ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 cmake_minimum_required(VERSION 3.10)
-
 project(Blackjack2 VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Enable testing
 enable_testing()
 
 add_executable(Blackjack2)
 
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~ // libraries // ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# Include directories
+target_include_directories(Blackjack2 PRIVATE include)
 
+# SFML setup
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    # Cross-compiling to Windows with MinGW
-    message(STATUS "Cross-compiling for Windows")
-    message(STATUS "SFML_ROOT: ${SFML_ROOT}")
-
-    target_include_directories(Blackjack2 PRIVATE ${SFML_ROOT}/include include)
+    # Cross-compiling to Windows with MinGW (manual SFML_ROOT)
+    message(STATUS "Cross-compiling for Windows with MinGW")
+    target_include_directories(Blackjack2 PRIVATE ${SFML_ROOT}/include)
     target_link_directories(Blackjack2 PRIVATE ${SFML_ROOT}/lib)
-target_link_libraries(Blackjack2 PRIVATE
-    sfml-graphics
-    sfml-window
-    sfml-system
-    sfml-audio
-    sfml-network
-) 
-
-    # Copy SFML DLLs
-add_custom_command(TARGET Blackjack2 POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory ${SFML_ROOT}/bin $<TARGET_FILE_DIR:Blackjack2>/bin
-        COMMENT "Copying SFML DLLs to output directory"
-)
-
-    # Copy MinGW runtime DLLs (required so users don't need to install dependencies)
-    set(MINGW_RUNTIME_DLLS
-        libgcc_s_seh-1.dll
-        libstdc++-6.dll
-        libwinpthread-1.dll
-        libatomic-1.dll
-        libssp-0.dll
+    target_link_libraries(Blackjack2 PRIVATE
+        sfml-graphics sfml-window sfml-system sfml-audio sfml-network
     )
-
-    foreach(DLL ${MINGW_RUNTIME_DLLS})
-        if(EXISTS "/usr/lib/gcc/x86_64-w64-mingw32/13-win32/${DLL}")
-add_custom_command(TARGET Blackjack2 POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E copy
-                    "/usr/lib/gcc/x86_64-w64-mingw32/13-win32/${DLL}"
-                    $<TARGET_FILE_DIR:Blackjack2>
-                COMMENT "Copying ${DLL} to output directory"
-)
-        endif()
-    endforeach()
 else()
-    # Native Linux build
+    # Native build (Linux, macOS, or Windows with vcpkg)
     find_package(SFML 2.5 REQUIRED COMPONENTS graphics window system audio network)
     target_link_libraries(Blackjack2 PRIVATE
-        sfml-graphics
-        sfml-window
-        sfml-system
-        sfml-audio
-        sfml-network
+        sfml-graphics sfml-window sfml-system sfml-audio sfml-network
     )
 endif()
 
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~ // link files // ~~~~~~~~~~~~~~~~~~~~~~~~~~~
-target_include_directories(Blackjack2 PRIVATE include)
-
+# Sources
 target_sources(Blackjack2 PRIVATE
     main.cpp
     src/Card.cpp
@@ -81,14 +46,14 @@ target_sources(Blackjack2 PRIVATE
     src/Replay.cpp
 )
 
-# Copy assets
+# Copy assets to build output (for local testing)
 add_custom_command(TARGET Blackjack2 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/assets
         $<TARGET_FILE_DIR:Blackjack2>/assets
 )
 
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~ // testing // ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ==================== Testing ====================
 
 include(FetchContent)
 
@@ -100,13 +65,7 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(Catch2)
 
-add_executable(Blackjack2Tests)
-
-target_link_libraries(Blackjack2Tests PRIVATE Catch2::Catch2WithMain)
-
-target_include_directories(Blackjack2Tests PRIVATE include)
-
-target_sources(Blackjack2Tests PRIVATE
+add_executable(Blackjack2Tests
     src/Card.cpp
     src/Deck.cpp
     src/Hand.cpp
@@ -115,9 +74,9 @@ target_sources(Blackjack2Tests PRIVATE
     tests/test_hand.cpp
 )
 
+target_include_directories(Blackjack2Tests PRIVATE include)
+target_link_libraries(Blackjack2Tests PRIVATE Catch2::Catch2WithMain)
+
 include(CTest)
 include(Catch)
 catch_discover_tests(Blackjack2Tests)
-
-set_target_properties(Blackjack2Tests PROPERTIES CXX_STANDARD 17)
-
