@@ -52,7 +52,9 @@ jobs:
           ./bootstrap-vcpkg.sh
 
       - name: Install SFML via vcpkg
-        run: ./vcpkg install sfml:x64-osx
+        run: |
+          cd vcpkg
+          ./vcpkg install sfml:x64-osx
 
       - name: Configure CMake
         run: |
