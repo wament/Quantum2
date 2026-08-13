@@ -28,7 +28,7 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git
           cd vcpkg
           .\bootstrap-vcpkg.bat -disableMetrics
-          .\vcpkg install sfml:x64-windows
+          .\vcpkg install sfml:x64-windows@2.5.3
 
       - name: Configure CMake
         run: |
@@ -88,7 +88,7 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git
           cd vcpkg
           ./bootstrap-vcpkg.sh -disableMetrics
-          ./vcpkg install sfml:arm64-osx 
+          ./vcpkg install sfml:arm64-osx@2.5.3 
 
       - name: Configure CMake
         run: |
@@ -112,13 +112,13 @@ jobs:
           # Copy assets
           cp -R assets "$RESOURCES_DIR/assets"
 
-          # Copy SFML frameworks (macOS uses frameworks by default with vcpkg)
-          cp -R vcpkg/installed/arm64-osx/share/sfml/Frameworks "$RESOURCES_DIR/" || true
+          # Copy SFML frameworks from vcpkg lib/ to app's Frameworks/
+          mkdir -p "$APP_DIR/Contents/Frameworks"
+          cp -R vcpkg/installed/arm64-osx/lib/SFML-*.framework "$APP_DIR/Contents/Frameworks/" || true
 
-          # If SFML was installed as dynamic libs instead of frameworks, copy the libs
-          if [ ! -d "$RESOURCES_DIR/Frameworks" ]; then
-            mkdir -p "$RESOURCES_DIR/libs"
-            cp vcpkg/installed/arm64-osx/lib/libsfml-*.dylib "$RESOURCES_DIR/libs/" 2>/dev/null || true
+          # Fix rpaths so the app finds the frameworks at runtime
+          if [ -d "$APP_DIR/Contents/Frameworks" ]; then
+            install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/Blackjack2"
           fi
 
           # Create DMG
