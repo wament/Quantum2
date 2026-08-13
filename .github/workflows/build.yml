@@ -28,7 +28,7 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git
           cd vcpkg
           .\bootstrap-vcpkg.bat -disableMetrics
-          .\vcpkg install sfml:x64-windows@2.5.3
+          .\vcpkg install sfml:x64-windows@2.5.3 --x-feature-flags=versions
 
       - name: Configure CMake
         run: |
@@ -88,7 +88,7 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git
           cd vcpkg
           ./bootstrap-vcpkg.sh -disableMetrics
-          ./vcpkg install sfml:arm64-osx@2.5.3 
+          ./vcpkg install sfml:arm64-osx@2.5.3 --x-feature-flags=versions
 
       - name: Configure CMake
         run: |
