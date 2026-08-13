@@ -18,15 +18,30 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
     message(STATUS "Cross-compiling for Windows with MinGW")
     target_include_directories(Blackjack2 PRIVATE ${SFML_ROOT}/include)
     target_link_directories(Blackjack2 PRIVATE ${SFML_ROOT}/lib)
+    # Try SFML 3.0 targets first, fall back to legacy names
+    if(TARGET SFML::Graphics)
+    target_link_libraries(Blackjack2 PRIVATE
+            SFML::Graphics SFML::Window SFML::System SFML::Audio SFML::Network
+    )
+else()
     target_link_libraries(Blackjack2 PRIVATE
         sfml-graphics sfml-window sfml-system sfml-audio sfml-network
     )
+endif()
 else()
     # Native build (Linux, macOS, or Windows with vcpkg)
     find_package(SFML REQUIRED COMPONENTS graphics window system audio network)
-    target_link_libraries(Blackjack2 PRIVATE
-        sfml-graphics sfml-window sfml-system sfml-audio sfml-network
-    )
+    # SFML 3.0 uses new target names (SFML::Graphics, etc.)
+    # but older versions use legacy names (sfml-graphics, etc.)
+    if(TARGET SFML::Graphics)
+        target_link_libraries(Blackjack2 PRIVATE
+            SFML::Graphics SFML::Window SFML::System SFML::Audio SFML::Network
+)
+    else()
+        target_link_libraries(Blackjack2 PRIVATE
+            sfml-graphics sfml-window sfml-system sfml-audio sfml-network
+)
+    endif()
 endif()
 
 # Sources
@@ -80,3 +95,4 @@ target_link_libraries(Blackjack2Tests PRIVATE Catch2::Catch2WithMain)
 include(CTest)
 include(Catch)
 catch_discover_tests(Blackjack2Tests)
+
