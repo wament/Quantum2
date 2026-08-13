@@ -23,7 +23,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
     )
 else()
     # Native build (Linux, macOS, or Windows with vcpkg)
-    find_package(SFML 2.5 REQUIRED COMPONENTS graphics window system audio network)
+    find_package(SFML REQUIRED COMPONENTS graphics window system audio network)
     target_link_libraries(Blackjack2 PRIVATE
         sfml-graphics sfml-window sfml-system sfml-audio sfml-network
     )
@@ -43,14 +43,14 @@ target_sources(Blackjack2 PRIVATE
     src/Panel.cpp
     src/StatBox.cpp
     src/FontManager.cpp
-    src/Replay.cpp
+    #src/Replay.cpp
 )
 
 # Copy assets to build output (for local testing)
 add_custom_command(TARGET Blackjack2 POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/assets
-        $<TARGET_FILE_DIR:Blackjack2>/assets
+    ${CMAKE_SOURCE_DIR}/assets
+    $<TARGET_FILE_DIR:Blackjack2>/assets
 )
 
 # ==================== Testing ====================
