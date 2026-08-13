@@ -28,7 +28,7 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git
           cd vcpkg
           .\bootstrap-vcpkg.bat -disableMetrics
-          .\vcpkg install sfml@2.5.3 --triplet x64-windows
+          .\vcpkg install sfml-2.5.3 --triplet x64-windows
       - name: Configure CMake
         run: |
           cmake -B build -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release
@@ -87,7 +87,7 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git
           cd vcpkg
           ./bootstrap-vcpkg.sh -disableMetrics
-          ./vcpkg install sfml@2.5.3 --triplet arm64-osx
+          ./vcpkg install sfml-2.5.3 --triplet arm64-osx
 
       - name: Configure CMake
         run: |
