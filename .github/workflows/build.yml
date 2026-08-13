@@ -21,9 +21,9 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake -B build `
-            -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake `
-            -DCMAKE_BUILD_TYPE=Release `
+          cmake -B build ^
+            -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake ^
+            -DCMAKE_BUILD_TYPE=Release ^
             -DCMAKE_INSTALL_PREFIX=install
 
       - name: Build
@@ -33,7 +33,7 @@ jobs:
         run: |
           mkdir package
           Copy-Item build\Release\Blackjack2.exe package\
-          Copy-Item -Recurse install\assets package\assets
+          Copy-Item -Recurse assets package\assets
           Compress-Archive -Path package\* -DestinationPath Blackjack2-Windows.zip
 
       - name: Upload artifact
@@ -48,13 +48,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install SFML
-        run: brew install sfml
+      - name: Install vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          cd vcpkg
+          ./bootstrap-vcpkg.sh
+
+      - name: Install SFML via vcpkg
+        run: ./vcpkg install sfml:x64-osx
 
       - name: Configure CMake
         run: |
-          cmake -B build `
-            -DCMAKE_BUILD_TYPE=Release `
+          cmake -B build \
+            -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=install
 
       - name: Build
