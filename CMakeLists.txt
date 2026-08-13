@@ -30,7 +30,12 @@ else()
 endif()
 else()
     # Native build (Linux, macOS, or Windows with vcpkg)
-    find_package(SFML REQUIRED COMPONENTS graphics window system audio network)
+    # SFML 3.0 uses capitalized component names, 2.x uses lowercase
+    # Try 3.0 style first
+    find_package(SFML QUIET COMPONENTS Graphics Window System Audio Network)
+    if(NOT SFML_FOUND)
+        find_package(SFML REQUIRED COMPONENTS graphics window system audio network)
+    endif()
     # SFML 3.0 uses new target names (SFML::Graphics, etc.)
     # but older versions use legacy names (sfml-graphics, etc.)
     if(TARGET SFML::Graphics)
@@ -95,4 +100,5 @@ target_link_libraries(Blackjack2Tests PRIVATE Catch2::Catch2WithMain)
 include(CTest)
 include(Catch)
 catch_discover_tests(Blackjack2Tests)
+
 
