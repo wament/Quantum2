@@ -50,11 +50,7 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git
           cd vcpkg
           ./bootstrap-vcpkg.sh
-
-      - name: Install SFML via vcpkg
-        run: |
-          cd vcpkg
-          ./vcpkg install sfml:x64-osx
+          ./vcpkg install sfml:x64-osx 
 
       - name: Configure CMake
         run: |
