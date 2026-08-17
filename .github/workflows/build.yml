@@ -95,9 +95,30 @@ jobs:
           cd vcpkg
           .\bootstrap-vcpkg.bat -disableMetrics
           .\vcpkg install sfml:x64-windows
-      - name: Configure CMake
+
+      - name: Verify vcpkg
+        shell: pwsh
         run: |
-          cmake -B build -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release
+          Write-Host "Workspace: $env:GITHUB_WORKSPACE"
+          Write-Host "vcpkg:"
+          Get-Item "$env:GITHUB_WORKSPACE\vcpkg\vcpkg.exe"
+
+          Write-Host "Toolchain:"
+          Get-Item "$env:GITHUB_WORKSPACE\vcpkg\scripts\buildsystems\vcpkg.cmake"
+
+          
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          $toolchain = Join-Path $env:GITHUB_WORKSPACE "vcpkg/scripts/buildsystems/vcpkg.cmake"
+
+          Write-Host "Using vcpkg toolchain: $toolchain"
+
+          if (!(Test-Path $toolchain)) {
+              Write-Error "vcpkg toolchain file not found!"
+              exit 1
+          }
+          cmake -B build -DCMAKE_TOOLCHAIN_FILE=$toolchain -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build --config Release --parallel
