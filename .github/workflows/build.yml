@@ -106,6 +106,16 @@ jobs:
           Write-Host "Toolchain:"
           Get-Item "$env:GITHUB_WORKSPACE\vcpkg\scripts\buildsystems\vcpkg.cmake"
 
+      - name: Check SFML installation
+        shell: pwsh
+        run: |
+          Write-Host "Installed SFML:"
+          .\vcpkg\vcpkg.exe list | Select-String "sfml"
+
+          Write-Host ""
+          Write-Host "SFML config:"
+          Get-Content ".\vcpkg\installed\x64-windows\share\sfml\SFMLConfig.cmake" | Select-Object -First 100
+
 
       - name: Configure CMake
         shell: pwsh
