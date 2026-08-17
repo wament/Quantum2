@@ -6,57 +6,6 @@ on:
       - 'v*'
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Cache vcpkg
-        id: cache-vcpkg
-        uses: actions/cache@v4
-        with:
-          path: |
-            vcpkg
-          key: vcpkg-windows-${{ hashFiles('**/CMakeLists.txt') }}
-          restore-keys: |
-            vcpkg-windows-
-      - name: Install SFML via vcpkg
-        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git
-          cd vcpkg
-          .\bootstrap-vcpkg.bat -disableMetrics
-          .\vcpkg install sfml:x64-windows
-      - name: Configure CMake
-        run: |
-          cmake -B build -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release
-      - name: Build
-        run: cmake --build build --config Release --parallel
-
-      - name: Package Windows
-        run: |
-          $buildDir = "build\Release"
-          $pkgDir = "package"
-          New-Item -ItemType Directory -Path $pkgDir -Force
-          # Copy executable
-          Copy-Item "$buildDir\Blackjack2.exe" $pkgDir\
-          # Copy assets
-          Copy-Item -Recurse assets "$pkgDir\assets"
-          # Copy SFML runtime DLLs (required!)
-          $vcpkgDir = "vcpkg\installed\x64-windows\bin"
-          Get-ChildItem "$vcpkgDir\sfml-*.dll" | ForEach-Object {
-            Copy-Item $_.FullName $pkgDir\
-          }
-          Get-ChildItem "$vcpkgDir\opengl32.dll" -ErrorAction SilentlyContinue | ForEach-Object {
-            Copy-Item $_.FullName $pkgDir\
-          }
-          Compress-Archive -Path "$pkgDir\*" -DestinationPath "Blackjack2-Windows.zip"
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-build
-          path: Blackjack2-Windows.zip
 
   build-macos:
     runs-on: macos-latest
@@ -73,16 +22,19 @@ jobs:
           key: vcpkg-macos-${{ hashFiles('**/CMakeLists.txt') }}
           restore-keys: |
             vcpkg-macos-
+
       - name: Install vcpkg
         if: steps.cache-vcpkg.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/microsoft/vcpkg.git
           cd vcpkg
           ./bootstrap-vcpkg.sh -disableMetrics
-          ./vcpkg install sfml:arm64-osx 
+          ./vcpkg install sfml --triplet arm64-osx
+
       - name: Configure CMake
         run: |
           cmake -B build -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release -G "Unix Makefiles"
+
       - name: Build
         run: cmake --build build --parallel
 
@@ -91,26 +43,90 @@ jobs:
           APP_DIR="Blackjack2.app"
           MACOS_DIR="$APP_DIR/Contents/MacOS"
           RESOURCES_DIR="$APP_DIR/Contents/Resources"
+
           mkdir -p "$MACOS_DIR"
           mkdir -p "$RESOURCES_DIR/assets"
+
           # Copy executable
           cp build/Blackjack2 "$MACOS_DIR/"
+
           # Copy assets
           cp -R assets "$RESOURCES_DIR/assets"
-          # Copy SFML frameworks (macOS uses frameworks by default with vcpkg)
-          cp -R vcpkg/installed/arm64-osx/share/sfml/Frameworks "$RESOURCES_DIR/" || true
-          # If SFML was installed as dynamic libs instead of frameworks, copy the libs
-          if [ ! -d "$RESOURCES_DIR/Frameworks" ]; then
-            mkdir -p "$RESOURCES_DIR/libs"
-            cp vcpkg/installed/arm64-osx/lib/libsfml-*.dylib "$RESOURCES_DIR/libs/" 2>/dev/null || true
+
+          # Copy SFML frameworks from vcpkg lib/ to app's Frameworks/
+          mkdir -p "$APP_DIR/Contents/Frameworks"
+          cp -R vcpkg/installed/arm64-osx/lib/SFML-*.framework "$APP_DIR/Contents/Frameworks/" || true
+
+          # Fix rpaths so the app finds the frameworks at runtime
+          if [ -d "$APP_DIR/Contents/Frameworks" ]; then
+            install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/Blackjack2"
           fi
+
           # Create DMG
           hdiutil create -volname "Blackjack2" -srcfolder "$APP_DIR" -ov -format UDZO "Blackjack2-macOS.dmg"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-build
           path: Blackjack2-macOS.dmg
+
+          
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache vcpkg
+        id: cache-vcpkg
+        uses: actions/cache@v4
+        with:
+          path: |
+            vcpkg
+          key: vcpkg-windows-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            vcpkg-windows-
+
+      - name: Install SFML via vcpkg
+        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          cd vcpkg
+          .\bootstrap-vcpkg.bat -disableMetrics
+          .\vcpkg install sfml:x64-windows
+      - name: Configure CMake
+        run: |
+          cmake -B build -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Package Windows
+        run: |
+          $buildDir = "build\Release"
+          $pkgDir = "package"
+          New-Item -ItemType Directory -Path $pkgDir -Force
+
+          # Copy executable
+          Copy-Item "$buildDir\Blackjack2.exe" $pkgDir\
+
+          # Copy assets
+          Copy-Item -Recurse assets "$pkgDir\assets"
+
+          # Copy SFML runtime DLLs (required!)
+          $vcpkgDir = "vcpkg\installed\x64-windows\bin"
+          Get-ChildItem "$vcpkgDir\sfml-*.dll" | ForEach-Object {
+            Copy-Item $_.FullName $pkgDir\
+          } 
+
+          Compress-Archive -Path "$pkgDir\*" -DestinationPath "Blackjack2-Windows.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: Blackjack2-Windows.zip
 
   release:
     needs: [build-windows, build-macos]
