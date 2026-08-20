@@ -1,5 +1,6 @@
 #include "Game.hpp"
 #include <memory>
+#include <memory>
 #include <iostream>
 #include <stdexcept>
 #include <filesystem>
@@ -21,15 +22,19 @@ Game::Game()
       player("William")
 {
 
+
     window.setView(gameView);
     currentShoeRecord = {};
     loadAssets();
     replay = std::make_unique<Replay>(window, cardTexture, FontManager::get());
+    replay = std::make_unique<Replay>(window, cardTexture, FontManager::get());
     deck.create(Constants::NUM_DECKS);
     deck.shuffle();
     currentShoeRecord.shuffleSeed = deck.getLastShuffleSeed();
+    currentShoeRecord.shuffleSeed = deck.getLastShuffleSeed();
     currentShoeRecord.initialDeck = deck.getCards();
     nextRound();
+#pragma region
 #pragma region
     std::cout << R"(
 
@@ -64,17 +69,34 @@ Close the window at any time to quit.
 
 )";
 #pragma endregion
+#pragma endregion
 }
 
 void Game::run()
 {
     sf::Clock clock;
     while (window.isOpen())
+    sf::Clock clock;
+    while (window.isOpen())
     {
+        float dt = clock.restart().asSeconds();
+
         float dt = clock.restart().asSeconds();
 
         processEvents();
 
+        if (inReplayMode)
+        {
+            replay->update(dt);
+            replay->draw();
+            if (replay->getMode() == Replay::Mode::HistoryList)
+                inReplayMode = false;
+        }
+        else
+        {
+            update();
+            draw();
+        }
         if (inReplayMode)
         {
             replay->update(dt);
@@ -99,6 +121,8 @@ void Game::loadAssets()
     std::cout << "Current working directory: "
               << std::filesystem::current_path() << '\n';
 
+              << std::filesystem::current_path() << '\n';
+
     if (!FontManager::load("assets/fonts/roboto/RobotoFlex-VariableFont.ttf"))
     {
         std::cout << "Failed to load font!\n";
@@ -107,6 +131,9 @@ void Game::loadAssets()
 
     hud.initialize(FontManager::get());
 
+    if (!backgroundTexture.loadFromFile(
+            "assets/images/felt.png"))
+    {
     if (!backgroundTexture.loadFromFile(
             "assets/images/felt.png"))
     {
@@ -133,6 +160,8 @@ void Game::loadAssets()
 
 void Game::nextRound()
 {
+    player.resetRound(initalBet); // also clear bets
+    dealer.clear();
     player.resetRound(initalBet); // also clear bets
     dealer.clear();
     currentRoundRecord = {};
@@ -336,6 +365,7 @@ void Game::update()
         // Advance to the next unfinished hand.
         while (player.currentHand < player.hands.size() &&
                player.hands[player.currentHand].isFinished())
+               player.hands[player.currentHand].isFinished())
         {
             ++player.currentHand;
         }
@@ -359,10 +389,13 @@ void Game::update()
 
     if (roundState ==
         RoundState::DealerTurn)
+    if (roundState ==
+        RoundState::DealerTurn)
     {
         dealerTurn();
     }
 }
+
 
 void Game::updateHUDState()
 {
@@ -378,11 +411,16 @@ void Game::updateHUDState()
 
     hudState.kellyFraction = kellyFraction;
 
+
     hudState.statusMessage = gameMessage;
 
     hudState.playerStats = &getStats();
 
     hudState.currentShoe = &currentShoeRecord;
+    if (roundState == RoundState::Cleanup)
+    {
+        gameMessage += " [Tab: Review History]";
+    }
     if (roundState == RoundState::Cleanup)
     {
         gameMessage += " [Tab: Review History]";
@@ -396,21 +434,29 @@ void Game::updateHUDState()
 void Game::hit()
 {
     Hand &hand =
+    Hand &hand =
         player.hands[player.currentHand];
 
+    if (hand.isFinished())
     if (hand.isFinished())
         return;
 
     dealCardToPlayer(hand);
 
     std::cout
+    std::cout
         << "Hit! You have "
         << hand.getValue()
         << ". " << std::endl;
 
     if (hand.isBust())
+        << ". " << std::endl;
+
+    if (hand.isBust())
     {
         std::cout
+            << "Bust!\n"
+            << std::endl;
             << "Bust!\n"
             << std::endl;
 
@@ -424,10 +470,15 @@ void Game::stand()
 {
     Hand &hand = player.hands[player.currentHand];
     std::cout
+    Hand &hand = player.hands[player.currentHand];
+    std::cout
         << "Stand on "
         << hand.getValue()
         << ".\n";
+        << ".\n";
     hand.setFinished(true);
+
+    handActions[player.currentHand].push_back("S");
 
     handActions[player.currentHand].push_back("S");
 }
@@ -435,12 +486,15 @@ void Game::stand()
 void Game::doubleDown()
 {
     Hand &hand = player.hands[player.currentHand];
+    Hand &hand = player.hands[player.currentHand];
     int initalbet = hand.getBet();
 
+    if (!hand.canDouble())
     if (!hand.canDouble())
         return;
 
     hand.setDoubledDown(true);
+    if (!player.placeBet(initalbet))
     if (!player.placeBet(initalbet))
         return;
 
@@ -449,15 +503,18 @@ void Game::doubleDown()
 
     // Track double stats
     PlayerStats &stats = getStats();
+    PlayerStats &stats = getStats();
     stats.doubles++;
     stats.betsPlaced++;
     stats.betSum += initalbet;
 
     std::cout
+    std::cout
         << "Doubling "
         << initalbet << " to " << hand.getBet()
         << " on a "
         << hand.getValue()
+        << "!\n";
         << "!\n";
 
     hand.setFinished(true);
@@ -465,23 +522,31 @@ void Game::doubleDown()
     handActions[player.currentHand].push_back("D");
 }
 
+    handActions[player.currentHand].push_back("D");
+}
+
 void Game::split()
 {
     Hand &hand = player.hands[player.currentHand];
+    Hand &hand = player.hands[player.currentHand];
 
+    if (player.hands.size() >= Constants::MAX_SPLIT_HANDS)
     if (player.hands.size() >= Constants::MAX_SPLIT_HANDS)
     {
         return;
     }
 
     if (!hand.canSplit())
+    if (!hand.canSplit())
         return;
 
     Hand newHand;
     Card splitCard = hand.takeLastCard();
     std::cout
+    std::cout
         << "Splitting "
         << splitCard.getBlackjackValueToString()
+        << "s.\n";
         << "s.\n";
     newHand.addCard(splitCard);
 
@@ -496,6 +561,7 @@ void Game::split()
 
     // Track split stats
     PlayerStats &stats = getStats();
+    PlayerStats &stats = getStats();
     stats.splits++;
     stats.betsPlaced++;
     stats.betSum += hand.getBet(); // new hand inherits bet amount
@@ -504,12 +570,15 @@ void Game::split()
 void Game::surrender()
 {
     Hand &hand = player.hands[player.currentHand];
+    Hand &hand = player.hands[player.currentHand];
 
     // Cannot surrender a finished hand
+    if (hand.isFinished())
     if (hand.isFinished())
         return;
 
     // Only allowed on the first two cards
+    if (!hand.canDouble())
     if (!hand.canDouble())
         return;
 
@@ -529,10 +598,13 @@ void Game::surrender()
 void Game::increaseBet()
 {
 
+
     if (player.hands[0].getBet() < Constants::MAXIMUM_BET)
     {
         player.hands[0].setBet(player.hands[0].getBet() + 5);
         std::cout << "Increased bet to "
+                  << player.hands[player.currentHand].getBet()
+                  << ".\n";
                   << player.hands[player.currentHand].getBet()
                   << ".\n";
     }
@@ -541,10 +613,14 @@ void Game::increaseBet()
 void Game::decreaseBet()
 {
 
+
     if (player.hands[0].getBet() >= Constants::MINIMUM_BET)
+    {
     {
         player.hands[0].setBet(player.hands[0].getBet() - 5);
         std::cout << "Decreased bet to "
+                  << player.hands[player.currentHand].getBet()
+                  << ".\n";
                   << player.hands[player.currentHand].getBet()
                   << ".\n";
     }
@@ -575,11 +651,14 @@ void Game::confirmBet()
 {
     int currentBet = player.hands[0].getBet();
     if (currentBet < Constants::MINIMUM_BET || currentBet > Constants::MAXIMUM_BET)
+    if (currentBet < Constants::MINIMUM_BET || currentBet > Constants::MAXIMUM_BET)
         return;
 
     if (!player.placeBet(currentBet))
+    if (!player.placeBet(currentBet))
     {
         std::cout << "Not enough bankroll. " << player.getBankroll() << " is your max. Or "
+                  << player.getBankroll() / 2 << " if you want to double.\n";
                   << player.getBankroll() / 2 << " if you want to double.\n";
         return;
     }
@@ -588,10 +667,18 @@ void Game::confirmBet()
 
     // Track bet stats
     PlayerStats &stats = getStats();
+    PlayerStats &stats = getStats();
     stats.betsPlaced++;
     stats.betSum += currentBet;
 
     std::cout << "You bet "
+              << player.hands[player.currentHand].getBet()
+              << ". Your remaining bankroll is: "
+              << player.getBankroll()
+              << "\n"
+              << "The running count is: "
+              << runningCount
+              << ".\n";
               << player.hands[player.currentHand].getBet()
               << ". Your remaining bankroll is: "
               << player.getBankroll()
@@ -610,10 +697,14 @@ void Game::increaseInsurance()
 {
     if (player.hands[player.currentHand].getInsuranceBet() < getMaxInsurance())
     {
+    if (player.hands[player.currentHand].getInsuranceBet() < getMaxInsurance())
+    {
 
         player.hands[player.currentHand].setInsuranceBet(
             player.hands[player.currentHand].getInsuranceBet() + 1);
         std::cout << "Increased insurance to "
+                  << player.hands[player.currentHand].getInsuranceBet()
+                  << ".\n";
                   << player.hands[player.currentHand].getInsuranceBet()
                   << ".\n";
     }
@@ -623,9 +714,13 @@ void Game::decreaseInsurance()
 {
     if (player.hands[player.currentHand].getInsuranceBet() > 0)
     {
+    if (player.hands[player.currentHand].getInsuranceBet() > 0)
+    {
         player.hands[player.currentHand].setInsuranceBet(
             player.hands[player.currentHand].getInsuranceBet() - 1);
         std::cout << "Decreased insurance to "
+                  << player.hands[player.currentHand].getInsuranceBet()
+                  << ".\n";
                   << player.hands[player.currentHand].getInsuranceBet()
                   << ".\n";
     }
@@ -640,6 +735,8 @@ void Game::confirmInsurance()
         std::cout << "Placed insurance bet of"
                   << insBet
                   << ".\n";
+                  << insBet
+                  << ".\n";
     }
 
     evaluateBlackjack();
@@ -652,6 +749,7 @@ void Game::declineInsurance()
     evaluateBlackjack();
 }
 
+const int Game::getMaxInsurance()
 const int Game::getMaxInsurance()
 {
     return player.hands[player.currentHand].getBet() / 2;
@@ -673,9 +771,14 @@ void Game::deal()
 
     if (dealer.getDealerUpCard().isAce())
     {
+    if (dealer.getDealerUpCard().isAce())
+    {
         std::cout << "offered insurance" << std::endl;
         roundState = RoundState::OfferInsurance;
+        roundState = RoundState::OfferInsurance;
     }
+    else
+        evaluateBlackjack();
     else
         evaluateBlackjack();
 
@@ -689,6 +792,7 @@ void Game::deal()
 
 void Game::evaluateBlackjack()
 {
+    Hand &hand = player.hands[player.currentHand];
     Hand &hand = player.hands[player.currentHand];
 
     int bet = hand.getBet();
@@ -724,6 +828,9 @@ void Game::evaluateBlackjack()
     }
     else
     {
+    }
+    else
+    {
         roundState = RoundState::PlayerTurn;
     }
 
@@ -743,6 +850,7 @@ void Game::evaluateBlackjack()
 
 void Game::offerInsurance()
 {
+    Hand &hand = player.hands[player.currentHand];
     Hand &hand = player.hands[player.currentHand];
 
     int maxInsurance = hand.getBet() / 2;
@@ -781,6 +889,7 @@ void Game::offerInsurance()
 void Game::afterDraw(Card card)
 {
     runningCount += card.getHiLoValue();
+    runningCount += card.getHiLoValue();
 
     if (deck.reachedCutCard())
     {
@@ -788,6 +897,7 @@ void Game::afterDraw(Card card)
     }
 }
 
+void Game::dealCardToPlayer(Hand &hand)
 void Game::dealCardToPlayer(Hand &hand)
 {
     Card card = deck.draw();
@@ -814,23 +924,37 @@ void Game::dealerTurn()
     {
         if (hand.isBlackjack() && !hand.isSplit())
         {
+    for (Hand hand : player.hands)
+    {
+        if (hand.isBlackjack() && !hand.isSplit())
+        {
             doNotDraw = true;
         }
 
+        if (hand.isBust())
+        {
         if (hand.isBust())
         {
             numBusted++;
         }
     }
     if (numBusted == player.hands.size())
+    }
+    if (numBusted == player.hands.size())
         doNotDraw = true;
 
+
     // Hit soft 17 (H17 rule): dealer must draw when total is 17 and soft.
+    while ((dealer.getValue() < Constants::DEALER_STAND ||
+            (dealer.getValue() == Constants::DEALER_STAND && dealer.isSoft())) &&
     while ((dealer.getValue() < Constants::DEALER_STAND ||
             (dealer.getValue() == Constants::DEALER_STAND && dealer.isSoft())) &&
            !doNotDraw)
     {
         std::cout
+            << "Dealer has "
+            << dealer.getValue()
+            << "\n";
             << "Dealer has "
             << dealer.getValue()
             << "\n";
@@ -840,7 +964,16 @@ void Game::dealerTurn()
 
     if (dealer.isBust())
     {
+    if (dealer.isBust())
+    {
         std::cout
+            << "Dealer busted with "
+            << dealer.getValue()
+            << ". Too many!\n";
+    }
+    else
+    {
+
             << "Dealer busted with "
             << dealer.getValue()
             << ". Too many!\n";
@@ -855,9 +988,15 @@ void Game::dealerTurn()
                 << "Dealer stands on the edge of "
                 << dealer.getValue()
                 << "." << std::endl;
+                << "Dealer stands on the edge of "
+                << dealer.getValue()
+                << "." << std::endl;
             break;
         case 18:
             std::cout
+                << "Dealer stands on "
+                << dealer.getValue()
+                << "." << std::endl;
                 << "Dealer stands on "
                 << dealer.getValue()
                 << "." << std::endl;
@@ -867,15 +1006,24 @@ void Game::dealerTurn()
                 << "Dealer stands on "
                 << dealer.getValue()
                 << ". It's bigger than average." << std::endl;
+                << "Dealer stands on "
+                << dealer.getValue()
+                << ". It's bigger than average." << std::endl;
             break;
         case 20:
             std::cout
                 << "Dealer stands on "
                 << dealer.getValue()
                 << ". Dealer always has 20." << std::endl;
+                << "Dealer stands on "
+                << dealer.getValue()
+                << ". Dealer always has 20." << std::endl;
             break;
         case 21:
             std::cout
+                << "Dealer stands on "
+                << dealer.getValue()
+                << ". That's the name of the game folks." << std::endl;
                 << "Dealer stands on "
                 << dealer.getValue()
                 << ". That's the name of the game folks." << std::endl;
@@ -889,6 +1037,9 @@ void Game::dealerTurn()
 
     if (gameState ==
         GameState::LastHand)
+
+    if (gameState ==
+        GameState::LastHand)
     {
         gameState =
             GameState::GameOver;
@@ -898,8 +1049,10 @@ void Game::dealerTurn()
         shoeCumulativeWinLoss = 0; // reset for next shoe
 
         // do end game saving here
+        // do end game saving here
 
         PlayerProfile profile = player.getProfile();
+
 
         profile.addShoeRecord(currentShoeRecord);
         player.updateProfile(profile);
@@ -914,6 +1067,7 @@ void Game::dealerTurn()
 void Game::evaluateHands()
 {
     PlayerStats &stats = getStats();
+    PlayerStats &stats = getStats();
 
     // Build the new RoundRecord
     currentRoundRecord.dealerCards.clear();
@@ -927,18 +1081,28 @@ void Game::evaluateHands()
     currentRoundRecord.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
                                        std::chrono::system_clock::now().time_since_epoch())
                                        .count();
+                                       std::chrono::system_clock::now().time_since_epoch())
+                                       .count();
 
     // Evaluate each hand
     for (size_t handIndex = 0; handIndex < player.hands.size(); handIndex++)
     {
         const Hand &hand = player.hands[handIndex];
+        const Hand &hand = player.hands[handIndex];
 
+        std::cout << "Entering evaluateHands() on hand " << (handIndex + 1)
         std::cout << "Entering evaluateHands() on hand " << (handIndex + 1)
                   << ". Bankroll = " << player.getBankroll() << std::endl;
 
         HandOutcome outcome;
         outcome.wager = hand.getBet();
         outcome.actions = handActions[handIndex];
+
+        if (handIndex == 0)
+        {
+            outcome.insuranceBet = hand.getInsuranceBet();
+            outcome.insuranceTaken = (outcome.insuranceBet > 0);
+        }
 
         if (handIndex == 0)
         {
@@ -954,6 +1118,7 @@ void Game::evaluateHands()
             outcome.payout = hand.getBet() / 2;
             outcome.won = false;
             stats.losses++;
+            outcome.surrendered = true;
             outcome.surrendered = true;
             netProfitOnHand = hand.getBet() / 2 - hand.getBet();
         }
@@ -1088,15 +1253,19 @@ void Game::draw()
     drawChips();
     // drawDeck();
     if (roundState == RoundState::OfferInsurance)
+    // drawDeck();
+    if (roundState == RoundState::OfferInsurance)
         drawInsurance();
 
     updateHUDState();
     hud.update(hudState);
     hud.draw(window);
 
+
     window.display();
 }
 
+void Game::resizeView(sf::RenderWindow &window, sf::View &view)
 void Game::resizeView(sf::RenderWindow &window, sf::View &view)
 {
     float windowRatio = static_cast<float>(window.getSize().x) /
@@ -1125,6 +1294,7 @@ void Game::resizeView(sf::RenderWindow &window, sf::View &view)
 void Game::drawDealer()
 {
     if (roundState == RoundState::PlayerTurn || roundState == RoundState::OfferInsurance)
+    if (roundState == RoundState::PlayerTurn || roundState == RoundState::OfferInsurance)
     {
         auto back =
             Graphics::makeCardBackSprite(
@@ -1147,6 +1317,7 @@ void Game::drawDealer()
     }
 
     for (std::size_t i = 0; i < dealer.size(); i++)
+    for (std::size_t i = 0; i < dealer.size(); i++)
     {
         Graphics::drawCard(
             window,
@@ -1163,10 +1334,17 @@ void Game::drawPlayers()
     for (std::size_t handIndex = 0;
          handIndex < player.hands.size();
          handIndex++)
+    for (std::size_t handIndex = 0;
+         handIndex < player.hands.size();
+         handIndex++)
     {
+        const Hand &hand =
         const Hand &hand =
             player.hands[handIndex];
 
+        for (std::size_t i = 0;
+             i < hand.size();
+             i++)
         for (std::size_t i = 0;
              i < hand.size();
              i++)
@@ -1185,6 +1363,7 @@ void Game::drawPlayers()
     }
 }
 
+
 void Game::drawChips()
 {
     struct Chip
@@ -1202,13 +1381,24 @@ void Game::drawChips()
             {250, sf::Color(255, 105, 180)}, // $2.50
             {100, sf::Color::White}          // $1
         };
+        {
+            {50000, sf::Color(128, 0, 128)}, // $500
+            {10000, sf::Color::Black},       // $100
+            {2500, sf::Color(0, 180, 0)},    // $25
+            {500, sf::Color::Red},           // $5
+            {250, sf::Color(255, 105, 180)}, // $2.50
+            {100, sf::Color::White}          // $1
+        };
 
     int handIndex = 0;
+    for (Hand &hand : player.hands)
+    {
     for (Hand &hand : player.hands)
     {
         int totalBet = hand.getBet();
         int stackBet = hand.isDoubledDown() ? totalBet / 2 : totalBet;
 
+        if (totalBet <= 0)
         if (totalBet <= 0)
             continue;
 
@@ -1241,7 +1431,9 @@ void Game::drawChips()
         std::vector<Chip> stack;
 
         for (const auto &chip : denominations)
+        for (const auto &chip : denominations)
         {
+            while (remaining >= chip.value)
             while (remaining >= chip.value)
             {
                 stack.push_back(chip);
@@ -1252,6 +1444,9 @@ void Game::drawChips()
         //
         // Draw stack
         //
+        for (std::size_t i = 0;
+             i < stack.size();
+             i++)
         for (std::size_t i = 0;
              i < stack.size();
              i++)
@@ -1293,10 +1488,14 @@ void Game::drawChips()
         // Draw second stack when doubled
         //
         if (hand.isDoubledDown())
+        if (hand.isDoubledDown())
         {
             float secondX =
                 chipX + 35.f;
 
+            for (std::size_t i = 0;
+                 i < stack.size();
+                 i++)
             for (std::size_t i = 0;
                  i < stack.size();
                  i++)
@@ -1324,6 +1523,9 @@ void Game::drawChips()
 
 void Game::drawDeck()
 {
+    for (std::size_t i = 0;
+         i < deck.size();
+         i++)
     for (std::size_t i = 0;
          i < deck.size();
          i++)
