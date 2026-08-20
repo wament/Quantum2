@@ -12,7 +12,9 @@ add_executable(Blackjack2)
 # Include directories
 target_include_directories(Blackjack2 PRIVATE include)
 
-# SFML setup
+# SFML setup - SFML 3.1 (uses PascalCase component names and imported targets)
+# Use static linking for easier distribution (SFML compiled into executable)
+option(SFML_STATIC_LIBRARIES "Use static SFML libraries" ON)
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # Cross-compiling to Windows with MinGW (manual SFML_ROOT)
     message(STATUS "Cross-compiling for Windows with MinGW")
@@ -23,9 +25,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
     )
 else()
     # Native build (Linux, macOS, or Windows with vcpkg)
-    find_package(SFML REQUIRED COMPONENTS graphics window system audio network)
+    find_package(SFML 3.1 REQUIRED COMPONENTS Graphics Window System Audio Network)
     target_link_libraries(Blackjack2 PRIVATE
-        sfml-graphics sfml-window sfml-system sfml-audio sfml-network
+        SFML::Graphics SFML::Window SFML::System SFML::Audio SFML::Network
     )
 endif()
 

@@ -43,7 +43,7 @@ Built in C++ with SFML, it features a complete HUD, persistent profiles, full ga
 
 - CMake 3.10+
 - GCC 13.3.0+ (or any C++17 compiler)
-- SFML 2.5+
+- SFML 3.1+
 
 ### Linux
 

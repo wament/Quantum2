@@ -13,66 +13,70 @@ HUD::HUD()
 HUD::~HUD()
 {
     // StatBox pointers are owned by Panels and cleaned up there
+
+    if (m_sliderLabel)
+        delete m_sliderLabel;
+    if (m_controlsText)
+        delete m_controlsText;
 }
 
-void HUD::initialize(sf::Font& font)
+void HUD::initialize(sf::Font &font)
 {
     // Initialize all panels with the font
     m_leftPanel.initialize(font);
     m_rightPanel.initialize(font);
     m_bottomPanel.initialize(font);
-     
+
     // Initialize slider label once with the shared font
-    m_sliderLabel.setFont(FontManager::get());
-    m_sliderLabel.setCharacterSize(Constants::HUD_FONT_SIZE);
-    m_sliderLabel.setFillColor(sf::Color::White);
+    m_sliderLabel = new sf::Text(FontManager::get(), "", static_cast<unsigned int>(Constants::HUD_FONT_SIZE));
+    m_sliderLabel->setFillColor(sf::Color::White);
 
     const float BOTTOM_HEIGHT = 80.f;
-    
+
     // Panels are flush against screen edges (no external margin)
-    
+
     // Bottom panel: full width, anchored to bottom
     m_bottomPanel.setBounds(
         sf::Vector2f(0.f, Constants::WINDOW_HEIGHT - BOTTOM_HEIGHT),
         sf::Vector2f(Constants::WINDOW_WIDTH, BOTTOM_HEIGHT));
-    
+
     // Left panel: flush left, from top to above bottom panel
     m_leftPanel.setBounds(
         sf::Vector2f(0.f, 0.f),
         sf::Vector2f(200.f, Constants::WINDOW_HEIGHT - BOTTOM_HEIGHT));
-    
+
     // Right panel: flush right, from top to above bottom panel
     m_rightPanel.setBounds(
         sf::Vector2f(Constants::WINDOW_WIDTH - 200.f, 0.f),
         sf::Vector2f(200.f, Constants::WINDOW_HEIGHT - BOTTOM_HEIGHT));
-    
+
     // Bottom panel stat boxes
     m_bankrollBox = m_bottomPanel.addStatBox("Bankroll");
     m_bankrollBox->initialize(font, "Bankroll");
-    
+
     m_betBox = m_bottomPanel.addStatBox("Bet");
     m_betBox->initialize(font, "Bet");
-    
+
     m_statusBox = m_bottomPanel.addStatBox("Status");
     m_statusBox->initialize(font, "Status");
-    
+
     // New counting/state boxes
     m_countBox = m_bottomPanel.addStatBox("Count");
     m_countBox->initialize(font, "Count");
-    
+
     m_trueCountBox = m_bottomPanel.addStatBox("True Count");
     m_trueCountBox->initialize(font, "True Count");
-    
+
     m_cardsRemainingBox = m_bottomPanel.addStatBox("Cards Left");
     m_cardsRemainingBox->initialize(font, "Cards Left");
-    
+
     m_streakBox = m_bottomPanel.addStatBox("Streak");
     m_streakBox->initialize(font, "Streak");
-    
+
     // Stat box positions use PANEL_MARGIN relative to bottom panel's top-left
     float panelX = Constants::PANEL_MARGIN + 5.f;
     float panelY = Constants::WINDOW_HEIGHT - BOTTOM_HEIGHT + Constants::PANEL_MARGIN;
-    
+
     m_bankrollBox->setPosition(sf::Vector2f(panelX, panelY));
     m_betBox->setPosition(sf::Vector2f(panelX + 110.f, panelY));
     m_statusBox->setPosition(sf::Vector2f(panelX + 220.f, panelY));
@@ -86,65 +90,65 @@ void HUD::initialize(sf::Font& font)
     const float sliderY = panelY + 32.f;
     const float sliderWidth = 350.f;
     const float sliderHeight = 14.f;
-    riskSliderBounds = sf::FloatRect(sliderX, sliderY, sliderWidth, sliderHeight);
+    riskSliderBounds = sf::FloatRect({sliderX, sliderY}, {sliderWidth, sliderHeight});
 
     // Initialize controls text
     updateControls(font);
 }
 
-void HUD::updateControls(sf::Font& font)
+void HUD::updateControls(sf::Font &font)
 {
-    m_controlsText.setFont(font);
-    m_controlsText.setCharacterSize(13);
-    m_controlsText.setFillColor(sf::Color(200, 200, 200));
-    m_controlsText.setPosition(0.f, Constants::WINDOW_HEIGHT - 80.f - 20.f);
-    
+
+    m_controlsText = new sf::Text(font, "", 13u);
+    m_controlsText->setFillColor(sf::Color(200, 200, 200));
+    m_controlsText->setPosition(sf::Vector2f(0.f, Constants::WINDOW_HEIGHT - 80.f - 20.f));
+
     // Build a single-line controls display
-    std::string controls = 
+    std::string controls =
         " [Up/Down | Adjust Bet]   [ <- | Auto Kelly]   [ -> | Confirm]                     "
         "[H | Hit]    [S | Stand]    [D | Double]    [P | Split]    [Y | Surrender]                     "
         "[R | Next Round/Restart]";
-    
-    m_controlsText.setString(controls);
-    
+
+    m_controlsText->setString(controls);
+
     // Center horizontally
-    sf::FloatRect bounds = m_controlsText.getLocalBounds();
-    m_controlsText.setOrigin(bounds.width / 2.f, 0.f);
-    m_controlsText.setPosition(Constants::WINDOW_WIDTH / 2.f, Constants::WINDOW_HEIGHT - 80.f - 20.f);
+    sf::FloatRect bounds = m_controlsText->getLocalBounds();
+    m_controlsText->setOrigin(sf::Vector2f(bounds.size.x / 2.f, 0.f));
+    m_controlsText->setPosition(sf::Vector2f(Constants::WINDOW_WIDTH / 2.f, Constants::WINDOW_HEIGHT - 80.f - 20.f));
 }
 
-void HUD::update(const HUDState& hudState)
+void HUD::update(const HUDState &hudState)
 {
-    if(m_bankrollBox)
+    if (m_bankrollBox)
         m_bankrollBox->setValue(std::to_string(hudState.bankroll));
-    
-    if(m_betBox)
+
+    if (m_betBox)
         m_betBox->setValue(std::to_string(hudState.currentBet));
-    
-    if(m_statusBox)
+
+    if (m_statusBox)
     {
         m_statusBox->setValue(
             hudState.statusMessage.empty() ? "Playing" : hudState.statusMessage);
     }
-    
+
     // Counting info from HUDState
-    if(m_countBox)
+    if (m_countBox)
         m_countBox->setValue(std::to_string(hudState.runningCount));
-    
-    if(m_trueCountBox)
+
+    if (m_trueCountBox)
     {
         std::ostringstream oss;
         oss << std::fixed << std::setprecision(1) << hudState.trueCount;
         m_trueCountBox->setValue(oss.str());
     }
-    
-    if(m_cardsRemainingBox)
+
+    if (m_cardsRemainingBox)
         m_cardsRemainingBox->setValue(std::to_string(hudState.cardsRemaining));
-    
-    if(m_streakBox)
+
+    if (m_streakBox)
     {
         std::string streakStr;
-        if(hudState.streak == 0)
+        if (hudState.streak == 0)
         {
             streakStr = "-";
         }
@@ -161,54 +165,56 @@ void HUD::update(const HUDState& hudState)
     sliderDragging = hudState.riskSliderDragging;
 }
 
-void HUD::draw(sf::RenderWindow& window)
+void HUD::draw(sf::RenderWindow &window)
 {
-    if(m_showLeft)
+    if (m_showLeft)
         m_leftPanel.draw(window);
-    
-    if(m_showRight)
+
+    if (m_showRight)
         m_rightPanel.draw(window);
-    
+
     // Bottom panel always visible
     m_bottomPanel.draw(window);
 
     drawRiskSlider(window);
-    
+
     // Draw controls above bottom panel
-    window.draw(m_controlsText);
+    window.draw(*m_controlsText);
 }
 
-const sf::FloatRect& HUD::getRiskSliderBounds() const
+const sf::FloatRect &HUD::getRiskSliderBounds() const
 {
     return riskSliderBounds;
 }
 
-void HUD::drawRiskSlider(sf::RenderWindow& window)
+void HUD::drawRiskSlider(sf::RenderWindow &window)
 {
-    if (riskSliderBounds.width <= 0.f || riskSliderBounds.height <= 0.f)
+    if (riskSliderBounds.size.x <= 0.f || riskSliderBounds.size.y <= 0.f)
         return;
+    sf::Vector2f pos = riskSliderBounds.position;
+    sf::Vector2f size = riskSliderBounds.size;
 
     // Track background
     sf::RectangleShape track;
-    track.setPosition(riskSliderBounds.left, riskSliderBounds.top);
-    track.setSize(sf::Vector2f(riskSliderBounds.width, riskSliderBounds.height));
+    track.setPosition(pos);
+    track.setSize(size);
     track.setFillColor(sf::Color(30, 30, 30));
     track.setOutlineColor(sf::Color(100, 100, 100));
     track.setOutlineThickness(1.f);
     window.draw(track);
 
     // Filled portion
-    float fillWidth = riskSliderBounds.width * sliderValue;
+    float fillWidth = riskSliderBounds.size.x * sliderValue;
     sf::RectangleShape fill;
-    fill.setPosition(riskSliderBounds.left, riskSliderBounds.top);
-    fill.setSize(sf::Vector2f(fillWidth, riskSliderBounds.height));
+    fill.setPosition(pos);
+    fill.setSize(sf::Vector2f(fillWidth, size.y));
     fill.setFillColor(sliderDragging ? sf::Color(50, 180, 255) : sf::Color(0, 160, 200));
     window.draw(fill);
 
     // Thumb
-    float thumbX = riskSliderBounds.left + fillWidth - 6.f;
+    float thumbX = pos.x + fillWidth - 6.f;
     sf::CircleShape thumb(7.f);
-    thumb.setPosition(thumbX, riskSliderBounds.top - 2.f);
+    thumb.setPosition(sf::Vector2f(thumbX, pos.y - 2.f));
     thumb.setFillColor(sf::Color::White);
     thumb.setOutlineColor(sf::Color(0, 140, 180));
     thumb.setOutlineThickness(2.f);
@@ -220,15 +226,16 @@ void HUD::drawRiskSlider(sf::RenderWindow& window)
     if (sliderValue > 0.0f)
     {
         rorApprox = 0.135f * sliderValue * sliderValue * 4.f;
-        if (rorApprox > 0.9f) rorApprox = 0.9f;
+        if (rorApprox > 0.9f)
+            rorApprox = 0.9f;
     }
 
     // Build label string
     std::ostringstream labelStr;
     labelStr << "Kelly: " << static_cast<int>(kellyPct) << "%";
     if (kellyPct > 50.f)
-    { 
-        labelStr << " (~" << static_cast<int>(rorApprox * 100.f) << "% RoR) PRESS IT!" ;
+    {
+        labelStr << " (~" << static_cast<int>(rorApprox * 100.f) << "% RoR) PRESS IT!";
     }
     else
     {
@@ -236,25 +243,22 @@ void HUD::drawRiskSlider(sf::RenderWindow& window)
     }
 
     // Update persistent label
-    m_sliderLabel.setString(labelStr.str());
+    m_sliderLabel->setString(labelStr.str());
 
     // Color: red when above 50%, white otherwise
     if (kellyPct > 50.f)
     {
-        m_sliderLabel.setFillColor(sf::Color(255, 60, 60));
+        m_sliderLabel->setFillColor(sf::Color(255, 60, 60));
     }
     else
     {
-        m_sliderLabel.setFillColor(sf::Color::White);
+        m_sliderLabel->setFillColor(sf::Color::White);
     }
 
-    sf::FloatRect lb = m_sliderLabel.getLocalBounds();
-    m_sliderLabel.setOrigin(lb.width / 2.f, 0.f);
-    m_sliderLabel.setPosition(
-        riskSliderBounds.left + riskSliderBounds.width / 2.f,
-        riskSliderBounds.top - 32.f
-    );
-    window.draw(m_sliderLabel);
+    sf::FloatRect lb = m_sliderLabel->getLocalBounds();
+    m_sliderLabel->setOrigin(sf::Vector2f(lb.size.x / 2.f, 0.f));
+    m_sliderLabel->setPosition(sf::Vector2f(pos.x + size.x / 2.f, pos.y - 32.f));
+    window.draw(*m_sliderLabel);
 }
 
 void HUD::toggleLeftPanel()

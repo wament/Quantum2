@@ -6,26 +6,24 @@
 class StatBox
 {
 public:
-
     StatBox();
+    ~StatBox();
 
-    void initialize(sf::Font& font, const std::string& title);
+    void initialize(sf::Font &font, const std::string &title);
 
-    void setTitle(const std::string& title);
+    void setTitle(const std::string &title);
 
     std::string getTitle() const;
 
-    void setValue(const std::string& value);
+    void setValue(const std::string &value);
 
     void setPosition(sf::Vector2f position);
 
-    void draw(sf::RenderWindow& window);
+    void draw(sf::RenderWindow &window);
 
 private:
-
-    sf::Text m_title;
-
-    sf::Text m_value;
+    sf::Text *m_title = nullptr;
+    sf::Text *m_value = nullptr;
 
     std::string m_titleText;
 };

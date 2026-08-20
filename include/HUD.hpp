@@ -13,11 +13,11 @@ public:
 
     ~HUD();
 
-    void initialize(sf::Font& font);
+    void initialize(sf::Font &font);
 
-    void update(const HUDState& hudState);
+    void update(const HUDState &hudState);
 
-    void draw(sf::RenderWindow& window);
+    void draw(sf::RenderWindow &window);
 
     void toggleLeftPanel();
     void toggleRightPanel();
@@ -26,10 +26,9 @@ public:
     bool rightVisible() const;
 
     // Expose slider bounds so Game can handle input
-    const sf::FloatRect& getRiskSliderBounds() const;
+    const sf::FloatRect &getRiskSliderBounds() const;
 
 private:
-
     bool m_showLeft = true;
     bool m_showRight = true;
 
@@ -37,15 +36,15 @@ private:
     Panel m_rightPanel;
     Panel m_bottomPanel;
 
-    StatBox* m_bankrollBox = nullptr;
-    StatBox* m_betBox = nullptr;
-    StatBox* m_statusBox = nullptr;
+    StatBox *m_bankrollBox = nullptr;
+    StatBox *m_betBox = nullptr;
+    StatBox *m_statusBox = nullptr;
 
     // Counting/stat boxes
-    StatBox* m_countBox = nullptr;
-    StatBox* m_trueCountBox = nullptr;
-    StatBox* m_cardsRemainingBox = nullptr;
-    StatBox* m_streakBox = nullptr;
+    StatBox *m_countBox = nullptr;
+    StatBox *m_trueCountBox = nullptr;
+    StatBox *m_cardsRemainingBox = nullptr;
+    StatBox *m_streakBox = nullptr;
 
     // Slider state from HUDState (for rendering)
     float sliderValue = 0.33f;
@@ -55,12 +54,13 @@ private:
     sf::FloatRect riskSliderBounds;
 
     // Persistent slider label (set font once, reuse every frame)
-    sf::Text m_sliderLabel;
+
+    sf::Text *m_sliderLabel = nullptr;
 
     // Controls display
-    sf::Text m_controlsText;
+    sf::Text *m_controlsText = nullptr;
 
-    void drawRiskSlider(sf::RenderWindow& window);
+    void drawRiskSlider(sf::RenderWindow &window);
 
-    void updateControls(sf::Font& font);
+    void updateControls(sf::Font &font);
 };

@@ -7,7 +7,7 @@
 ## Technology Stack
 
 - **Language**: C++17 (CMake minimum 3.10)
-- **Graphics/Audio/Input**: SFML 2.5 (graphics, window, system, audio, network)
+- **Graphics/Audio/Input**: SFML 3.1 (graphics, window, system, audio, network)
 - **JSON Serialization**: nlohmann/json (embedded single-header library in `include/nlohmann/`)
 - **Build System**: CMake with presets
 - **Platforms**:
