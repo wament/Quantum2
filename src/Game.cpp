@@ -10,8 +10,7 @@
 #include "FontManager.hpp"
 
 Game::Game()
-    : backgroundSprite(backgroundTexture),
-      window(
+    : window(
           sf::VideoMode({Constants::WINDOW_WIDTH, Constants::WINDOW_HEIGHT}), Constants::WINDOW_TITLE),
       gameView(
           sf::FloatRect(
@@ -99,11 +98,12 @@ void Game::loadAssets()
         throw std::runtime_error(
             "Failed to load felt texture");
     }
+
+    backgroundSprite = std::make_unique<sf::Sprite>(backgroundTexture);
+
     sf::Vector2u textureSize = backgroundTexture.getSize();
-
     sf::Vector2u windowSize = window.getSize();
-
-    backgroundSprite.setScale(
+    backgroundSprite->setScale(
         sf::Vector2f(
             static_cast<float>(windowSize.x) / textureSize.x,
             static_cast<float>(windowSize.y) / textureSize.y));
@@ -1062,7 +1062,7 @@ void Game::draw()
 {
     window.clear();
 
-    window.draw(backgroundSprite);
+    window.draw(*backgroundSprite);
 
     drawDealer();
     drawPlayers();

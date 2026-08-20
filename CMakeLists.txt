@@ -74,11 +74,13 @@ add_executable(Blackjack2Tests
     tests/test_card.cpp
     tests/test_deck.cpp
     tests/test_hand.cpp
+    tests/test_assets.cpp
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)
-target_link_libraries(Blackjack2Tests PRIVATE Catch2::Catch2WithMain)
+target_link_libraries(Blackjack2Tests PRIVATE Catch2::Catch2WithMain SFML::Graphics)
 
 include(CTest)
 include(Catch)
 catch_discover_tests(Blackjack2Tests)
+   

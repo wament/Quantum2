@@ -48,7 +48,7 @@ private:
     sf::View gameView;
 
     sf::Texture backgroundTexture;
-    sf::Sprite backgroundSprite;
+std::unique_ptr<sf::Sprite> backgroundSprite;
 
     sf::Texture cardTexture;
     sf::Font font;
