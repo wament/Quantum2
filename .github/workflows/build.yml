@@ -53,13 +53,32 @@ jobs:
           # Copy assets
           cp -R assets "$RESOURCES_DIR/assets"
 
-          # Copy SFML frameworks from vcpkg lib/ to app's Frameworks/
+          # Copy SFML frameworks AND dependencies from vcpkg to app's Frameworks/
           mkdir -p "$APP_DIR/Contents/Frameworks"
-          cp -R vcpkg/installed/arm64-osx/lib/SFML-*.framework "$APP_DIR/Contents/Frameworks/" || true
+          vcpkg_lib="vcpkg/installed/arm64-osx/lib"
+
+          # Copy SFML frameworks
+          cp -R "$vcpkg_lib"/SFML-*.framework "$APP_DIR/Contents/Frameworks/" || true
+
+          # Copy other SFML dependencies (FreeType, etc.)
+          # FreeType is used by SFML-Graphics for fonts
+          if [ -f "$vcpkg_lib/libfreetype.dylib" ]; then
+            cp "$vcpkg_lib/libfreetype.dylib" "$APP_DIR/Contents/Frameworks/"
+          fi
+          if [ -d "$vcpkg_lib/freetype.framework" ]; then
+            cp -R "$vcpkg_lib/freetype.framework" "$APP_DIR/Contents/Frameworks/"
+          fi
 
           # Fix rpaths so the app finds the frameworks at runtime
           if [ -d "$APP_DIR/Contents/Frameworks" ]; then
             install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/Blackjack2"
+
+            # Also fix rpaths inside the frameworks to find each other
+            for fw in "$APP_DIR/Contents/Frameworks/"*.framework; do
+              if [ -f "$fw/$(basename $fw .framework)" ]; then
+                install_name_tool -add_rpath "@executable_path/../Frameworks" "$fw/$(basename $fw .framework)" || true
+              fi
+            done
           fi
 
           # Create DMG
@@ -145,11 +164,9 @@ jobs:
           # Copy assets
           Copy-Item -Recurse assets "$pkgDir\assets"
 
-          # Copy SFML runtime DLLs (required!)
-          $vcpkgDir = "vcpkg\installed\x64-windows\bin"
-          Get-ChildItem "$vcpkgDir\sfml-*.dll" | ForEach-Object {
-            Copy-Item $_.FullName $pkgDir\
-          } 
+          # Copy ALL runtime DLLs from vcpkg (SFML + dependencies: freetype, openal, etc.)
+          $vcpkgBin = "vcpkg\installed\x64-windows\bin"
+          Copy-Item "$vcpkgBin\*.dll" "$pkgDir\" -Force 
 
           Compress-Archive -Path "$pkgDir\*" -DestinationPath "Blackjack2-Windows.zip"
 
