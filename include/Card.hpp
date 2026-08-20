@@ -23,6 +23,7 @@ struct Card
     [[nodiscard]] bool isFaceCard() const;
 
     [[nodiscard]] bool isCutCard() const;
+    [[nodiscard]] int getHiLoValue() const;  // Hi-Lo counting value (-1, 0, +1)
 };
 
 /*

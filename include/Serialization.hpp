@@ -85,7 +85,10 @@ inline void to_json(json& j, const HandOutcome& h)
         {"actions", h.actions},
         {"wager", h.wager},
         {"payout", h.payout},
-        {"won", h.won}
+        {"won", h.won},
+        {"surrendered", h.surrendered},
+        {"insuranceBet", h.insuranceBet},
+        {"insuranceTaken", h.insuranceTaken}
     };
 }
 
@@ -96,6 +99,9 @@ inline void from_json(const json& j, HandOutcome& h)
     j.at("wager").get_to(h.wager);
     j.at("payout").get_to(h.payout);
     j.at("won").get_to(h.won);
+    j.at("surrendered").get_to(h.surrendered);
+    j.at("insuranceBet").get_to(h.insuranceBet);
+    j.at("insuranceTaken").get_to(h.insuranceTaken);
 }
 
 // RoundRecord serialization
@@ -127,7 +133,8 @@ inline void to_json(json& j, const ShoeRecord& s)
     j = {
         {"initialDeck", s.initialDeck},
         {"rounds", s.rounds},
-        {"completed", s.completed}
+        {"completed", s.completed},
+        {"shuffleSeed", s.shuffleSeed}
     };
 }
 
@@ -138,6 +145,7 @@ inline void from_json(const json& j, ShoeRecord& s)
     if (j.contains("completed"))
         j.at("completed").get_to(s.completed);
     // else defaults to true for backward compatibility
+    j.at("shuffleSeed").get_to(s.shuffleSeed);
 }
 
 // PlayerProfile serialization

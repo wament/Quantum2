@@ -3,6 +3,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <filesystem>
+#include <filesystem>
 
 #include "Constants.hpp"
 #include "Graphics.hpp"
@@ -25,6 +26,7 @@ Game::Game()
     loadAssets();
     deck.create(Constants::NUM_DECKS);
     deck.shuffle();
+    currentShoeRecord.shuffleSeed = deck.getLastShuffleSeed();
     currentShoeRecord.initialDeck = deck.getCards();
     nextRound();
 #pragma region
@@ -761,14 +763,7 @@ void Game::offerInsurance()
 // Central helper: apply Hi-Lo count update and check for cut card after drawing
 void Game::afterDraw(Card card)
 {
-    if (card.getBlackjackValue() > 1 && card.getBlackjackValue() < 7)
-    {
-        runningCount++;
-    }
-    else if (card.getBlackjackValue() > 9)
-    {
-        runningCount--;
-    }
+    runningCount += card.getHiLoValue();
 
     if (deck.reachedCutCard())
     {
@@ -928,6 +923,12 @@ void Game::evaluateHands()
         outcome.wager = hand.getBet();
         outcome.actions = handActions[handIndex];
 
+        if (handIndex == 0)
+        {
+            outcome.insuranceBet = hand.getInsuranceBet();
+            outcome.insuranceTaken = (outcome.insuranceBet > 0);
+        }
+
         int netProfitOnHand = 0;
 
         if (hand.isSurrendered())
@@ -936,6 +937,7 @@ void Game::evaluateHands()
             outcome.payout = hand.getBet() / 2;
             outcome.won = false;
             stats.losses++;
+            outcome.surrendered = true;
             netProfitOnHand = hand.getBet() / 2 - hand.getBet();
         }
         else if (hand.isBust() || (hand.getValue() < dealer.getValue() && !dealer.isBust()))
