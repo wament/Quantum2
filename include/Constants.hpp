@@ -183,6 +183,13 @@ namespace BasicStrategy
         bool isPair,
         int pairValue);
 
+    int calculateKellyBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet);
+
+    int calculateHiLoValue(const int bjValue);
+
+    int updateHiLo(int currentCount, const int bjValue);
+
+    float computeTrueCount(int runningCount, int cardsRemaining);
 }
 
 // inline implementation
@@ -258,9 +265,9 @@ inline char BasicStrategy::getRecommendedAction(
     return playerValue >= 17 ? 'S' : 'H';
 }
 
-inline int calculateKellyBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet)
+inline int BasicStrategy::calculateKellyBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet)
 {
-    if (trueCount < 2.0f || bankroll <= 0)
+    if (trueCount < 2.0f)
         return minBet;
 
     float playerEdge = 0.005f * (trueCount - 1.0f) - 0.0005f;
@@ -271,4 +278,26 @@ inline int calculateKellyBet(float trueCount, float kellyFraction, int bankroll,
     int wager = static_cast<int>(rawBet);
 
     return std::max(minBet, std::min(maxBet, wager));
+}
+
+inline int BasicStrategy::calculateHiLoValue(const int bjValue)
+{
+    if (bjValue > 1 && bjValue < 7)
+        return 1;
+    else if (bjValue > 9)
+        return -1;
+    return 0;
+}
+
+inline int BasicStrategy::updateHiLo(int currentCount, const int bjValue)
+{
+    return currentCount + calculateHiLoValue(bjValue);
+}
+
+inline float BasicStrategy::computeTrueCount(int runningCount, int cardsRemaining)
+{
+    int decksRemaining = cardsRemaining / 52.0f;
+    if (decksRemaining < 0.5f)
+        decksRemaining = 0.5f;
+    return static_cast<float>(runningCount) / decksRemaining;
 }

@@ -139,7 +139,7 @@ Replay::buildSteps(const ShoeRecord &shoe)
     {
         step.runningCount = runningCount;
         step.cardsRemaining = totalCards - cardsDealtSoFar;
-        step.trueCount = computeTrueCount(runningCount, step.cardsRemaining);
+        step.trueCount = BasicStrategy::computeTrueCount(runningCount, step.cardsRemaining);
         step.cumulativeProfit = shoeProfit;
         result.push_back(step);
         runningCount += step.card.getHiLoValue(); // update after card dealt
@@ -151,7 +151,7 @@ Replay::buildSteps(const ShoeRecord &shoe)
     {
         step.runningCount = runningCount;
         step.cardsRemaining = totalCards - cardsDealtSoFar;
-        step.trueCount = computeTrueCount(runningCount, step.cardsRemaining);
+        step.trueCount = BasicStrategy::computeTrueCount(runningCount, step.cardsRemaining);
         step.cumulativeProfit = shoeProfit;
         result.push_back(step);
     };
@@ -636,166 +636,150 @@ bool Replay::isAtEnd() const
 
 void Replay::processEvents(sf::Event &event)
 {
-    if (event.type != sf::Event::KeyPressed &&
-        event.type != sf::Event::MouseButtonPressed &&
-        event.type != sf::Event::MouseButtonReleased &&
-        event.type != sf::Event::MouseMoved)
-    {
-        return;
-    }
-
-    if (event.type == sf::Event::Closed)
+    // Check for Closed event
+    if (event.is<sf::Event::Closed>())
     {
         // Let Game handle shutdown; just exit replay mode.
         exitReplay();
         return;
     }
 
-    if (mode == Mode::HistoryList)
+    // Handle KeyPressed events
+    if (event.is<sf::Event::KeyPressed>())
     {
-        if (event.type == sf::Event::KeyPressed)
+        const auto* keyEvent = event.getIf<sf::Event::KeyPressed>();
+        if (keyEvent)
         {
-            switch (event.key.code)
+            if (mode == Mode::HistoryList)
             {
-            case sf::Keyboard::Up:
-                selectPreviousShoe();
-                break;
-            case sf::Keyboard::Down:
-                selectNextShoe();
-                break;
-            case sf::Keyboard::Enter:
-            // case sf::Keyboard::Return:
-            case sf::Keyboard::Right:
-                if (!historyEntries.empty())
+                switch (keyEvent->code)
                 {
-                    const auto &entry = historyEntries[selectedHistoryIndex];
-                    loadShoe(allShoes[entry.index], entry.index); // load from stored records
+                case sf::Keyboard::Key::Up:
+                    selectPreviousShoe();
+                    break;
+                case sf::Keyboard::Key::Down:
+                    selectNextShoe();
+                    break;
+                case sf::Keyboard::Key::Enter:
+                case sf::Keyboard::Key::Right:
+                    if (!historyEntries.empty())
+                    {
+                        const auto &entry = historyEntries[selectedHistoryIndex];
+                        loadShoe(allShoes[entry.index], entry.index);
+                    }
+                    break;
+                case sf::Keyboard::Key::Escape:
+                    exitReplay();
+                    break;
+                default:
+                    break;
                 }
-                break;
-            case sf::Keyboard::Escape:
-                exitReplay();
-                break;
-            default:
-                break;
+            }
+            else // Playing mode
+            {
+                switch (keyEvent->code)
+                {
+                case sf::Keyboard::Key::Right:
+                    stepForward();
+                    break;
+                case sf::Keyboard::Key::Left:
+                    stepBackward();
+                    break;
+                case sf::Keyboard::Key::Space:
+                    setAutoPlay(!autoPlay);
+                    break;
+                case sf::Keyboard::Key::H:
+                    skipHand();
+                    break;
+                case sf::Keyboard::Key::R:
+                    skipRound();
+                    break;
+                case sf::Keyboard::Key::Escape:
+                case sf::Keyboard::Key::Backspace:
+                    exitReplay();
+                    break;
+                case sf::Keyboard::Key::Num1:
+                    if (currentState.totalRounds > 0)
+                        goToRound(std::min(1, currentState.totalRounds - 1));
+                    break;
+                case sf::Keyboard::Key::Num2:
+                    if (currentState.totalRounds > 1)
+                        goToRound(std::min(2, currentState.totalRounds - 1));
+                    break;
+                case sf::Keyboard::Key::Num3:
+                    if (currentState.totalRounds > 2)
+                        goToRound(std::min(3, currentState.totalRounds - 1));
+                    break;
+                case sf::Keyboard::Key::Num4:
+                    if (currentState.totalRounds > 3)
+                        goToRound(std::min(4, currentState.totalRounds - 1));
+                    break;
+                case sf::Keyboard::Key::Num5:
+                    if (currentState.totalRounds > 4)
+                        goToRound(std::min(5, currentState.totalRounds - 1));
+                    break;
+                case sf::Keyboard::Key::Num6:
+                    if (currentState.totalRounds > 5)
+                        goToRound(std::min(6, currentState.totalRounds - 1));
+                    break;
+                case sf::Keyboard::Key::Num7:
+                    if (currentState.totalRounds > 6)
+                        goToRound(std::min(7, currentState.totalRounds - 1));
+                    break;
+                case sf::Keyboard::Key::Num8:
+                    if (currentState.totalRounds > 7)
+                        goToRound(std::min(8, currentState.totalRounds - 1));
+                    break;
+                case sf::Keyboard::Key::Num9:
+                    if (currentState.totalRounds > 8)
+                        goToRound(std::min(9, currentState.totalRounds - 1));
+                    break;
+                default:
+                    break;
+                }
             }
         }
         return;
     }
 
-    // --- Playing mode ---
-
-    if (event.type == sf::Event::MouseButtonPressed &&
-        event.mouseButton.button == sf::Mouse::Left)
+    // Handle MouseButtonPressed events
+    if (event.is<sf::Event::MouseButtonPressed>())
     {
-        sf::Vector2f mousePos(
-            static_cast<float>(event.mouseButton.x),
-            static_cast<float>(event.mouseButton.y));
-        if (sliderDragging || sliderBounds.contains(mousePos))
+        const auto* mouseEvent = event.getIf<sf::Event::MouseButtonPressed>();
+        if (mouseEvent && mouseEvent->button == sf::Mouse::Button::Left)
         {
-            sliderDragging = true;
+            sf::Vector2f mousePos(mouseEvent->position.x, mouseEvent->position.y);
+            if (sliderDragging || sliderBounds.contains(mousePos))
+            {
+                sliderDragging = true;
+            }
         }
-    }
-
-    if (event.type == sf::Event::MouseButtonReleased &&
-        event.mouseButton.button == sf::Mouse::Left)
-    {
-        sliderDragging = false;
-    }
-
-    if (event.type == sf::Event::MouseMoved && sliderDragging)
-    {
-        sf::Vector2f mousePos(
-            static_cast<float>(event.mouseMove.x),
-            static_cast<float>(event.mouseMove.y));
-
-        float frac = (mousePos.x - sliderBounds.left) / sliderBounds.width;
-        frac = std::max(0.0f, std::min(1.0f, frac));
-
-        int targetRound = static_cast<int>(frac * (currentState.totalRounds - 1));
-        goToRound(targetRound);
         return;
     }
 
-    if (event.type == sf::Event::KeyPressed)
+    // Handle MouseButtonReleased events
+    if (event.is<sf::Event::MouseButtonReleased>())
     {
-        switch (event.key.code)
+        const auto* mouseEvent = event.getIf<sf::Event::MouseButtonReleased>();
+        if (mouseEvent && mouseEvent->button == sf::Mouse::Button::Left)
         {
-        case sf::Keyboard::Right:
-            // case sf::Keyboard::ArrowRight:
-            stepForward();
-            break;
+            sliderDragging = false;
+        }
+        return;
+    }
 
-        case sf::Keyboard::Left:
-            // case sf::Keyboard::ArrowLeft:
-            stepBackward();
-            break;
+    // Handle MouseMoved events
+    if (event.is<sf::Event::MouseMoved>() && sliderDragging)
+    {
+        const auto* mouseEvent = event.getIf<sf::Event::MouseMoved>();
+        if (mouseEvent)
+        {
+            sf::Vector2f mousePos(mouseEvent->position.x, mouseEvent->position.y);
+            float frac = (mousePos.x - sliderBounds.position.x) / sliderBounds.size.x;
+            frac = std::max(0.0f, std::min(1.0f, frac));
 
-        case sf::Keyboard::Space:
-            setAutoPlay(!autoPlay);
-            break;
-
-        case sf::Keyboard::H:
-            skipHand();
-            break;
-
-        case sf::Keyboard::R:
-            skipRound();
-            break;
-
-        case sf::Keyboard::Escape:
-        case sf::Keyboard::Backspace:
-            exitReplay();
-            break;
-
-        // Jump to specific round by number (1-9)
-        case sf::Keyboard::Num1:
-        case sf::Keyboard::Numpad1:
-            if (currentState.totalRounds > 0)
-                goToRound(std::min(1, currentState.totalRounds - 1));
-            break;
-        case sf::Keyboard::Num2:
-        case sf::Keyboard::Numpad2:
-            if (currentState.totalRounds > 1)
-                goToRound(std::min(2, currentState.totalRounds - 1));
-            break;
-        case sf::Keyboard::Num3:
-        case sf::Keyboard::Numpad3:
-            if (currentState.totalRounds > 2)
-                goToRound(std::min(3, currentState.totalRounds - 1));
-            break;
-        case sf::Keyboard::Num4:
-        case sf::Keyboard::Numpad4:
-            if (currentState.totalRounds > 3)
-                goToRound(std::min(4, currentState.totalRounds - 1));
-            break;
-        case sf::Keyboard::Num5:
-        case sf::Keyboard::Numpad5:
-            if (currentState.totalRounds > 4)
-                goToRound(std::min(5, currentState.totalRounds - 1));
-            break;
-        case sf::Keyboard::Num6:
-        case sf::Keyboard::Numpad6:
-            if (currentState.totalRounds > 5)
-                goToRound(std::min(6, currentState.totalRounds - 1));
-            break;
-        case sf::Keyboard::Num7:
-        case sf::Keyboard::Numpad7:
-            if (currentState.totalRounds > 6)
-                goToRound(std::min(7, currentState.totalRounds - 1));
-            break;
-        case sf::Keyboard::Num8:
-        case sf::Keyboard::Numpad8:
-            if (currentState.totalRounds > 7)
-                goToRound(std::min(8, currentState.totalRounds - 1));
-            break;
-        case sf::Keyboard::Num9:
-        case sf::Keyboard::Numpad9:
-            if (currentState.totalRounds > 8)
-                goToRound(std::min(9, currentState.totalRounds - 1));
-            break;
-
-        default:
-            break;
+            int targetRound = static_cast<int>(frac * (currentState.totalRounds - 1));
+            goToRound(targetRound);
         }
     }
 }
@@ -821,10 +805,10 @@ void Replay::update(float deltaTime)
 
     // Update slider bounds each frame so it stays correct if window resizes
     sf::Vector2u size = window.getSize();
-    sliderBounds.left = 60.0f;
-    sliderBounds.top = static_cast<float>(size.y) - 130.0f;
-    sliderBounds.width = static_cast<float>(size.x - 120);
-    sliderBounds.height = 16.0f;
+    sliderBounds.position.x = 60.0f;
+    sliderBounds.position.y = static_cast<float>(size.y) - 130.0f;
+    sliderBounds.size.x = static_cast<float>(size.x - 120);
+    sliderBounds.size.y = 16.0f;
 }
 
 // --------------------------------------------------
@@ -849,30 +833,21 @@ void Replay::draw()
 
 void Replay::drawHistoryList()
 {
-    sf::Text title;
-    title.setFont(font);
-    title.setCharacterSize(28);
-    title.setFillColor(sf::Color::White);
+    sf::Text title(font, "Review History — Select a Shoe", 28);
     title.setString("Review History — Select a Shoe");
-    title.setPosition(60.f, 30.f);
+    title.setPosition({60.f, 30.f});
     window.draw(title);
 
-    sf::Text instructions;
-    instructions.setFont(font);
-    instructions.setCharacterSize(16);
-    instructions.setFillColor(sf::Color(180, 180, 180));
+    sf::Text instructions(font, "↑/↓ navigate  •  Enter: replay  •  Esc: exit", 16);
     instructions.setString("↑/↓ navigate  •  Enter: replay  •  Esc: exit");
-    instructions.setPosition(60.f, 70.f);
+    instructions.setPosition({60.f, 70.f});
     window.draw(instructions);
 
     if (historyEntries.empty())
     {
-        sf::Text none;
-        none.setFont(font);
-        none.setCharacterSize(20);
-        none.setFillColor(sf::Color(150, 150, 150));
+        sf::Text none(font, "No shoes recorded yet.", 20);
         none.setString("No shoes recorded yet.");
-        none.setPosition(60.f, 120.f);
+        none.setPosition({60.f, 120.f});
         window.draw(none);
         return;
     }
@@ -892,23 +867,20 @@ void Replay::drawHistoryList()
             << " | Net: " << (entry.netProfit >= 0 ? "+" : "") << entry.netProfit
             << " | " << (entry.completed ? "Completed" : "Incomplete");
 
-        sf::Text line;
-        line.setFont(font);
-        line.setCharacterSize(18);
-        line.setFillColor(selected ? sf::Color(255, 215, 0) : sf::Color(200, 200, 200));
+        sf::Text line(font, oss.str(), 18);
         line.setString(oss.str());
 
         if (selected)
         {
             sf::RectangleShape bg(sf::Vector2f(1200.f, lineHeight));
-            bg.setPosition(50.f, y - 5.f);
+            bg.setPosition({50.f, y - 5.f});
             bg.setFillColor(sf::Color(30, 30, 50));
             bg.setOutlineColor(sf::Color(255, 215, 0));
             bg.setOutlineThickness(1.f);
             window.draw(bg);
         }
 
-        line.setPosition(60.f, y);
+        line.setPosition({60.f, y});
         window.draw(line);
 
         y += lineHeight;
@@ -925,14 +897,11 @@ void Replay::drawReplayView()
     window.draw(table);
 
     // Title bar
-    sf::Text title;
-    title.setFont(font);
-    title.setCharacterSize(20);
-    title.setFillColor(sf::Color::White);
+    sf::Text title(font, "", 20);
     title.setString("Replay — Shoe #" + std::to_string(currentShoeIndex + 1) +
                     " | Round " + std::to_string(state.roundIndex + 1) +
                     " of " + std::to_string(state.totalRounds));
-    title.setPosition(60.f, 15.f);
+    title.setPosition({60.f, 15.f});
     window.draw(title);
 
     // Dealer cards (top center)
@@ -966,13 +935,13 @@ void Replay::drawTable(const ReplayInternals::ReplayState &state)
         if (i == 0 && !state.dealerHoleCardVisible)
         {
             sf::Sprite back = Graphics::makeCardBackSprite(cardTexture);
-            back.setPosition(x, dealerY);
+            back.setPosition({x, dealerY});
             window.draw(back);
         }
         else
         {
             sf::Sprite card = Graphics::makeCardSprite(state.dealerHand.getCard(i), cardTexture);
-            card.setPosition(x, dealerY);
+            card.setPosition({x, dealerY});
             window.draw(card);
         }
     }
@@ -981,14 +950,11 @@ void Replay::drawTable(const ReplayInternals::ReplayState &state)
     if (state.dealerHand.size() > 0)
     {
         int dealerValue = state.dealerHand.getValue();
-        sf::Text label;
-        label.setFont(font);
-        label.setCharacterSize(16);
-        label.setFillColor(state.dealerHoleCardVisible ? sf::Color::White : sf::Color(150, 150, 150));
+        sf::Text label(font, "", 16);
         label.setString(state.dealerHoleCardVisible
                             ? "Dealer: " + std::to_string(dealerValue)
                             : "Dealer: ?");
-        label.setPosition(centerX + state.dealerHand.size() * 60.f + 10.f, dealerY + 20.f);
+        label.setPosition({centerX + state.dealerHand.size() * 60.f + 10.f, dealerY + 20.f});
         window.draw(label);
     }
 
@@ -1001,13 +967,11 @@ void Replay::drawTable(const ReplayInternals::ReplayState &state)
         for (size_t c = 0; c < hand.cards.size(); ++c)
         {
             sf::Sprite card = Graphics::makeCardSprite(hand.cards.getCard(c), cardTexture);
-            card.setPosition(handX + static_cast<float>(c) * 16.f, playerY - c * 16.f);
+            card.setPosition({handX + static_cast<float>(c) * 16.f, playerY - c * 16.f});
             window.draw(card);
         }
 
-        sf::Text label;
-        label.setFont(font);
-        label.setCharacterSize(14);
+        sf::Text label(font, "", 14);
         std::string statusStr = std::to_string(hand.getValue());
         if (hand.isBlackjack())
             statusStr += " BJ";
@@ -1022,7 +986,7 @@ void Replay::drawTable(const ReplayInternals::ReplayState &state)
                                ? sf::Color(255, 215, 0)
                                : sf::Color(200, 200, 200));
         label.setString(statusStr + " | $" + std::to_string(hand.bet));
-        label.setPosition(handX, playerY - hand.cards.size() * 16.f - 20.f);
+        label.setPosition({handX, playerY - hand.cards.size() * 16.f - 20.f});
         window.draw(label);
     }
 }
@@ -1037,50 +1001,39 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState &state)
 
     // Panel background
     sf::RectangleShape bg(sf::Vector2f(260.f, size.y - 60.f));
-    bg.setPosition(panelX, 10.f);
+    bg.setPosition({panelX, 10.f});
     bg.setFillColor(sf::Color(15, 15, 25));
     bg.setOutlineColor(sf::Color(60, 60, 90));
     bg.setOutlineThickness(1.f);
     window.draw(bg);
 
     // Title
-    sf::Text title;
-    title.setFont(font);
-    title.setCharacterSize(16);
-    title.setFillColor(sf::Color(255, 215, 0));
+    sf::Text title(font, "Analysis", 16);
     title.setString("Analysis");
-    title.setPosition(panelX + 10.f, y);
+    title.setPosition({panelX + 10.f, y});
     window.draw(title);
     y += lineHeight + 5.f;
 
     // --- Count overlay ---
-    sf::Text countLabel;
-    countLabel.setFont(font);
-    countLabel.setCharacterSize(14);
-    countLabel.setFillColor(sf::Color(200, 200, 200));
+    sf::Text countLabel(font, "Running Count: " + std::to_string(state.runningCount), 14);
     countLabel.setString("Running Count: " + std::to_string(state.runningCount));
-    countLabel.setPosition(panelX + 10.f, y);
+    countLabel.setPosition({panelX + 10.f, y});
     window.draw(countLabel);
     y += lineHeight;
 
-    sf::Text tcLabel;
-    tcLabel.setFont(font);
-    tcLabel.setCharacterSize(14);
+    sf::Text tcLabel(font, "", 14);
     tcLabel.setFillColor(sf::Color(200, 200, 200));
     std::ostringstream tcStream;
     tcStream << std::fixed << std::setprecision(1);
     tcStream << "True Count: " << state.trueCount;
     tcLabel.setString(tcStream.str());
-    tcLabel.setPosition(panelX + 10.f, y);
+    tcLabel.setPosition({panelX + 10.f, y});
     window.draw(tcLabel);
     y += lineHeight;
 
-    sf::Text remLabel;
-    remLabel.setFont(font);
-    remLabel.setCharacterSize(14);
-    remLabel.setFillColor(sf::Color(160, 160, 160));
+    sf::Text remLabel(font, "Cards Remaining: " + std::to_string(state.cardsRemaining), 14);
     remLabel.setString("Cards Remaining: " + std::to_string(state.cardsRemaining));
-    remLabel.setPosition(panelX + 10.f, y);
+    remLabel.setPosition({panelX + 10.f, y});
     window.draw(remLabel);
     y += lineHeight + 8.f;
 
@@ -1090,19 +1043,14 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState &state)
         state.currentHandIndex < static_cast<int>(state.playerHands.size()) &&
         !state.playerHands[state.currentHandIndex].isFinished)
     {
-        sf::Text bsTitle;
-        bsTitle.setFont(font);
-        bsTitle.setCharacterSize(14);
-        bsTitle.setFillColor(sf::Color(180, 180, 180));
+        sf::Text bsTitle(font, "Basic Strategy:", 14);
         bsTitle.setString("Basic Strategy:");
-        bsTitle.setPosition(panelX + 10.f, y);
+        bsTitle.setPosition({panelX + 10.f, y});
         window.draw(bsTitle);
         y += lineHeight;
 
         char bookAction = getBasicStrategyAction(state);
-        sf::Text bsAction;
-        bsAction.setFont(font);
-        bsAction.setCharacterSize(18);
+        sf::Text bsAction(font, "", 18);
         bsAction.setFillColor(sf::Color(255, 215, 0));
 
         std::string actionStr;
@@ -1129,7 +1077,7 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState &state)
             break;
         }
         bsAction.setString(actionStr);
-        bsAction.setPosition(panelX + 10.f, y);
+        bsAction.setPosition({panelX + 10.f, y});
         window.draw(bsAction);
         y += lineHeight + 8.f;
 
@@ -1139,9 +1087,7 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState &state)
             !state.playerHands[handIdx].actionsTaken.empty())
         {
             const std::string &actual = state.playerHands[handIdx].actionsTaken.back();
-            sf::Text actualLabel;
-            actualLabel.setFont(font);
-            actualLabel.setCharacterSize(13);
+            sf::Text actualLabel(font, "", 13);
             actualLabel.setFillColor(sf::Color(160, 160, 160));
 
             std::string actualStr;
@@ -1162,36 +1108,30 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState &state)
             actualLabel.setFillColor(matches ? sf::Color(100, 200, 100) : sf::Color(255, 200, 50));
             actualLabel.setString("Actual: " + actualStr +
                                   (matches ? " ✓" : " (deviation)"));
-            actualLabel.setPosition(panelX + 10.f, y);
+            actualLabel.setPosition({panelX + 10.f, y});
             window.draw(actualLabel);
             y += lineHeight + 8.f;
         }
     }
 
     // --- Kelly Bet overlay ---
-    sf::Text kellyTitle;
-    kellyTitle.setFont(font);
-    kellyTitle.setCharacterSize(14);
-    kellyTitle.setFillColor(sf::Color(180, 180, 180));
+    sf::Text kellyTitle(font, "Kelly Optimal Bet:", 14);
     kellyTitle.setString("Kelly Optimal Bet:");
-    kellyTitle.setPosition(panelX + 10.f, y);
+    kellyTitle.setPosition({panelX + 10.f, y});
     window.draw(kellyTitle);
     y += lineHeight;
 
     float kellyFraction = 0.33f;
-    int kellyBet = calculateKellyBet(
+    int kellyBet = BasicStrategy::calculateKellyBet(
         state.trueCount,
         kellyFraction,
         bankrollAtStep,
         Constants::MINIMUM_BET,
         Constants::MAXIMUM_BET);
 
-    sf::Text kellyLabel;
-    kellyLabel.setFont(font);
-    kellyLabel.setCharacterSize(16);
-    kellyLabel.setFillColor(sf::Color(150, 220, 255));
+    sf::Text kellyLabel(font, "$" + std::to_string(kellyBet), 16);
     kellyLabel.setString("$" + std::to_string(kellyBet));
-    kellyLabel.setPosition(panelX + 10.f, y);
+    kellyLabel.setPosition({panelX + 10.f, y});
     window.draw(kellyLabel);
     y += lineHeight + 8.f;
 
@@ -1201,59 +1141,46 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState &state)
         for (const auto &h : state.playerHands)
             actualBet += h.bet;
         bool betMatches = (actualBet == kellyBet || actualBet == 0);
-        sf::Text kellyCompare;
-        kellyCompare.setFont(font);
-        kellyCompare.setCharacterSize(12);
-        kellyCompare.setFillColor(betMatches ? sf::Color(100, 200, 100) : sf::Color(255, 200, 50));
+        sf::Text kellyCompare(font, "", 12);
         kellyCompare.setString(std::string("Actual: $") + std::to_string(actualBet) +
                                (betMatches ? " ✓" : " (mismatch)"));
-        kellyCompare.setPosition(panelX + 10.f, y);
+        kellyCompare.setPosition({panelX + 10.f, y});
         window.draw(kellyCompare);
         y += lineHeight;
     }
 
     // --- Profit tracking ---
-    sf::Text profitTitle;
-    profitTitle.setFont(font);
-    profitTitle.setCharacterSize(14);
-    profitTitle.setFillColor(sf::Color(180, 180, 180));
+    sf::Text profitTitle(font, "Profit", 14);
     profitTitle.setString("Profit");
-    profitTitle.setPosition(panelX + 10.f, y);
+    profitTitle.setPosition({panelX + 10.f, y});
     window.draw(profitTitle);
     y += lineHeight;
 
-    sf::Text roundProfitLabel;
-    roundProfitLabel.setFont(font);
-    roundProfitLabel.setCharacterSize(14);
+    sf::Text roundProfitLabel(font, "", 14);
     roundProfitLabel.setFillColor(state.roundProfit >= 0 ? sf::Color(100, 200, 100)
                                                          : sf::Color(220, 100, 100));
     roundProfitLabel.setString(std::string("This Round: ") +
                                (state.roundProfit >= 0 ? "+" : "") +
                                std::to_string(state.roundProfit));
 
-    roundProfitLabel.setPosition(panelX + 10.f, y);
+    roundProfitLabel.setPosition({panelX + 10.f, y});
     window.draw(roundProfitLabel);
     y += lineHeight;
 
-    sf::Text shoeProfitLabel;
-    shoeProfitLabel.setFont(font);
-    shoeProfitLabel.setCharacterSize(14);
+    sf::Text shoeProfitLabel(font, "", 14);
     shoeProfitLabel.setFillColor(state.shoeProfit >= 0 ? sf::Color(100, 200, 100)
                                                        : sf::Color(220, 100, 100));
     shoeProfitLabel.setString(std::string("Shoe So Far: ") +
                               (state.shoeProfit >= 0 ? "+" : "") +
                               std::to_string(state.shoeProfit));
-    shoeProfitLabel.setPosition(panelX + 10.f, y);
+    shoeProfitLabel.setPosition({panelX + 10.f, y});
     window.draw(shoeProfitLabel);
     y += lineHeight + 8.f;
 
     // --- Session context ---
-    sf::Text contextLabel;
-    contextLabel.setFont(font);
-    contextLabel.setCharacterSize(12);
-    contextLabel.setFillColor(sf::Color(140, 140, 140));
+    sf::Text contextLabel(font, "Shoe " + std::to_string(currentShoeIndex + 1), 12);
     contextLabel.setString("Shoe " + std::to_string(currentShoeIndex + 1));
-    contextLabel.setPosition(panelX + 10.f, y);
+    contextLabel.setPosition({panelX + 10.f, y});
     window.draw(contextLabel);
     y += lineHeight;
 }
@@ -1261,14 +1188,14 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState &state)
 void Replay::drawRoundSlider(const ReplayInternals::ReplayState &state)
 {
     sf::Vector2u size = window.getSize();
-    sliderBounds.left = 60.0f;
-    sliderBounds.top = static_cast<float>(size.y) - 130.0f;
-    sliderBounds.width = static_cast<float>(size.x - 120);
-    sliderBounds.height = 16.0f;
+    sliderBounds.position.x = 60.0f;
+    sliderBounds.position.y = static_cast<float>(size.y) - 130.0f;
+    sliderBounds.size.x = static_cast<float>(size.x - 120);
+    sliderBounds.size.y = 16.0f;
 
     // Track background
-    sf::RectangleShape track(sliderBounds.getSize());
-    track.setPosition(sliderBounds.left, sliderBounds.top);
+    sf::RectangleShape track(sf::Vector2f(sliderBounds.size.x, sliderBounds.size.y));
+    track.setPosition({sliderBounds.position.x, sliderBounds.position.y});
     track.setFillColor(sf::Color(40, 40, 50));
     track.setOutlineColor(sf::Color(80, 80, 100));
     track.setOutlineThickness(1.f);
@@ -1278,12 +1205,12 @@ void Replay::drawRoundSlider(const ReplayInternals::ReplayState &state)
         return;
 
     // Round markers
-    float markerSpacing = sliderBounds.width / static_cast<float>(state.totalRounds - 1);
+    float markerSpacing = sliderBounds.size.x / static_cast<float>(state.totalRounds - 1);
     for (int r = 0; r < state.totalRounds; ++r)
     {
-        float x = sliderBounds.left + r * markerSpacing;
-        sf::RectangleShape marker(sf::Vector2f(3.f, sliderBounds.height));
-        marker.setPosition(x - 1.5f, sliderBounds.top);
+        float x = sliderBounds.position.x + r * markerSpacing;
+        sf::RectangleShape marker(sf::Vector2f(3.f, sliderBounds.size.y));
+        marker.setPosition({x - 1.5f, sliderBounds.position.y});
 
         const auto &info = roundInfos[r];
         if (info.netProfit > 0)
@@ -1300,25 +1227,22 @@ void Replay::drawRoundSlider(const ReplayInternals::ReplayState &state)
     float frac = state.totalRounds > 1
                      ? static_cast<float>(state.roundIndex) / static_cast<float>(state.totalRounds - 1)
                      : 0.0f;
-    float handleX = sliderBounds.left + frac * sliderBounds.width;
+    float handleX = sliderBounds.position.x + frac * sliderBounds.size.x;
 
     sf::CircleShape handle(8.f);
-    handle.setPosition(handleX - 8.f, sliderBounds.top + sliderBounds.height / 2.f - 8.f);
+    handle.setPosition({handleX - 8.f, sliderBounds.position.y + sliderBounds.size.y / 2.f - 8.f});
     handle.setFillColor(sf::Color(255, 215, 0));
     handle.setOutlineColor(sf::Color::White);
     handle.setOutlineThickness(2.f);
     window.draw(handle);
 
     // Round label below slider
-    sf::Text roundLabel;
-    roundLabel.setFont(font);
-    roundLabel.setCharacterSize(12);
-    roundLabel.setFillColor(sf::Color(180, 180, 180));
+    sf::Text roundLabel(font, "", 12);
     roundLabel.setString("Round " + std::to_string(state.roundIndex + 1) + " of " +
                          std::to_string(state.totalRounds));
     sf::FloatRect lb = roundLabel.getLocalBounds();
-    roundLabel.setOrigin(lb.width / 2.f, 0.f);
-    roundLabel.setPosition(handleX, sliderBounds.top + sliderBounds.height + 4.f);
+    roundLabel.setOrigin({lb.size.x / 2.f, 0.f});
+    roundLabel.setPosition({handleX, sliderBounds.position.y + sliderBounds.size.y + 4.f});
     window.draw(roundLabel);
 
     // Hover info (if on a round marker)
@@ -1326,16 +1250,13 @@ void Replay::drawRoundSlider(const ReplayInternals::ReplayState &state)
         state.roundIndex < static_cast<int>(roundInfos.size()))
     {
         const auto &info = roundInfos[state.roundIndex];
-        sf::Text hoverInfo;
-        hoverInfo.setFont(font);
-        hoverInfo.setCharacterSize(11);
-        hoverInfo.setFillColor(sf::Color(160, 160, 160));
+        sf::Text hoverInfo(font, "", 11);
         hoverInfo.setString(std::string("Net: ") +
                             (info.netProfit >= 0 ? "+" : "") +
                             std::to_string(info.netProfit) +
                             " | Hands: " + std::to_string(info.handCount) +
                             " | Max TC: " + std::to_string(static_cast<int>(info.maxTrueCount)));
-        hoverInfo.setPosition(handleX, sliderBounds.top + sliderBounds.height + 20.f);
+        hoverInfo.setPosition({handleX, sliderBounds.position.y + sliderBounds.size.y + 20.f});
         window.draw(hoverInfo);
     }
 }
@@ -1348,39 +1269,30 @@ void Replay::drawControls(const ReplayInternals::ReplayState &state)
 
     // Control bar background
     sf::RectangleShape bar(sf::Vector2f(size.x - 120.f, 60.f));
-    bar.setPosition(60.f, y - 55.f);
+    bar.setPosition({60.f, y - 55.f});
     bar.setFillColor(sf::Color(20, 20, 30));
     bar.setOutlineColor(sf::Color(60, 60, 80));
     bar.setOutlineThickness(1.f);
     window.draw(bar);
 
     // Status: play/pause indicator
-    sf::Text statusText;
-    statusText.setFont(font);
-    statusText.setCharacterSize(16);
-    statusText.setFillColor(autoPlay ? sf::Color(100, 200, 100) : sf::Color(180, 180, 180));
+    sf::Text statusText(font, autoPlay ? "▶ Playing" : "⏸ Paused", 16);
     statusText.setString(autoPlay ? "▶ Playing" : "⏸ Paused");
-    statusText.setPosition(70.f, y - 15.f);
+    statusText.setPosition({70.f, y - 15.f});
     window.draw(statusText);
 
     // Step info
-    sf::Text stepInfo;
-    stepInfo.setFont(font);
-    stepInfo.setCharacterSize(12);
-    stepInfo.setFillColor(sf::Color(140, 140, 140));
+    sf::Text stepInfo(font, "", 12);
     stepInfo.setString("Step " + std::to_string(state.currentStepIndex + 1) +
                        " / " + std::to_string(state.totalSteps));
-    stepInfo.setPosition(70.f, y + 5.f);
+    stepInfo.setPosition({70.f, y + 5.f});
     window.draw(stepInfo);
 
     // Keyboard shortcuts legend (right side)
-    sf::Text legend;
-    legend.setFont(font);
-    legend.setCharacterSize(12);
-    legend.setFillColor(sf::Color(140, 140, 140));
+    sf::Text legend(font, "←/→ Step  •  Space Play/Pause  •  H Skip Hand  •  R Skip Round  •  Esc Exit", 12);
     legend.setString("←/→ Step  •  Space Play/Pause  •  H Skip Hand  •  R Skip Round  •  Esc Exit");
     sf::FloatRect lb = legend.getLocalBounds();
-    legend.setPosition(size.x - 70.f - lb.width, y - 15.f);
+    legend.setPosition({size.x - 70.f - lb.size.x, y - 15.f});
     window.draw(legend);
 }
 
@@ -1435,16 +1347,11 @@ void Replay::drawStepSummary(const ReplayInternals::ReplayState &state)
         break;
     }
 
-    sf::Text summaryText;
-    summaryText.setFont(font);
-    // src/Replay.cpp (continued from drawStepSummary)
-
-    summaryText.setCharacterSize(14);
+    sf::Text summaryText(font, summary, 14);
     summaryText.setFillColor(sf::Color(255, 215, 0));
-    summaryText.setString(summary);
 
     sf::Vector2u size = window.getSize();
-    summaryText.setPosition(60.f, size.y - 160.f);
+    summaryText.setPosition({60.f, size.y - 160.f});
     window.draw(summaryText);
 }
 

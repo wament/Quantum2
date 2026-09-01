@@ -189,14 +189,6 @@ private:
     // Basic strategy lookup (mirrors Game::giveBasicStrategyAdvice)
     char getBasicStrategyAction(const ReplayInternals::ReplayState &state) const;
 
-    static float computeTrueCount(int runningCount, int cardsRemaining)
-    {
-        int decksRemaining = cardsRemaining / 52.0f;
-        if (decksRemaining < 0.5f)
-            decksRemaining = 0.5f;
-        return static_cast<float>(runningCount) / decksRemaining;
-    }
-
     // --- Resources (references from Game) ---
     sf::RenderWindow &window;
     sf::Texture &cardTexture;

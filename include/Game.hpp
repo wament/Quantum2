@@ -27,6 +27,17 @@ enum class GameState
     GameOver
 };
 
+enum class AppMode {
+    MainMenu,
+    Playing,
+    ReplayHistory,
+    ReplayPlaying
+};
+enum class MenuOption {
+    PlayGame,
+    ReviewHistory
+};
+
 class Game
 {
 public:
@@ -34,14 +45,10 @@ public:
 
     void run();
     std::string gameMessage;
-
-private:
+    float deltaTime;
+private: 
+    AppMode appMode = AppMode::MainMenu;
     std::unique_ptr<Replay> replay;
-    bool inReplayMode = false;
-    float findTrueCount() const
-    {
-        return static_cast<float>(runningCount) / static_cast<float>((deck.size() / 52.f));
-    }
 
     // ---------------- SFML ----------------
 
@@ -50,7 +57,7 @@ private:
     sf::View gameView;
 
     sf::Texture backgroundTexture;
-std::unique_ptr<sf::Sprite> backgroundSprite;
+    std::unique_ptr<sf::Sprite> backgroundSprite;
 
     sf::Texture cardTexture;
     sf::Font font;
@@ -60,6 +67,7 @@ std::unique_ptr<sf::Sprite> backgroundSprite;
     HUD hud;
     HUDState hudState;
 
+    MenuOption menuSelection = MenuOption::PlayGame;
     // ---------------- Kelly / Risk of Ruin Slider ----------------
 
     float kellyFraction = 0.33f; // 1/3 Kelly ≈ 3% RoR
@@ -106,6 +114,8 @@ std::unique_ptr<sf::Sprite> backgroundSprite;
 
     // ---------------- Setup ----------------
 
+    void startNewGame();
+
     void loadAssets();
 
     void nextRound();
@@ -115,8 +125,10 @@ std::unique_ptr<sf::Sprite> backgroundSprite;
     // ---------------- Game Loop ----------------
 
     void processEvents();
+    void processMenuEvents(const sf::Event &event);
+    void processGameEvents(const sf::Event &event);
 
-    void update();
+    void update(float deltaTime);
 
     void updateHUDState();
 
@@ -175,6 +187,9 @@ std::unique_ptr<sf::Sprite> backgroundSprite;
     char giveBasicStrategyAdvice(Hand &playerHand, Hand &dealerHand);
 
     // ---------------- Drawing ----------------
+    void drawMenuItem(const std::string &label, bool selected);
+
+    void drawMainMenu();
 
     void drawDealer();
 
