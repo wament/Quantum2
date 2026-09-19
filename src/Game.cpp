@@ -189,6 +189,9 @@ void Game::processEvents()
         case AppMode::Playing:
             processGameEvents(event.value());
             break;
+        case AppMode::Paused:
+            processPauseEvents(event.value());
+            break;
         case AppMode::ReplayHistory:
         case AppMode::ReplayPlaying:
         {
@@ -208,6 +211,31 @@ void Game::processEvents()
 }
 void Game::processMenuEvents(const sf::Event &event)
 {
+    // Mouse click support
+    if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
+    {
+        if (clicked->button == sf::Mouse::Button::Left)
+        {
+            float cx = static_cast<float>(window.getSize().x) / 2.0f;
+            sf::Vector2f mousePos = window.mapPixelToCoords(sf::Vector2i(clicked->position.x, clicked->position.y));
+
+            // Check Play Game (y=250)
+            if (std::abs(mousePos.y - 250.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
+            {
+                menuSelection = MenuOption::PlayGame;
+                startNewGame();
+                return;
+            }
+            // Check Review History (y=300)
+            if (std::abs(mousePos.y - 300.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
+            {
+                menuSelection = MenuOption::ReviewHistory;
+                appMode = AppMode::ReplayHistory;
+                return;
+            }
+        }
+    }
+
     auto pressed = event.getIf<sf::Event::KeyPressed>();
     if (!pressed)
         return;
@@ -215,10 +243,10 @@ void Game::processMenuEvents(const sf::Event &event)
     switch (pressed->code)
     {
     case sf::Keyboard::Key::Up:
-        menuSelection = MenuOption::ReviewHistory;
+        menuSelection = MenuOption::PlayGame;
         break;
     case sf::Keyboard::Key::Down:
-        menuSelection = MenuOption::PlayGame;
+        menuSelection = MenuOption::ReviewHistory;
         break;
     case sf::Keyboard::Key::Enter:
         switch (menuSelection)
@@ -227,13 +255,119 @@ void Game::processMenuEvents(const sf::Event &event)
             startNewGame(); // creates deck, resets, deals first hand
             break;
         case MenuOption::ReviewHistory:
+        {
+            auto profile = player.getProfile();
+            replay->loadHistory(profile.getLongHistory());
+            replay->setStartingBankroll(player.getBankroll());
             appMode = AppMode::ReplayHistory;
-            // replay is already initialized with history from profile
             break;
+        }
         }
         break;
     case sf::Keyboard::Key::Escape:
         window.close();
+        break;
+    }
+}
+
+void Game::processPauseEvents(const sf::Event &event)
+{
+    // Mouse click support
+    if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
+    {
+        if (clicked->button == sf::Mouse::Button::Left)
+        {
+            float cx = static_cast<float>(window.getSize().x) / 2.0f;
+            sf::Vector2f mousePos = window.mapPixelToCoords(sf::Vector2i(clicked->position.x, clicked->position.y));
+
+            // Check Resume (y=200)
+            if (std::abs(mousePos.y - 200.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
+            {
+                appMode = AppMode::Playing;
+                return;
+            }
+            // Check Restart (y=250)
+            if (std::abs(mousePos.y - 250.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
+            {
+                {
+                    PlayerProfile profile = player.getProfile();
+                    profile.addShoeRecord(currentShoeRecord);
+                    player.updateProfile(profile);
+                    player.saveProfile();
+                }
+                startNewGame();
+                return;
+            }
+            // Check Quit to Menu (y=300)
+            if (std::abs(mousePos.y - 300.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
+            {
+                {
+                    PlayerProfile profile = player.getProfile();
+                    profile.addShoeRecord(currentShoeRecord);
+                    player.updateProfile(profile);
+                    player.saveProfile();
+                }
+                appMode = AppMode::MainMenu;
+                menuSelection = MenuOption::PlayGame;
+                return;
+            }
+        }
+    }
+
+    auto pressed = event.getIf<sf::Event::KeyPressed>();
+    if (!pressed)
+        return;
+
+    switch (pressed->code)
+    {
+    case sf::Keyboard::Key::Up:
+    case sf::Keyboard::Key::W:
+        if (pauseSelection == PauseOption::Resume)
+            pauseSelection = PauseOption::QuitToMenu;
+        else if (pauseSelection == PauseOption::Restart)
+            pauseSelection = PauseOption::Resume;
+        else
+            pauseSelection = PauseOption::Restart;
+        break;
+    case sf::Keyboard::Key::Down:
+    case sf::Keyboard::Key::S:
+        if (pauseSelection == PauseOption::Resume)
+            pauseSelection = PauseOption::Restart;
+        else if (pauseSelection == PauseOption::Restart)
+            pauseSelection = PauseOption::QuitToMenu;
+        else
+            pauseSelection = PauseOption::Resume;
+        break;
+    case sf::Keyboard::Key::Enter:
+    case sf::Keyboard::Key::Space:
+        switch (pauseSelection)
+        {
+        case PauseOption::Resume:
+            appMode = AppMode::Playing;
+            break;
+        case PauseOption::Restart:
+        {
+            PlayerProfile profile = player.getProfile();
+            profile.addShoeRecord(currentShoeRecord);
+            player.updateProfile(profile);
+            player.saveProfile();
+            startNewGame();
+            break;
+        }
+        case PauseOption::QuitToMenu:
+        {
+            PlayerProfile profile = player.getProfile();
+            profile.addShoeRecord(currentShoeRecord);
+            player.updateProfile(profile);
+            player.saveProfile();
+            appMode = AppMode::MainMenu;
+            menuSelection = MenuOption::PlayGame;
+            break;
+        }
+        }
+        break;
+    case sf::Keyboard::Key::Escape:
+        appMode = AppMode::Playing;
         break;
     }
 }
@@ -384,6 +518,12 @@ void Game::processGameEvents(const sf::Event &event)
             {
                 surrender();
             }
+        }
+
+        if (key->code == sf::Keyboard::Key::Escape)
+        {
+            appMode = AppMode::Paused;
+            pauseSelection = PauseOption::Resume;
         }
     }
 }
@@ -1065,6 +1205,7 @@ void Game::evaluateHands()
     PlayerProfile profile = player.getProfile();
     profile.addRoundRecord(currentRoundRecord);
     player.updateProfile(profile);
+    player.saveProfile();
 
     currentShoeRecord.rounds.push_back(currentRoundRecord);
 
@@ -1111,6 +1252,17 @@ void Game::draw()
         updateHUDState();
         hud.update(hudState);
         hud.draw(window);
+        break;
+    case AppMode::Paused:
+        // Draw the game underneath
+        drawDealer();
+        drawPlayers();
+        drawChips();
+        updateHUDState();
+        hud.update(hudState);
+        hud.draw(window);
+        // Draw pause overlay
+        drawPauseMenu();
         break;
     case AppMode::ReplayHistory:
     case AppMode::ReplayPlaying:
@@ -1381,14 +1533,14 @@ void Game::drawInsurance()
 
     window.draw(text);
 }
-void Game::drawMenuItem(const std::string &label, bool selected)
+void Game::drawMenuItem(const std::string &label, bool selected, float y)
 {
     sf::Text text(FontManager::get(), label, 24);
     text.setFillColor(selected ? sf::Color(255, 215, 0) : sf::Color(200, 200, 200));
 
     sf::FloatRect bounds = text.getLocalBounds();
     text.setOrigin(sf::Vector2f(bounds.size.x / 2.0f, bounds.size.y / 2.0f));
-    text.setPosition(sf::Vector2f(static_cast<float>(window.getSize().x) / 2.0f, 250.0f));
+    text.setPosition(sf::Vector2f(static_cast<float>(window.getSize().x) / 2.0f, y));
 
     window.draw(text);
 }
@@ -1407,11 +1559,44 @@ void Game::drawMainMenu()
     title.setPosition(sf::Vector2f(cx, 150.0f));
     window.draw(title);
 
-    drawMenuItem("Play Game", menuSelection == MenuOption::PlayGame);
-    drawMenuItem("Review History", menuSelection == MenuOption::ReviewHistory);
+    drawMenuItem("Play Game", menuSelection == MenuOption::PlayGame, 250.0f);
+    drawMenuItem("Review History", menuSelection == MenuOption::ReviewHistory, 300.0f);
 
     sf::Text instr(FontManager::get(), "↑/↓ navigate  •  Enter: select  •  Esc: quit", 14);
     instr.setFillColor(sf::Color(140, 140, 140));
     instr.setPosition(sf::Vector2f(cx, 400.0f));
+    window.draw(instr);
+}
+
+void Game::drawPauseMenu()
+{
+    float w = static_cast<float>(window.getSize().x);
+    float h = static_cast<float>(window.getSize().y);
+    float cx = w / 2.0f;
+
+    // Semi-transparent overlay (50% opacity)
+    sf::RectangleShape overlay(sf::Vector2f(w, h));
+    overlay.setFillColor(sf::Color(0, 0, 0, 128));
+    window.draw(overlay);
+
+    // Title
+    sf::Text title(FontManager::get(), "PAUSED", 36);
+    title.setFillColor(sf::Color(255, 215, 0));
+    sf::FloatRect tb = title.getLocalBounds();
+    title.setOrigin(sf::Vector2f(tb.size.x / 2.0f, 0));
+    title.setPosition(sf::Vector2f(cx, h * 0.25f));
+    window.draw(title);
+
+    // Menu items
+    drawMenuItem("Resume", pauseSelection == PauseOption::Resume, h * 0.40f);
+    drawMenuItem("Restart", pauseSelection == PauseOption::Restart, h * 0.48f);
+    drawMenuItem("Quit to Menu", pauseSelection == PauseOption::QuitToMenu, h * 0.56f);
+
+    // Instructions
+    sf::Text instr(FontManager::get(), "↑/↓ navigate  •  Enter: select  •  Esc: resume", 14);
+    instr.setFillColor(sf::Color(140, 140, 140));
+    sf::FloatRect ib = instr.getLocalBounds();
+    instr.setOrigin(sf::Vector2f(ib.size.x / 2.0f, 0));
+    instr.setPosition(sf::Vector2f(cx, h * 0.68f));
     window.draw(instr);
 }

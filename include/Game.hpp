@@ -30,12 +30,19 @@ enum class GameState
 enum class AppMode {
     MainMenu,
     Playing,
+    Paused,
     ReplayHistory,
     ReplayPlaying
 };
 enum class MenuOption {
     PlayGame,
     ReviewHistory
+};
+
+enum class PauseOption {
+    Resume,
+    Restart,
+    QuitToMenu
 };
 
 class Game
@@ -68,6 +75,7 @@ private:
     HUDState hudState;
 
     MenuOption menuSelection = MenuOption::PlayGame;
+    PauseOption pauseSelection = PauseOption::Resume;
     // ---------------- Kelly / Risk of Ruin Slider ----------------
 
     float kellyFraction = 0.33f; // 1/3 Kelly ≈ 3% RoR
@@ -127,6 +135,7 @@ private:
     void processEvents();
     void processMenuEvents(const sf::Event &event);
     void processGameEvents(const sf::Event &event);
+    void processPauseEvents(const sf::Event &event);
 
     void update(float deltaTime);
 
@@ -187,14 +196,15 @@ private:
     char giveBasicStrategyAdvice(Hand &playerHand, Hand &dealerHand);
 
     // ---------------- Drawing ----------------
-    void drawMenuItem(const std::string &label, bool selected);
+    void drawMenuItem(const std::string &label, bool selected, float y);
 
     void drawMainMenu();
+
+    void drawPauseMenu();
 
     void drawDealer();
 
     void resizeView(sf::RenderWindow &window, sf::View &view);
-
     void drawPlayers();
 
     void drawChips();

@@ -48,8 +48,8 @@ namespace Constants
     constexpr float CHIP_RADIUS = 18.f;
     constexpr float CHIP_SPACING = 6.f;
 
-    // Persistence
-    constexpr const char *PLAYER_FILE = "../saves/player_profile.json";
+    // Persistence (fallback path if HOME is not set)
+    constexpr const char *PLAYER_FILE_FALLBACK = "saves/player_profile.json";
 
     // Rules
 

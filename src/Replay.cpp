@@ -806,7 +806,7 @@ void Replay::update(float deltaTime)
     // Update slider bounds each frame so it stays correct if window resizes
     sf::Vector2u size = window.getSize();
     sliderBounds.position.x = 60.0f;
-    sliderBounds.position.y = static_cast<float>(size.y) - 130.0f;
+    sliderBounds.position.y = static_cast<float>(size.y) - 150.0f;
     sliderBounds.size.x = static_cast<float>(size.x - 120);
     sliderBounds.size.y = 16.0f;
 }
@@ -995,7 +995,7 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState &state)
 {
     sf::Vector2u size = window.getSize();
     float panelX = size.x - 280.f;
-    float y = 30.f;
+    float y = 45.f;
     const float lineHeight = 22.f;
     int bankrollAtStep = startingBankroll + state.shoeProfit;
 
@@ -1189,7 +1189,7 @@ void Replay::drawRoundSlider(const ReplayInternals::ReplayState &state)
 {
     sf::Vector2u size = window.getSize();
     sliderBounds.position.x = 60.0f;
-    sliderBounds.position.y = static_cast<float>(size.y) - 130.0f;
+    sliderBounds.position.y = static_cast<float>(size.y) - 150.0f;
     sliderBounds.size.x = static_cast<float>(size.x - 120);
     sliderBounds.size.y = 16.0f;
 
@@ -1264,7 +1264,7 @@ void Replay::drawRoundSlider(const ReplayInternals::ReplayState &state)
 void Replay::drawControls(const ReplayInternals::ReplayState &state)
 {
     sf::Vector2u size = window.getSize();
-    float y = static_cast<float>(size.y) - 80.f;
+    float y = static_cast<float>(size.y) - 60.f;
     float centerX = size.x / 2.0f;
 
     // Control bar background
@@ -1351,7 +1351,7 @@ void Replay::drawStepSummary(const ReplayInternals::ReplayState &state)
     summaryText.setFillColor(sf::Color(255, 215, 0));
 
     sf::Vector2u size = window.getSize();
-    summaryText.setPosition({60.f, size.y - 160.f});
+    summaryText.setPosition({60.f, size.y - 180.f});
     window.draw(summaryText);
 }
 
