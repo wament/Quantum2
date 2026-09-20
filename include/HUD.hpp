@@ -45,6 +45,7 @@ private:
     StatBox *m_trueCountBox = nullptr;
     StatBox *m_cardsRemainingBox = nullptr;
     StatBox *m_streakBox = nullptr;
+    StatBox *m_strategyBox = nullptr;
 
     // Slider state from HUDState (for rendering)
     float sliderValue = 0.33f;
@@ -60,7 +61,12 @@ private:
     // Controls display
     sf::Text *m_controlsText = nullptr;
 
+    // Basic Strategy Advisor hint
+    sf::Text *m_strategyHintText = nullptr;
+    std::string m_strategyHint;
+
     void drawRiskSlider(sf::RenderWindow &window);
 
     void updateControls(sf::Font &font);
 };
+

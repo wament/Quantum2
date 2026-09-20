@@ -119,6 +119,7 @@ add_executable(Blackjack2Tests
     tests/test_card.cpp
     tests/test_deck.cpp
     tests/test_hand.cpp
+    tests/test_game.cpp
     tests/test_assets.cpp
 )
 

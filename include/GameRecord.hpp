@@ -8,6 +8,19 @@
 #include "Card.hpp"
 #include "Deck.hpp"
 
+struct DeviationRecord
+{
+    int playerValue = 0;
+    int dealerUpValue = 0;
+    bool wasSoft = false;
+    bool wasPair = false;
+    int pairValue = 0;
+    char actionTaken = 0;
+    char correctAction = 0;
+    int bet = 0;
+    bool won = false;
+};
+
 struct PlayerStats
 {
     int shoesFinished = 0;
@@ -27,8 +40,14 @@ struct PlayerStats
     int greatestWin = 0; //cumulative win for the whole shoe
     int greatestLoss = 0; //cumulative loss for the whole shoe
 
-    int greatestSessionWin = 0; //cumulative win for all shoes in program session 
-    int greatestSessionLoss = 0; //cumulative loss for all shoes in program session 
+    int greatestSessionWin = 0; //cumulative win for all shoes in program session
+    int greatestSessionLoss = 0; //cumulative loss for all shoes in program session
+
+    // Strategy deviation tracking
+    int strategyHits = 0;       // plays matching basic strategy
+    int strategyDeviations = 0; // plays not matching basic strategy
+    int strategyTotal = 0;      // total plays evaluated
+    std::vector<DeviationRecord> recentDeviations; // last 10 deviations
 };
 
 struct HandOutcome
@@ -47,7 +66,6 @@ struct RoundRecord
 {
     std::vector<Card> dealerCards;
     std::vector<HandOutcome> playerHands;
-
     int runningCount = 0;
     float trueCount = 0;
     int cardsRemaining = 0;
@@ -103,7 +121,6 @@ inline std::deque<Card> reconstructDeckAtRound(
     size_t roundIndex)
 {
     std::deque<Card> deck(shoe.initialDeck.begin(), shoe.initialDeck.end());
-
     for (size_t r = 0; r < roundIndex; ++r)
     {
         const auto& round = shoe.rounds[r];
@@ -122,3 +139,4 @@ inline std::deque<Card> reconstructDeckAtRound(
 
     return deck;
 }
+

@@ -18,6 +18,8 @@ HUD::~HUD()
         delete m_sliderLabel;
     if (m_controlsText)
         delete m_controlsText;
+    if (m_strategyHintText)
+        delete m_strategyHintText;
 }
 
 void HUD::initialize(sf::Font &font)
@@ -73,6 +75,9 @@ void HUD::initialize(sf::Font &font)
     m_streakBox = m_bottomPanel.addStatBox("Streak");
     m_streakBox->initialize(font, "Streak");
 
+    m_strategyBox = m_bottomPanel.addStatBox("Strategy");
+    m_strategyBox->initialize(font, "Strategy");
+
     // Stat box positions use PANEL_MARGIN relative to bottom panel's top-left
     float panelX = Constants::PANEL_MARGIN + 5.f;
     float panelY = Constants::WINDOW_HEIGHT - BOTTOM_HEIGHT + Constants::PANEL_MARGIN;
@@ -84,6 +89,7 @@ void HUD::initialize(sf::Font &font)
     m_trueCountBox->setPosition(sf::Vector2f(panelX + 440.f, panelY));
     m_cardsRemainingBox->setPosition(sf::Vector2f(panelX + 560.f, panelY));
     m_streakBox->setPosition(sf::Vector2f(panelX + 680.f, panelY));
+    m_strategyBox->setPosition(sf::Vector2f(panelX + 790.f, panelY));
 
     // Slider: use PANEL_MARGIN relative to bottom panel as well
     const float sliderX = panelX + 800.f;
@@ -94,6 +100,11 @@ void HUD::initialize(sf::Font &font)
 
     // Initialize controls text
     updateControls(font);
+
+    // Initialize strategy hint text
+    m_strategyHintText = new sf::Text(font, "", 20u);
+    m_strategyHintText->setFillColor(sf::Color(255, 215, 0));
+    m_strategyHintText->setPosition(sf::Vector2f(Constants::WINDOW_WIDTH / 2.f - 100.f, 20.f));
 }
 
 void HUD::updateControls(sf::Font &font)
@@ -160,9 +171,31 @@ void HUD::update(const HUDState &hudState)
         m_streakBox->setValue(streakStr);
     }
 
+    if (m_strategyBox)
+    {
+        std::string strategyStr;
+        if (hudState.playerStats && hudState.playerStats->strategyTotal > 0)
+        {
+            int pct = (hudState.playerStats->strategyHits * 100) / hudState.playerStats->strategyTotal;
+            strategyStr = std::to_string(pct) + "%";
+        }
+        else
+        {
+            strategyStr = "-";
+        }
+        m_strategyBox->setValue(strategyStr);
+    }
+
     // Sync slider state from HUDState
     sliderValue = hudState.kellyFraction;
     sliderDragging = hudState.riskSliderDragging;
+
+    // Update strategy hint
+    m_strategyHint = hudState.basicStrategyHint;
+    if (m_strategyHintText)
+    {
+        m_strategyHintText->setString(m_strategyHint);
+    }
 }
 
 void HUD::draw(sf::RenderWindow &window)
@@ -180,6 +213,11 @@ void HUD::draw(sf::RenderWindow &window)
 
     // Draw controls above bottom panel
     window.draw(*m_controlsText);
+    // Draw strategy hint if present
+    if (m_strategyHintText && !m_strategyHint.empty())
+    {
+        window.draw(*m_strategyHintText);
+    }
 }
 
 const sf::FloatRect &HUD::getRiskSliderBounds() const

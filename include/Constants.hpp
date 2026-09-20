@@ -240,7 +240,7 @@ inline char BasicStrategy::getRecommendedAction(
                 else
                     return 'H';
             if (result == 'N')
-                return ' '; // don't split, fall through
+                return 'S'; // don't split, stand on 10s
         }
     }
 
@@ -284,7 +284,7 @@ inline int BasicStrategy::calculateHiLoValue(const int bjValue)
 {
     if (bjValue > 1 && bjValue < 7)
         return 1;
-    else if (bjValue > 9)
+    else if (bjValue > 9 || bjValue == 1)
         return -1;
     return 0;
 }
@@ -296,7 +296,7 @@ inline int BasicStrategy::updateHiLo(int currentCount, const int bjValue)
 
 inline float BasicStrategy::computeTrueCount(int runningCount, int cardsRemaining)
 {
-    int decksRemaining = cardsRemaining / 52.0f;
+    float decksRemaining = cardsRemaining / 52.0f;
     if (decksRemaining < 0.5f)
         decksRemaining = 0.5f;
     return static_cast<float>(runningCount) / decksRemaining;

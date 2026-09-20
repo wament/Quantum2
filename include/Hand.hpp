@@ -18,6 +18,7 @@ public:
     [[nodiscard]] bool isBlackjack() const;
     [[nodiscard]] bool isBust() const;
     [[nodiscard]] bool isSoft() const;
+    [[nodiscard]] bool isSplitAce() const;
 
     [[nodiscard]] bool canSplit() const;
     [[nodiscard]] bool canDouble() const;
@@ -45,7 +46,7 @@ public:
     void setSurrendered(bool value);
     [[nodiscard]] bool isSurrendered() const;
 
-    void setSplit(bool value);
+    void setSplit(bool value, int cardValue);
     [[nodiscard]] bool isSplit() const;
 
 private:
@@ -55,6 +56,7 @@ private:
     bool doubledDown = false;
     bool surrendered = false;
     bool split = false;
+    bool splitAce = false;
 
     int currentBet = 0;
     int insuranceBet = 0;

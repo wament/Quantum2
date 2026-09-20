@@ -52,7 +52,8 @@ int Hand::getValue() const
 bool Hand::isBlackjack() const
 {
     return cards.size() == 2 &&
-           getValue() == 21;
+           getValue() == 21 &&
+           !split;
 }
 
 bool Hand::isSoft() const
@@ -83,6 +84,11 @@ bool Hand::isSoft() const
 bool Hand::isBust() const
 {
     return getValue() > 21;
+}
+
+bool Hand::isSplitAce() const
+{
+    return splitAce;
 }
 
 bool Hand::canSplit() const
@@ -181,9 +187,12 @@ bool Hand::isSurrendered() const
     return surrendered;
 }
 
-void Hand::setSplit(bool value)
+void Hand::setSplit(bool value, int cardValue)
 {
     split = value;
+    if(cardValue == 11){
+        splitAce = true;
+    }
 }
 
 bool Hand::isSplit() const

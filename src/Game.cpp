@@ -16,19 +16,17 @@ Game::Game()
           sf::FloatRect(
               {0.f, 0.f},
               {static_cast<float>(Constants::WINDOW_WIDTH),
-               static_cast<float>(Constants::WINDOW_HEIGHT)})),
-      player("William")
+               static_cast<float>(Constants::WINDOW_HEIGHT)}))
 {
-
     window.setView(gameView);
-    currentShoeRecord = {};
+    players.push_back(Player("William"));
     loadAssets();
     
     // Create replay BEFORE startNewGame()
     replay = std::make_unique<Replay>(window, cardTexture, FontManager::get());
-    auto profile = player.getProfile();
+    auto profile = players[0].getProfile();
     replay->loadHistory(profile.getLongHistory());
-    replay->setStartingBankroll(player.getBankroll());
+    replay->setStartingBankroll(players[0].getBankroll());
 #pragma region
     std::cout << R"(
 
@@ -85,7 +83,7 @@ void Game::run()
 void Game::startNewGame()
 {
     // Load fresh bankroll from profile
-    auto profile = player.getProfile();
+    auto profile = players[0].getProfile();
 
     // Create fresh shoe
     deck.create(Constants::NUM_DECKS);
@@ -100,7 +98,7 @@ void Game::startNewGame()
     handActions.clear();
     handActions.resize(1);
     dealer.clear();
-    player.resetRound(0);
+    players[0].resetRound(0);
     nextRound();
 
     // Switch mode
@@ -146,12 +144,17 @@ void Game::loadAssets()
 
 void Game::nextRound()
 {
-    player.resetRound(initalBet); // also clear bets
+    // Reset all players for new round
+    for (auto& p : players)
+    {
+        p.resetRound(initalBet);
+    }
     dealer.clear();
     currentRoundRecord = {};
     handActions.clear();
     handActions.resize(1); // start with one hand's actions
     roundState = RoundState::PlaceBets;
+    activePlayerIndex = 0;
 }
 
 // --------------------------------------------------
@@ -169,8 +172,8 @@ void Game::processEvents()
 
         if (event->is<sf::Event::Closed>())
         {
-            player.updateProfile(player.getProfile());
-            player.saveProfile();
+            players[0].updateProfile(players[0].getProfile());
+            players[0].saveProfile();
             window.close();
             return;
         }
@@ -209,6 +212,7 @@ void Game::processEvents()
         }
     }
 }
+
 void Game::processMenuEvents(const sf::Event &event)
 {
     // Mouse click support
@@ -256,9 +260,9 @@ void Game::processMenuEvents(const sf::Event &event)
             break;
         case MenuOption::ReviewHistory:
         {
-            auto profile = player.getProfile();
+            auto profile = players[0].getProfile();
             replay->loadHistory(profile.getLongHistory());
-            replay->setStartingBankroll(player.getBankroll());
+            replay->setStartingBankroll(players[0].getBankroll());
             appMode = AppMode::ReplayHistory;
             break;
         }
@@ -290,10 +294,10 @@ void Game::processPauseEvents(const sf::Event &event)
             if (std::abs(mousePos.y - 250.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
             {
                 {
-                    PlayerProfile profile = player.getProfile();
+                    PlayerProfile profile = players[0].getProfile();
                     profile.addShoeRecord(currentShoeRecord);
-                    player.updateProfile(profile);
-                    player.saveProfile();
+                    players[0].updateProfile(profile);
+                    players[0].saveProfile();
                 }
                 startNewGame();
                 return;
@@ -302,10 +306,10 @@ void Game::processPauseEvents(const sf::Event &event)
             if (std::abs(mousePos.y - 300.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
             {
                 {
-                    PlayerProfile profile = player.getProfile();
+                    PlayerProfile profile = players[0].getProfile();
                     profile.addShoeRecord(currentShoeRecord);
-                    player.updateProfile(profile);
-                    player.saveProfile();
+                    players[0].updateProfile(profile);
+                    players[0].saveProfile();
                 }
                 appMode = AppMode::MainMenu;
                 menuSelection = MenuOption::PlayGame;
@@ -347,19 +351,19 @@ void Game::processPauseEvents(const sf::Event &event)
             break;
         case PauseOption::Restart:
         {
-            PlayerProfile profile = player.getProfile();
+            PlayerProfile profile = players[0].getProfile();
             profile.addShoeRecord(currentShoeRecord);
-            player.updateProfile(profile);
-            player.saveProfile();
+            players[0].updateProfile(profile);
+            players[0].saveProfile();
             startNewGame();
             break;
         }
         case PauseOption::QuitToMenu:
         {
-            PlayerProfile profile = player.getProfile();
+            PlayerProfile profile = players[0].getProfile();
             profile.addShoeRecord(currentShoeRecord);
-            player.updateProfile(profile);
-            player.saveProfile();
+            players[0].updateProfile(profile);
+            players[0].saveProfile();
             appMode = AppMode::MainMenu;
             menuSelection = MenuOption::PlayGame;
             break;
@@ -409,9 +413,13 @@ void Game::processGameEvents(const sf::Event &event)
         }
     }
 
-    // Key pressed
+    // Key pressed - only process for human player (index 0)
     if (auto key = event.getIf<sf::Event::KeyPressed>())
     {
+        // Only human player responds to input
+        if (activePlayerIndex != 0)
+            return;
+
         if (roundState == RoundState::PlaceBets)
         {
             switch (key->code)
@@ -427,9 +435,9 @@ void Game::processGameEvents(const sf::Event &event)
             case sf::Keyboard::Key::Left:
             {
                 float tc = BasicStrategy::computeTrueCount(runningCount, deck.size());
-                int optimal = calculateOptimalBet(tc, kellyFraction, player.getBankroll() + player.hands[0].getBet(),
+                int optimal = calculateOptimalBet(tc, kellyFraction, players[0].getBankroll() + players[0].hands[0].getBet(),
                                                   Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
-                player.hands[0].setBet(optimal);
+                players[0].hands[0].setBet(optimal);
                 std::cout << "Optimal bet (TC=" << tc << ") set to "
                           << optimal << ".\n";
                 break;
@@ -486,8 +494,8 @@ void Game::processGameEvents(const sf::Event &event)
 
             case sf::Keyboard::Key::I:
             {
-                char choice = giveBasicStrategyAdvice(player.hands[player.currentHand], dealer);
-                std::cout << "Book says: " << choice << std::endl;
+                char choice = giveBasicStrategyAdvice(players[activePlayerIndex].hands[players[activePlayerIndex].currentHand], dealer);
+                hudState.basicStrategyHint = "Book says: " + std::string(1, choice);
                 break;
             }
             }
@@ -547,32 +555,67 @@ void Game::update(float deltaTime)
 
     if (roundState == RoundState::PlayerTurn)
     {
-        // Advance to the next unfinished hand.
-        while (player.currentHand < player.hands.size() &&
-               player.hands[player.currentHand].isFinished())
+        // Check if all players are done
+        bool allDone = true;
+        for (auto& p : players)
         {
-            ++player.currentHand;
+            if (p.currentHand < p.hands.size() && !p.hands[p.currentHand].isFinished())
+            {
+                allDone = false;
+                break;
+            }
         }
-
-        // If there are no unfinished hands left, the player's turn is over.
-        if (player.currentHand >= player.hands.size())
+        if (allDone)
         {
             roundState = RoundState::DealerTurn;
+            return;
         }
-        else
+
+        // Advance active player to next unfinished hand or next player
+        while (activePlayerIndex < players.size())
         {
-            // After advancing, ensure the current hand has at least two cards.
-            // This handles split hands: each split hand must receive its second
-            // card before the player can take an action on it.
-            if (player.hands[player.currentHand].size() == 1)
+            auto& p = players[activePlayerIndex];
+            // Skip finished hands
+            while (p.currentHand < p.hands.size() && p.hands[p.currentHand].isFinished())
             {
-                dealCardToPlayer(player.hands[player.currentHand]);
+                ++p.currentHand;
             }
+            // If this player has unfinished hands, process them
+            if (p.currentHand < p.hands.size())
+            {
+                break;
+            }
+            // Move to next player
+            ++activePlayerIndex;
+        }
+
+        if (activePlayerIndex >= players.size())
+        {
+            roundState = RoundState::DealerTurn;
+            return;
+        }
+
+        auto& p = players[activePlayerIndex];
+        
+        // Ensure current hand has at least two cards (for split hands)
+        if (p.hands[p.currentHand].size() == 1)
+        {
+            dealCardToPlayer(p.hands[p.currentHand]);
+            // Split ace rule: one card only, auto-stand
+            if (p.hands[p.currentHand].isSplitAce())
+            {
+                p.hands[p.currentHand].setFinished(true);
+            }
+        }
+
+        // If NPC player, auto-play
+        if (activePlayerIndex > 0)
+        {
+            npcTakeTurn();
         }
     }
 
-    if (roundState ==
-        RoundState::DealerTurn)
+    if (roundState == RoundState::DealerTurn)
     {
         dealerTurn();
     }
@@ -580,9 +623,9 @@ void Game::update(float deltaTime)
 
 void Game::updateHUDState()
 {
-    hudState.bankroll = player.getBankroll();
+    hudState.bankroll = players[0].getBankroll();
 
-    hudState.currentBet = player.hands[0].getBet();
+    hudState.currentBet = players[0].hands[0].getBet();
 
     hudState.runningCount = runningCount;
 
@@ -605,12 +648,13 @@ void Game::updateHUDState()
 
 void Game::hit()
 {
-    Hand &hand =
-        player.hands[player.currentHand];
+    auto& p = players[activePlayerIndex];
+    Hand &hand = p.hands[p.currentHand];
 
     if (hand.isFinished())
         return;
 
+    logStrategyDeviation('H');
     dealCardToPlayer(hand);
 
     std::cout
@@ -627,31 +671,37 @@ void Game::hit()
         hand.setFinished(true);
     }
 
-    handActions[player.currentHand].push_back("H");
+    handActions[p.currentHand].push_back("H");
+    hudState.basicStrategyHint.clear();
 }
 
 void Game::stand()
 {
-    Hand &hand = player.hands[player.currentHand];
+    auto& p = players[activePlayerIndex];
+    Hand &hand = p.hands[p.currentHand];
     std::cout
         << "Stand on "
         << hand.getValue()
         << ".\n";
+    logStrategyDeviation('S');
     hand.setFinished(true);
 
-    handActions[player.currentHand].push_back("S");
+    handActions[p.currentHand].push_back("S");
+    hudState.basicStrategyHint.clear();
 }
 
 void Game::doubleDown()
 {
-    Hand &hand = player.hands[player.currentHand];
+    auto& p = players[activePlayerIndex];
+    Hand &hand = p.hands[p.currentHand];
     int initalbet = hand.getBet();
 
     if (!hand.canDouble())
         return;
 
+    logStrategyDeviation('D');
     hand.setDoubledDown(true);
-    if (!player.placeBet(initalbet))
+    if (!p.placeBet(initalbet))
         return;
 
     hand.setBet(initalbet * 2);
@@ -672,14 +722,16 @@ void Game::doubleDown()
 
     hand.setFinished(true);
 
-    handActions[player.currentHand].push_back("D");
+    handActions[p.currentHand].push_back("D");
+    hudState.basicStrategyHint.clear();
 }
 
 void Game::split()
 {
-    Hand &hand = player.hands[player.currentHand];
+    auto& p = players[activePlayerIndex];
+    Hand &hand = p.hands[p.currentHand];
 
-    if (player.hands.size() >= Constants::MAX_SPLIT_HANDS)
+    if (p.hands.size() >= Constants::MAX_SPLIT_HANDS)
     {
         return;
     }
@@ -687,22 +739,24 @@ void Game::split()
     if (!hand.canSplit())
         return;
 
+    logStrategyDeviation('P');
     Hand newHand;
     Card splitCard = hand.takeLastCard();
     std::cout
         << "Splitting "
         << splitCard.getBlackjackValueToString()
         << "s.\n";
-    newHand.addCard(splitCard);
+    newHand.addCard(splitCard); 
 
-    handActions[player.currentHand].push_back("P");
+    handActions[p.currentHand].push_back("P");
+    hudState.basicStrategyHint.clear();
 
     dealCardToPlayer(hand);
 
-    player.hands.push_back(newHand);
+    p.hands.push_back(newHand);
     handActions.push_back({}); // new action vector for the split hand
-    hand.setSplit(true);
-    newHand.setSplit(true);
+    hand.setSplit(true, hand.getCard(0).getBlackjackValue());
+    newHand.setSplit(true, hand.getCard(0).getBlackjackValue());
 
     // Track split stats
     PlayerStats &stats = getStats();
@@ -713,7 +767,8 @@ void Game::split()
 
 void Game::surrender()
 {
-    Hand &hand = player.hands[player.currentHand];
+    auto& p = players[activePlayerIndex];
+    Hand &hand = p.hands[p.currentHand];
 
     // Cannot surrender a finished hand
     if (hand.isFinished())
@@ -723,13 +778,53 @@ void Game::surrender()
     if (!hand.canDouble())
         return;
 
+    logStrategyDeviation('R');
     std::cout
         << "Surrender. You lose half your bet.\n";
 
     hand.setSurrendered(true);
     hand.setFinished(true);
 
-    handActions[player.currentHand].push_back("R");
+    handActions[p.currentHand].push_back("R");
+    hudState.basicStrategyHint.clear();
+}
+
+// --------------------------------------------------
+// NPC Decision Making
+// --------------------------------------------------
+
+void Game::npcTakeTurn()
+{
+    auto& p = players[activePlayerIndex];
+    Hand& hand = p.hands[p.currentHand];
+
+    if (hand.isFinished())
+        return;
+
+    // Get basic strategy recommendation
+    char action = giveBasicStrategyAdvice(hand, dealer);
+
+    switch (action)
+    {
+    case 'H':
+        hit();
+        break;
+    case 'S':
+        stand();
+        break;
+    case 'D':
+        doubleDown();
+        break;
+    case 'P':
+        split();
+        break;
+    case 'R':
+        surrender();
+        break;
+    default:
+        stand();
+        break;
+    }
 }
 
 // --------------------------------------------------
@@ -738,24 +833,22 @@ void Game::surrender()
 
 void Game::increaseBet()
 {
-
-    if (player.hands[0].getBet() < Constants::MAXIMUM_BET)
+    if (players[0].hands[0].getBet() < Constants::MAXIMUM_BET)
     {
-        player.hands[0].setBet(player.hands[0].getBet() + 5);
+        players[0].hands[0].setBet(players[0].hands[0].getBet() + 5);
         std::cout << "Increased bet to "
-                  << player.hands[player.currentHand].getBet()
+                  << players[0].hands[players[0].currentHand].getBet()
                   << ".\n";
     }
 }
 
 void Game::decreaseBet()
 {
-
-    if (player.hands[0].getBet() >= Constants::MINIMUM_BET)
+    if (players[0].hands[0].getBet() >= Constants::MINIMUM_BET)
     {
-        player.hands[0].setBet(player.hands[0].getBet() - 5);
+        players[0].hands[0].setBet(players[0].hands[0].getBet() - 5);
         std::cout << "Decreased bet to "
-                  << player.hands[player.currentHand].getBet()
+                  << players[0].hands[players[0].currentHand].getBet()
                   << ".\n";
     }
 }
@@ -767,14 +860,14 @@ int Game::calculateOptimalBet(float trueCount, float kellyFraction, int bankroll
 
 void Game::confirmBet()
 {
-    int currentBet = player.hands[0].getBet();
+    int currentBet = players[0].hands[0].getBet();
     if (currentBet < Constants::MINIMUM_BET || currentBet > Constants::MAXIMUM_BET)
         return;
 
-    if (!player.placeBet(currentBet))
+    if (!players[0].placeBet(currentBet))
     {
-        std::cout << "Not enough bankroll. " << player.getBankroll() << " is your max. Or "
-                  << player.getBankroll() / 2 << " if you want to double.\n";
+        std::cout << "Not enough bankroll. " << players[0].getBankroll() << " is your max. Or "
+                  << players[0].getBankroll() / 2 << " if you want to double.\n";
         return;
     }
 
@@ -786,13 +879,25 @@ void Game::confirmBet()
     stats.betSum += currentBet;
 
     std::cout << "You bet "
-              << player.hands[player.currentHand].getBet()
+              << players[0].hands[players[0].currentHand].getBet()
               << ". Your remaining bankroll is: "
-              << player.getBankroll()
+              << players[0].getBankroll()
               << "\n"
               << "The running count is: "
               << runningCount
               << ".\n";
+
+    // NPCs auto-bet minimum
+    for (size_t i = 1; i < players.size(); i++)
+    {
+        int npcBet = Constants::MINIMUM_BET;
+        if (players[i].placeBet(npcBet))
+        {
+            players[i].hands[0].setBet(npcBet);
+            std::cout << players[i].getName() << " bets " << npcBet << ".\n";
+        }
+    }
+
     deal();
 }
 
@@ -802,35 +907,37 @@ void Game::confirmBet()
 
 void Game::increaseInsurance()
 {
-    if (player.hands[player.currentHand].getInsuranceBet() < getMaxInsurance())
+    auto& p = players[activePlayerIndex];
+    if (p.hands[p.currentHand].getInsuranceBet() < getMaxInsurance())
     {
-
-        player.hands[player.currentHand].setInsuranceBet(
-            player.hands[player.currentHand].getInsuranceBet() + 1);
+        p.hands[p.currentHand].setInsuranceBet(
+            p.hands[p.currentHand].getInsuranceBet() + 1);
         std::cout << "Increased insurance to "
-                  << player.hands[player.currentHand].getInsuranceBet()
+                  << p.hands[p.currentHand].getInsuranceBet()
                   << ".\n";
     }
 }
 
 void Game::decreaseInsurance()
 {
-    if (player.hands[player.currentHand].getInsuranceBet() > 0)
+    auto& p = players[activePlayerIndex];
+    if (p.hands[p.currentHand].getInsuranceBet() > 0)
     {
-        player.hands[player.currentHand].setInsuranceBet(
-            player.hands[player.currentHand].getInsuranceBet() - 1);
+        p.hands[p.currentHand].setInsuranceBet(
+            p.hands[p.currentHand].getInsuranceBet() - 1);
         std::cout << "Decreased insurance to "
-                  << player.hands[player.currentHand].getInsuranceBet()
+                  << p.hands[p.currentHand].getInsuranceBet()
                   << ".\n";
     }
 }
 
 void Game::confirmInsurance()
 {
-    int insBet = player.hands[player.currentHand].getInsuranceBet();
+    auto& p = players[activePlayerIndex];
+    int insBet = p.hands[p.currentHand].getInsuranceBet();
     if (insBet > 0)
     {
-        player.placeBet(insBet);
+        p.placeBet(insBet);
         std::cout << "Placed insurance bet of"
                   << insBet
                   << ".\n";
@@ -841,14 +948,16 @@ void Game::confirmInsurance()
 
 void Game::declineInsurance()
 {
-    player.hands[player.currentHand].setInsuranceBet(0);
+    auto& p = players[activePlayerIndex];
+    p.hands[p.currentHand].setInsuranceBet(0);
     std::cout << "Insurance Denied" << std::endl;
     evaluateBlackjack();
 }
 
 const int Game::getMaxInsurance()
 {
-    return player.hands[player.currentHand].getBet() / 2;
+    auto& p = players[activePlayerIndex];
+    return p.hands[p.currentHand].getBet() / 2;
 }
 
 // --------------------------------------------------
@@ -857,11 +966,17 @@ const int Game::getMaxInsurance()
 
 void Game::deal()
 {
-    dealCardToPlayer(player.hands[0]);
-    dealCardToDealer();
-
-    dealCardToPlayer(player.hands[0]);
-    dealCardToDealer();
+    // Deal to all players
+    for (auto& p : players)
+    {
+        dealCardToPlayer(p.hands[0]);
+        dealCardToDealer();
+    }
+    for (auto& p : players)
+    {
+        dealCardToPlayer(p.hands[0]);
+        dealCardToDealer();
+    }
 
     roundState = RoundState::PlayerTurn;
 
@@ -875,7 +990,7 @@ void Game::deal()
 
     std::cout
         << "You have a "
-        << player.hands[0].getValue()
+        << players[0].hands[0].getValue()
         << " against dealers "
         << dealer.getDealerUpCardToString()
         << ".\n";
@@ -883,7 +998,8 @@ void Game::deal()
 
 void Game::evaluateBlackjack()
 {
-    Hand &hand = player.hands[player.currentHand];
+    auto& p = players[activePlayerIndex];
+    Hand &hand = p.hands[p.currentHand];
 
     int bet = hand.getBet();
 
@@ -892,18 +1008,18 @@ void Game::evaluateBlackjack()
         if (hand.getInsuranceBet() > 0)
         {
             // Pays 2:1, plus the original insurance bet back.
-            player.winBet(hand.getInsuranceBet() * 3);
+            p.winBet(hand.getInsuranceBet() * 3);
 
             std::cout << "Insurance wins!\n";
         }
 
         if (hand.isBlackjack())
         {
-            player.pushBet(bet);
+            p.pushBet(bet);
         }
         else
         {
-            player.loseBet();
+            p.loseBet();
         }
 
         roundState = RoundState::DealerTurn;
@@ -924,7 +1040,7 @@ void Game::evaluateBlackjack()
     // Only natural (non-split) blackjack pays 3:2
     if (hand.isBlackjack() && !hand.isSplit())
     {
-        player.winBet(bet * Constants::BLACKJACK_PAYOUT);
+        p.winBet(bet * Constants::BLACKJACK_PAYOUT);
 
         std::cout << "Blackjack!\n";
 
@@ -937,7 +1053,8 @@ void Game::evaluateBlackjack()
 
 void Game::offerInsurance()
 {
-    Hand &hand = player.hands[player.currentHand];
+    auto& p = players[activePlayerIndex];
+    Hand &hand = p.hands[p.currentHand];
 
     int maxInsurance = hand.getBet() / 2;
 
@@ -964,7 +1081,7 @@ void Game::offerInsurance()
 
     hand.setInsuranceBet(insurance);
 
-    player.placeBet(insurance);
+    p.placeBet(insurance);
 
     std::cout << "Insurance bet of $"
               << insurance
@@ -1004,19 +1121,29 @@ void Game::dealerTurn()
 {
     bool doNotDraw = false;
     int numBusted = 0;
-    for (Hand hand : player.hands)
+    for (auto& p : players)
     {
-        if (hand.isBlackjack() && !hand.isSplit())
+        for (Hand hand : p.hands)
         {
-            doNotDraw = true;
-        }
+            if (hand.isBlackjack() && !hand.isSplit())
+            {
+                doNotDraw = true;
+            }
 
-        if (hand.isBust())
-        {
-            numBusted++;
+            if (hand.isBust())
+            {
+                numBusted++;
+            }
         }
     }
-    if (numBusted == player.hands.size())
+    
+    int totalHands = 0;
+    for (auto& p : players)
+    {
+        totalHands += p.hands.size();
+    }
+    
+    if (numBusted == totalHands)
         doNotDraw = true;
 
     // Hit soft 17 (H17 rule): dealer must draw when total is 17 and soft.
@@ -1093,11 +1220,11 @@ void Game::dealerTurn()
 
         // do end game saving here
 
-        PlayerProfile profile = player.getProfile();
+        PlayerProfile profile = players[0].getProfile();
 
         profile.addShoeRecord(currentShoeRecord);
-        player.updateProfile(profile);
-        player.saveProfile();
+        players[0].updateProfile(profile);
+        players[0].saveProfile();
 
         currentShoeRecord = {};
         std::cout
@@ -1108,6 +1235,10 @@ void Game::dealerTurn()
 void Game::evaluateHands()
 {
     PlayerStats &stats = getStats();
+
+    // Track win/loss streak
+    bool roundWon = false;
+    bool roundLost = false;
 
     // Build the new RoundRecord
     currentRoundRecord.dealerCards.clear();
@@ -1122,95 +1253,167 @@ void Game::evaluateHands()
                                        std::chrono::system_clock::now().time_since_epoch())
                                        .count();
 
-    // Evaluate each hand
-    for (size_t handIndex = 0; handIndex < player.hands.size(); handIndex++)
+    // Evaluate each hand for all players
+    for (auto& p : players)
     {
-        const Hand &hand = player.hands[handIndex];
-
-        std::cout << "Entering evaluateHands() on hand " << (handIndex + 1)
-                  << ". Bankroll = " << player.getBankroll() << std::endl;
-
-        HandOutcome outcome;
-        outcome.wager = hand.getBet();
-        outcome.actions = handActions[handIndex];
-
-        int netProfitOnHand = 0;
-
-        if (hand.isSurrendered())
+        for (size_t handIndex = 0; handIndex < p.hands.size(); handIndex++)
         {
-            player.winBet(hand.getBet() / 2);
-            outcome.payout = hand.getBet() / 2;
-            outcome.won = false;
-            stats.losses++;
-            netProfitOnHand = hand.getBet() / 2 - hand.getBet();
+            const Hand &hand = p.hands[handIndex];
+
+            std::cout << "Entering evaluateHands() on hand " << (handIndex + 1)
+                      << ". Bankroll = " << p.getBankroll() << std::endl;
+
+            HandOutcome outcome;
+            outcome.wager = hand.getBet();
+            outcome.actions = handActions[handIndex];
+
+            int netProfitOnHand = 0;
+
+            if (hand.isSurrendered())
+            {
+                p.winBet(hand.getBet() / 2);
+                outcome.payout = hand.getBet() / 2;
+                outcome.won = false;
+                stats.losses++;
+                netProfitOnHand = hand.getBet() / 2 - hand.getBet();
+            }
+            else if (hand.isBust() || (hand.getValue() < dealer.getValue() && !dealer.isBust()))
+            {
+                p.loseBet();
+                outcome.payout = 0;
+                outcome.won = false;
+                stats.losses++;
+                netProfitOnHand = -hand.getBet();
+                roundLost = true;
+            }
+            else if (hand.getValue() > dealer.getValue() || dealer.isBust())
+            {
+                p.winBet(hand.getBet() * 2);
+                outcome.payout = hand.getBet();
+                outcome.won = true;
+                stats.wins++;
+                netProfitOnHand = hand.getBet();
+                roundWon = true;
+            }
+            else
+            {
+                p.pushBet(hand.getBet());
+                outcome.payout = hand.getBet();
+                outcome.won = true; // push counts as non-loss
+                stats.pushes++;
+                netProfitOnHand = 0;
+            }
+
+            // Capture the cards for this hand
+            for (size_t c = 0; c < hand.size(); c++)
+                outcome.cards.push_back(hand.getCard(c));
+
+            currentRoundRecord.playerHands.push_back(outcome);
+
+            // Track hands finished
+            stats.handsFinished++;
+
+            // Track greatest single hand win
+            if (netProfitOnHand > stats.greatestHand)
+                stats.greatestHand = netProfitOnHand;
+
+            // Update cumulative trackers
+            shoeCumulativeWinLoss += netProfitOnHand;
+            sessionCumulativeWinLoss += netProfitOnHand;
+
+            // Update shoe-level extremes
+            if (shoeCumulativeWinLoss > stats.greatestWin)
+                stats.greatestWin = shoeCumulativeWinLoss;
+            if (shoeCumulativeWinLoss < stats.greatestLoss)
+                stats.greatestLoss = shoeCumulativeWinLoss;
+
+            // Update session-level extremes
+            if (sessionCumulativeWinLoss > stats.greatestSessionWin)
+                stats.greatestSessionWin = sessionCumulativeWinLoss;
+            if (sessionCumulativeWinLoss < stats.greatestSessionLoss)
+                stats.greatestSessionLoss = sessionCumulativeWinLoss;
         }
-        else if (hand.isBust() || (hand.getValue() < dealer.getValue() && !dealer.isBust()))
-        {
-            player.loseBet();
-            outcome.payout = 0;
-            outcome.won = false;
-            stats.losses++;
-            netProfitOnHand = -hand.getBet();
-        }
-        else if (hand.getValue() > dealer.getValue() || dealer.isBust())
-        {
-            player.winBet(hand.getBet() * 2);
-            outcome.payout = hand.getBet();
-            outcome.won = true;
-            stats.wins++;
-            netProfitOnHand = hand.getBet();
-        }
-        else
-        {
-            player.pushBet(hand.getBet());
-            outcome.payout = hand.getBet();
-            outcome.won = true; // push counts as non-loss
-            stats.pushes++;
-            netProfitOnHand = 0;
-        }
-
-        // Capture the cards for this hand
-        for (size_t c = 0; c < hand.size(); c++)
-            outcome.cards.push_back(hand.getCard(c));
-
-        currentRoundRecord.playerHands.push_back(outcome);
-
-        // Track hands finished
-        stats.handsFinished++;
-
-        // Track greatest single hand win
-        if (netProfitOnHand > stats.greatestHand)
-            stats.greatestHand = netProfitOnHand;
-
-        // Update cumulative trackers
-        shoeCumulativeWinLoss += netProfitOnHand;
-        sessionCumulativeWinLoss += netProfitOnHand;
-
-        // Update shoe-level extremes
-        if (shoeCumulativeWinLoss > stats.greatestWin)
-            stats.greatestWin = shoeCumulativeWinLoss;
-        if (shoeCumulativeWinLoss < stats.greatestLoss)
-            stats.greatestLoss = shoeCumulativeWinLoss;
-
-        // Update session-level extremes
-        if (sessionCumulativeWinLoss > stats.greatestSessionWin)
-            stats.greatestSessionWin = sessionCumulativeWinLoss;
-        if (sessionCumulativeWinLoss < stats.greatestSessionLoss)
-            stats.greatestSessionLoss = sessionCumulativeWinLoss;
     }
 
-    std::cout << "Exiting evaluation with " << player.getBankroll() << std::endl;
+    // Update streak based on round result
+    if (roundWon && !roundLost)
+    {
+        if (hudState.streakIsWin)
+            hudState.streak++;
+        else
+        {
+            hudState.streak = 1;
+            hudState.streakIsWin = true;
+        }
+    }
+    else if (roundLost && !roundWon)
+    {
+        if (!hudState.streakIsWin)
+            hudState.streak++;
+        else
+        {
+            hudState.streak = 1;
+            hudState.streakIsWin = false;
+        }
+    }
+    else
+    {
+        // Mixed result (some wins, some losses) or all pushes - reset streak
+        hudState.streak = 0;
+    }
+
+    std::cout << "Exiting evaluation with " << players[0].getBankroll() << std::endl;
 
     // Save to profile and shoe record
-    PlayerProfile profile = player.getProfile();
+    PlayerProfile profile = players[0].getProfile();
     profile.addRoundRecord(currentRoundRecord);
-    player.updateProfile(profile);
-    player.saveProfile();
+    players[0].updateProfile(profile);
+    players[0].saveProfile();
 
     currentShoeRecord.rounds.push_back(currentRoundRecord);
 
     handActions.clear();
     roundState = RoundState::Cleanup;
+}
+
+void Game::logStrategyDeviation(char actionTaken)
+{
+    auto& p = players[activePlayerIndex];
+    Hand &hand = p.hands[p.currentHand];
+    int playerValue = hand.getValue();
+    int dealerUpValue = dealer.getDealerUpCard().getBlackjackValue();
+    bool hasAce = hand.isSoft();
+    bool isPair = hand.size() == 2 &&
+                  hand.getCard(0).getBlackjackValue() ==
+                      hand.getCard(1).getBlackjackValue();
+    int pairValue = isPair ? hand.getCard(0).getBlackjackValue() : 0;
+
+    char correct = BasicStrategy::getRecommendedAction(playerValue, dealerUpValue, hasAce, isPair, pairValue);
+
+    PlayerStats &stats = getStats();
+    stats.strategyTotal++;
+
+    if (actionTaken == correct)
+    {
+        stats.strategyHits++;
+    }
+    else
+    {
+        stats.strategyDeviations++;
+        DeviationRecord record;
+        record.playerValue = playerValue;
+        record.dealerUpValue = dealerUpValue;
+        record.wasSoft = hasAce;
+        record.wasPair = isPair;
+        record.pairValue = pairValue;
+        record.actionTaken = actionTaken;
+        record.correctAction = correct;
+        record.bet = hand.getBet();
+        record.won = false; // filled in later at evaluation time
+        stats.recentDeviations.push_back(record);
+        if (stats.recentDeviations.size() > 10)
+            stats.recentDeviations.erase(stats.recentDeviations.begin());
+    }
 }
 
 char Game::giveBasicStrategyAdvice(Hand &playerHand, Hand &dealerHand)
@@ -1336,27 +1539,34 @@ void Game::drawDealer()
 
 void Game::drawPlayers()
 {
-    for (std::size_t handIndex = 0;
-         handIndex < player.hands.size();
-         handIndex++)
+    // Draw each player's hands
+    for (size_t playerIndex = 0; playerIndex < players.size(); playerIndex++)
     {
-        const Hand &hand =
-            player.hands[handIndex];
+        auto& p = players[playerIndex];
+        float xOffset = playerIndex * 200.f; // offset each player's hands
 
-        for (std::size_t i = 0;
-             i < hand.size();
-             i++)
+        for (std::size_t handIndex = 0;
+             handIndex < p.hands.size();
+             handIndex++)
         {
-            Graphics::drawCard(
-                window,
-                cardTexture,
-                hand.getCard(i),
-                Constants::PLAYER_X +
-                    handIndex * 142 +
-                    i * 16,
+            const Hand &hand = p.hands[handIndex];
 
-                Constants::PLAYER_Y -
-                    i * 16);
+            for (std::size_t i = 0;
+                 i < hand.size();
+                 i++)
+            {
+                Graphics::drawCard(
+                    window,
+                    cardTexture,
+                    hand.getCard(i),
+                    Constants::PLAYER_X +
+                        xOffset +
+                        handIndex * 142 +
+                        i * 16,
+
+                    Constants::PLAYER_Y -
+                        i * 16);
+            }
         }
     }
 }
@@ -1379,100 +1589,65 @@ void Game::drawChips()
             {100, sf::Color::White}          // $1
         };
 
-    int handIndex = 0;
-    for (Hand &hand : player.hands)
+    // Draw chips for all players
+    for (size_t playerIndex = 0; playerIndex < players.size(); playerIndex++)
     {
-        int totalBet = hand.getBet();
-        int stackBet = hand.isDoubledDown() ? totalBet / 2 : totalBet;
+        auto& p = players[playerIndex];
+        float xOffset = playerIndex * 200.f;
 
-        if (totalBet <= 0)
-            continue;
-
-        //
-        // Position based on the same math as cards
-        //
-        float handX =
-            Constants::PLAYER_X +
-            handIndex * 80;
-
-        float handWidth =
-            Constants::CARD_WIDTH +
-            (hand.size() - 1) * 16;
-
-        float chipX =
-            handX +
-            handWidth / 2.f;
-
-        float chipY =
-            Constants::PLAYER_Y +
-            Constants::CARD_HEIGHT +
-            45.f;
-
-        //
-        // Convert dollars to cents
-        //
-        int remaining =
-            stackBet * 100;
-
-        std::vector<Chip> stack;
-
-        for (const auto &chip : denominations)
+        int handIndex = 0;
+        for (Hand &hand : p.hands)
         {
-            while (remaining >= chip.value)
+            int totalBet = hand.getBet();
+            int stackBet = hand.isDoubledDown() ? totalBet / 2 : totalBet;
+
+            if (totalBet <= 0)
             {
-                stack.push_back(chip);
-                remaining -= chip.value;
+                handIndex++;
+                continue;
             }
-        }
 
-        //
-        // Draw stack
-        //
-        for (std::size_t i = 0;
-             i < stack.size();
-             i++)
-        {
-            sf::CircleShape chip(Constants::CHIP_RADIUS);
+            //
+            // Position based on the same math as cards
+            //
+            float handX =
+                Constants::PLAYER_X +
+                xOffset +
+                handIndex * 80;
 
-            chip.setFillColor(
-                stack[i].color);
+            float handWidth =
+                Constants::CARD_WIDTH +
+                (hand.size() - 1) * 16;
 
-            chip.setOutlineColor(
-                sf::Color::White);
+            float chipX =
+                handX +
+                handWidth / 2.f;
 
-            chip.setOutlineThickness(1.f);
+            float chipY =
+                Constants::PLAYER_Y +
+                Constants::CARD_HEIGHT +
+                45.f;
 
-            chip.setOrigin(sf::Vector2f(Constants::CHIP_RADIUS, Constants::CHIP_RADIUS));
+            //
+            // Convert dollars to cents
+            //
+            int remaining =
+                stackBet * 100;
 
-            chip.setPosition(sf::Vector2f(chipX, chipY - i * 3.f));
+            std::vector<Chip> stack;
 
-            window.draw(chip);
-        }
+            for (const auto &chip : denominations)
+            {
+                while (remaining >= chip.value)
+                {
+                    stack.push_back(chip);
+                    remaining -= chip.value;
+                }
+            }
 
-        //
-        // Draw total bet
-        //
-
-        sf::Text text(FontManager::get(), "$" + std::to_string(totalBet), 16.f);
-        text.setFillColor(sf::Color::White);
-
-        sf::FloatRect bounds =
-            text.getLocalBounds();
-
-        text.setOrigin(sf::Vector2f(bounds.size.x / 2.f, bounds.size.y / 2.f));
-
-        text.setPosition(sf::Vector2f(chipX, chipY - stack.size() * 3.f));
-
-        window.draw(text);
-
-        //
-        // Draw second stack when doubled
-        //
-        if (hand.isDoubledDown())
-        {
-            float secondX =
-                chipX + 35.f;
-
+            //
+            // Draw stack
+            //
             for (std::size_t i = 0;
                  i < stack.size();
                  i++)
@@ -1489,12 +1664,58 @@ void Game::drawChips()
 
                 chip.setOrigin(sf::Vector2f(Constants::CHIP_RADIUS, Constants::CHIP_RADIUS));
 
-                chip.setPosition(sf::Vector2f(secondX, chipY - i * 3.f));
+                chip.setPosition(sf::Vector2f(chipX, chipY - i * 3.f));
 
                 window.draw(chip);
             }
+
+            //
+            // Draw total bet
+            //
+
+            sf::Text text(FontManager::get(), "$" + std::to_string(totalBet), 16.f);
+            text.setFillColor(sf::Color::White);
+
+            sf::FloatRect bounds =
+                text.getLocalBounds();
+
+            text.setOrigin(sf::Vector2f(bounds.size.x / 2.f, bounds.size.y / 2.f));
+
+            text.setPosition(sf::Vector2f(chipX, chipY - stack.size() * 3.f));
+
+            window.draw(text);
+
+            //
+            // Draw second stack when doubled
+            //
+            if (hand.isDoubledDown())
+            {
+                float secondX =
+                    chipX + 35.f;
+
+                for (std::size_t i = 0;
+                     i < stack.size();
+                     i++)
+                {
+                    sf::CircleShape chip(Constants::CHIP_RADIUS);
+
+                    chip.setFillColor(
+                        stack[i].color);
+
+                    chip.setOutlineColor(
+                        sf::Color::White);
+
+                    chip.setOutlineThickness(1.f);
+
+                    chip.setOrigin(sf::Vector2f(Constants::CHIP_RADIUS, Constants::CHIP_RADIUS));
+
+                    chip.setPosition(sf::Vector2f(secondX, chipY - i * 3.f));
+
+                    window.draw(chip);
+                }
+            }
+            handIndex++;
         }
-        handIndex++;
     }
 }
 
@@ -1518,10 +1739,11 @@ void Game::drawDeck()
 
 void Game::drawInsurance()
 {
+    auto& p = players[activePlayerIndex];
     sf::Text text(FontManager::get(),
                   "Dealer shows an Ace\n\n"
                   "Insurance Bet: $" +
-                      std::to_string(player.hands[player.currentHand].getInsuranceBet()) +
+                      std::to_string(p.hands[p.currentHand].getInsuranceBet()) +
                       "\n\n"
                       "Up/Down : Change\n"
                       "Enter : Confirm\n"
@@ -1533,6 +1755,7 @@ void Game::drawInsurance()
 
     window.draw(text);
 }
+
 void Game::drawMenuItem(const std::string &label, bool selected, float y)
 {
     sf::Text text(FontManager::get(), label, 24);

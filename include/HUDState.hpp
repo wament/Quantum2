@@ -1,9 +1,5 @@
 #pragma once
-
-#include <string>
-
 #include "GameRecord.hpp"
-
 struct HUDState
 {
     // Bottom Bar
@@ -31,4 +27,7 @@ struct HUDState
     // Internal
     int cardsRemaining = 0;
     int decksRemaining = 0;
+
+    // Basic Strategy Advisor
+    std::string basicStrategyHint;
 };

@@ -94,7 +94,8 @@ private:
 
     Hand dealer;
 
-    Player player;
+    std::vector<Player> players;
+    int activePlayerIndex = 0;
 
     RoundState roundState = RoundState::PlayerTurn;
 
@@ -117,7 +118,7 @@ private:
 
     PlayerStats &getStats()
     {
-        return player.getStats();
+        return players[0].getStats();
     }
 
     // ---------------- Setup ----------------
@@ -194,6 +195,10 @@ private:
     const int getMaxInsurance();
 
     char giveBasicStrategyAdvice(Hand &playerHand, Hand &dealerHand);
+    void logStrategyDeviation(char actionTaken);
+
+    // NPC decision making
+    void npcTakeTurn();
 
     // ---------------- Drawing ----------------
     void drawMenuItem(const std::string &label, bool selected, float y);
