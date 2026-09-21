@@ -153,6 +153,7 @@ jobs:
         run: cmake --build build --config Release --parallel
 
       - name: Package Windows
+        shell: pwsh
         run: |
           $buildDir = "build\Release"
           $pkgDir = "package"

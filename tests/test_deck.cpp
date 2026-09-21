@@ -176,7 +176,8 @@ TEST_CASE("reshuffleWithRemaining with empty table cards", "[Deck][Reshuffle]")
     // Draw all cards except the last few
     for (int i = 0; i < 50; ++i)
     {
-        deck.draw();
+        Card c = deck.draw();
+        (void)c;
     }
     
     size_t remainingBefore = deck.size();
