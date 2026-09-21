@@ -45,8 +45,8 @@ void Deck::shuffle()
 
     cutCardReached = false;
 
-    const std::size_t cutPosition =
-        static_cast<std::size_t>(cards.size() * 0.15);
+    // Place cut card 25 cards from the end of the shoe
+    const std::size_t cutPosition = cards.size() - 25;
 
     cards.insert(
         cards.begin() + cutPosition,
@@ -96,6 +96,45 @@ std::size_t Deck::size() const
 bool Deck::reachedCutCard() const
 {
     return cutCardReached;
+}
+
+void Deck::reshuffleWithRemaining(const std::vector<Card>& tableCards)
+{
+    // Add table cards back into the shoe
+    cards.insert(cards.end(), tableCards.begin(), tableCards.end());
+
+    // Move current active shoe to previous for saving
+    if (!activeShoeRecord.empty())
+    {
+        previousShoeRecord = activeShoeRecord;
+        hasPreviousRecord = true;
+    }
+
+    // Shuffle the combined deck
+    lastShuffleSeed = std::random_device{}();
+    rng = std::mt19937(lastShuffleSeed);
+    std::shuffle(cards.begin(), cards.end(), rng);
+
+    cutCardReached = false;
+
+    // Place cut card 25 cards from the end (or at the end if deck is too small)
+    std::size_t cutPosition;
+    if (cards.size() > 25)
+    {
+        cutPosition = cards.size() - 25;
+    }
+    else
+    {
+        cutPosition = cards.size();
+    }
+
+    cards.insert(
+        cards.begin() + cutPosition,
+        { Constants::CUT_CARD_VALUE, Suit::Spades }
+    );
+
+    // Start new shoe record
+    activeShoeRecord = cards;
 }
 
 const std::vector<Card>* Deck::getPreviousShoeRecord()

@@ -20,6 +20,8 @@ HUD::~HUD()
         delete m_controlsText;
     if (m_strategyHintText)
         delete m_strategyHintText;
+    if (m_playerBankrollsText)
+        delete m_playerBankrollsText;
 }
 
 void HUD::initialize(sf::Font &font)
@@ -105,6 +107,11 @@ void HUD::initialize(sf::Font &font)
     m_strategyHintText = new sf::Text(font, "", 20u);
     m_strategyHintText->setFillColor(sf::Color(255, 215, 0));
     m_strategyHintText->setPosition(sf::Vector2f(Constants::WINDOW_WIDTH / 2.f - 100.f, 20.f));
+
+    // Initialize player bankrolls text
+    m_playerBankrollsText = new sf::Text(font, "", 14u);
+    m_playerBankrollsText->setFillColor(sf::Color(180, 255, 180));
+    m_playerBankrollsText->setPosition(sf::Vector2f(Constants::WINDOW_WIDTH / 2.f - 200.f, 50.f));
 }
 
 void HUD::updateControls(sf::Font &font)
@@ -166,7 +173,10 @@ void HUD::update(const HUDState &hudState)
         else
         {
             streakStr = std::to_string(hudState.streak);
-            streakStr += hudState.streakIsWin ? "W" : "L";
+            if (FontManager::hasUnicodeSupport())
+              streakStr += hudState.streakIsWin ? "★" : "✗";
+          else
+              streakStr += hudState.streakIsWin ? "W" : "L";
         }
         m_streakBox->setValue(streakStr);
     }
@@ -196,6 +206,22 @@ void HUD::update(const HUDState &hudState)
     {
         m_strategyHintText->setString(m_strategyHint);
     }
+
+    // Update player bankrolls display
+    if (m_playerBankrollsText && !hudState.playerBankrolls.empty())
+    {
+        std::ostringstream oss;
+        for (size_t i = 0; i < hudState.playerBankrolls.size(); i++)
+        {
+            if (i > 0) oss << "  |  ";
+            oss << "$" << hudState.playerBankrolls[i];
+        }
+        m_playerBankrollsText->setString(oss.str());
+    }
+
+    // Store summary overlay data
+    m_playerSummaries = hudState.playerSummaries;
+    m_summaryTimer = hudState.summaryTimer;
 }
 
 void HUD::draw(sf::RenderWindow &window)
@@ -217,6 +243,37 @@ void HUD::draw(sf::RenderWindow &window)
     if (m_strategyHintText && !m_strategyHint.empty())
     {
         window.draw(*m_strategyHintText);
+    }
+
+    // Draw player bankrolls
+    if (m_playerBankrollsText)
+    {
+        window.draw(*m_playerBankrollsText);
+    }
+
+    // Draw end-of-round summary overlay
+    drawSummaryOverlay(window);
+}
+
+void HUD::drawSummaryOverlay(sf::RenderWindow &window)
+{
+    if (m_playerSummaries.empty() || m_summaryTimer <= 0.0f)
+        return;
+
+    // Calculate alpha based on timer (fade out over 6 seconds)
+    float alpha = static_cast<float>(std::min(255.0f, m_summaryTimer * 42.5f));
+    sf::Color textColor(255, 255, 255, static_cast<unsigned char>(alpha));
+
+    float x = Constants::WINDOW_WIDTH / 2.0f - 150.0f;
+    float y = 180.0f;
+
+    for (const auto& summary : m_playerSummaries)
+    {
+        sf::Text text(FontManager::get(), summary, 16.f);
+        text.setFillColor(textColor);
+        text.setPosition(sf::Vector2f(x, y));
+        window.draw(text);
+        y += 24.0f;
     }
 }
 

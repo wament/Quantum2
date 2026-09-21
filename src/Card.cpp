@@ -45,3 +45,15 @@ bool Card::isCutCard() const
     if (val >= 10) return -1;  // 10, J, Q, K
     return 0;  // 7, 8, 9, A
 }
+
+char Card::getSuitSymbol() const
+{
+    switch (suit)
+    {
+    case Suit::Spades: return u8"♠"[0];
+    case Suit::Hearts: return u8"♥"[0];
+    case Suit::Diamonds: return u8"♦"[0];
+    case Suit::Clubs: return u8"♣"[0];
+    }
+    return u8"?"[0];
+}

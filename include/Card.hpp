@@ -24,6 +24,7 @@ struct Card
 
     [[nodiscard]] bool isCutCard() const;
     [[nodiscard]] int getHiLoValue() const;  // Hi-Lo counting value (-1, 0, +1)
+    [[nodiscard]] char getSuitSymbol() const;  // Unicode suit symbol
 };
 
 /*

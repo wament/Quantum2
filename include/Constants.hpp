@@ -54,6 +54,7 @@ namespace Constants
     // Rules
 
     constexpr bool DOUBLE_AFTER_SPLIT_ALLOWED = true;
+    constexpr bool RESPLIT_ACES_ALLOWED = true;
 }
 
 // Basic Strategy

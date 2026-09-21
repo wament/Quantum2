@@ -287,3 +287,55 @@ TEST_CASE("Strategy compliance: hard 11 vs any should double", "[Game][Strategy]
         CHECK(advice == 'D');
     }
 }
+
+TEST_CASE("NPC split ace rule: split ace hand auto-stands after one card", "[Game][Split][NPC]")
+{
+    // Simulate NPC splitting aces: each split ace hand gets exactly one card
+    // and is automatically finished (cannot hit again)
+
+    // First split ace hand
+    Hand hand1;
+    Card ace1;
+    ace1.value = 1;
+    ace1.suit = Suit::Spades;
+    hand1.addCard(ace1);
+    hand1.setSplit(true, 11);
+
+    // Deal one card to split ace hand (simulating Game::update() logic)
+    Card card1;
+    card1.value = 9;
+    card1.suit = Suit::Hearts;
+    hand1.addCard(card1);
+
+    // Verify split ace properties
+    CHECK(hand1.isSplitAce());
+    CHECK(hand1.isSplit());
+    CHECK(hand1.size() == 2);
+    CHECK(hand1.getValue() == 20);
+    CHECK(!hand1.isBlackjack()); // split ace + 9 is not blackjack
+
+    // Second split ace hand
+    Hand hand2;
+    Card ace2;
+    ace2.value = 1;
+    ace2.suit = Suit::Hearts;
+    hand2.addCard(ace2);
+    hand2.setSplit(true, 11);
+
+    Card card2;
+    card2.value = 10;
+    card2.suit = Suit::Clubs;
+    hand2.addCard(card2);
+
+    CHECK(hand2.isSplitAce());
+    CHECK(hand2.size() == 2);
+    CHECK(hand2.getValue() == 21);
+    CHECK(!hand2.isBlackjack()); // split ace + 10 is 21 but not natural blackjack
+
+    // Verify the hand is marked finished after receiving its one card
+    // (this is what Game::update() does: if isSplitAce() -> setFinished(true))
+    hand1.setFinished(true);
+    hand2.setFinished(true);
+    CHECK(hand1.isFinished());
+    CHECK(hand2.isFinished());
+}

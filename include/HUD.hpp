@@ -65,7 +65,15 @@ private:
     sf::Text *m_strategyHintText = nullptr;
     std::string m_strategyHint;
 
+    // Player bankrolls display
+    sf::Text *m_playerBankrollsText = nullptr;
+
+    // End-of-round summary overlay
+    std::vector<std::string> m_playerSummaries;
+    float m_summaryTimer = 0.0f;
+
     void drawRiskSlider(sf::RenderWindow &window);
+    void drawSummaryOverlay(sf::RenderWindow &window);
 
     void updateControls(sf::Font &font);
 };

@@ -24,6 +24,14 @@ public:
     [[nodiscard]] bool reachedCutCard() const;
 
     /**
+     * @brief Reshuffles the remaining deck cards plus any table cards.
+     * 
+     * Used as a fallback when the deck runs out before the cut card.
+     * The tableCards are added back to the shoe before shuffling.
+     */
+    void reshuffleWithRemaining(const std::vector<Card>& tableCards);
+
+    /**
      * @brief Returns the shoe record from the previous cycle.
      * 
      * This should be called BEFORE reshuffling in your game logic.

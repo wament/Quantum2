@@ -1,10 +1,14 @@
 #pragma once
 #include "GameRecord.hpp"
+#include <string>
+#include <vector>
+
 struct HUDState
 {
     // Bottom Bar
     int bankroll = 0;
     int currentBet = 0;
+    std::vector<int> playerBankrolls;
 
     std::string statusMessage;
 
@@ -30,4 +34,8 @@ struct HUDState
 
     // Basic Strategy Advisor
     std::string basicStrategyHint;
+
+    // End-of-round summary overlay
+    std::vector<std::string> playerSummaries;
+    float summaryTimer = 0.0f;
 };

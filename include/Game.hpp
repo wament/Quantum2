@@ -36,6 +36,7 @@ enum class AppMode {
 };
 enum class MenuOption {
     PlayGame,
+    PlayerCount,
     ReviewHistory
 };
 
@@ -79,6 +80,10 @@ private:
     // ---------------- Kelly / Risk of Ruin Slider ----------------
 
     float kellyFraction = 0.33f; // 1/3 Kelly ≈ 3% RoR
+
+    int playerCount = 1;
+
+    void setPlayerCount(int count);
 
     struct SliderState
     {
@@ -144,14 +149,11 @@ private:
 
     void draw();
 
-    void finishRound();
-
     // ---------------- Betting ----------------
 
     void increaseBet();
     void decreaseBet();
     void confirmBet();
-
     // Kelly-based optimal bet calculation (uses kellyFraction)
     int calculateOptimalBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet) const;
 
@@ -180,8 +182,13 @@ private:
     // Central helper: update running count and check cut card after each draw
     void afterDraw(Card card);
 
-    void dealCardToPlayer(Hand &hand);
+    // Collect all cards currently on the table (for reshuffle fallback)
+    std::vector<Card> collectTableCards() const;
 
+    // Handle rare case where deck runs out before cut card
+    void handleEmptyDeck();
+
+    void dealCardToPlayer(Hand &hand);
     void dealCardToDealer();
 
     void dealerTurn();
@@ -211,6 +218,9 @@ private:
 
     void resizeView(sf::RenderWindow &window, sf::View &view);
     void drawPlayers();
+
+    // Calculate the position offset for a player based on their index and total player count
+    sf::Vector2f getPlayerPosition(size_t playerIndex, size_t totalPlayers) const;
 
     void drawChips();
 
