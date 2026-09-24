@@ -10,6 +10,7 @@
 #include "HUD.hpp"
 #include "HUDState.hpp"
 #include "Replay.hpp"
+#include "GameRenderer.hpp"
 
 enum class RoundState
 {
@@ -37,6 +38,7 @@ enum class AppMode {
 enum class MenuOption {
     PlayGame,
     PlayerCount,
+    GameSpeed,
     ReviewHistory
 };
 
@@ -44,6 +46,12 @@ enum class PauseOption {
     Resume,
     Restart,
     QuitToMenu
+};
+
+enum class GameSpeed {
+    Fast,
+    Normal,
+    Slow
 };
 
 class Game
@@ -54,10 +62,13 @@ public:
     void run();
     std::string gameMessage;
     float deltaTime;
+
+    friend class GameRenderer;
+
 private: 
     AppMode appMode = AppMode::MainMenu;
     std::unique_ptr<Replay> replay;
-
+    GameRenderer renderer;
     // ---------------- SFML ----------------
 
     sf::RenderWindow window;
@@ -77,6 +88,12 @@ private:
 
     MenuOption menuSelection = MenuOption::PlayGame;
     PauseOption pauseSelection = PauseOption::Resume;
+    GameSpeed gameSpeed = GameSpeed::Normal;
+
+    // NPC action timing
+    float npcActionTimer = 0.0f;
+    float npcActionDelay = 1.0f;
+
     // ---------------- Kelly / Risk of Ruin Slider ----------------
 
     float kellyFraction = 0.33f; // 1/3 Kelly ≈ 3% RoR
@@ -147,8 +164,7 @@ private:
 
     void updateHUDState();
 
-    void draw();
-
+    // Removed: void draw(); - now in GameRenderer
     // ---------------- Betting ----------------
 
     void increaseBet();
@@ -207,24 +223,8 @@ private:
     // NPC decision making
     void npcTakeTurn();
 
-    // ---------------- Drawing ----------------
-    void drawMenuItem(const std::string &label, bool selected, float y);
-
-    void drawMainMenu();
-
-    void drawPauseMenu();
-
-    void drawDealer();
-
-    void resizeView(sf::RenderWindow &window, sf::View &view);
-    void drawPlayers();
-
-    // Calculate the position offset for a player based on their index and total player count
-    sf::Vector2f getPlayerPosition(size_t playerIndex, size_t totalPlayers) const;
-
-    void drawChips();
-
-    void drawDeck();
-
-    void drawInsurance();
+    // Compute global hand index for handActions (flat list across all players) 
+    size_t getGlobalHandIndexForPlayer(size_t playerIdx, size_t handIdx); 
+    size_t incrementGlobalHandIndex(size_t current);
 };
+

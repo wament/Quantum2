@@ -82,7 +82,6 @@ bool Player::placeBet(int amount)
 {
     if (amount <= bankroll)
     {
-        bankroll -= amount;
         return true;
     }
     return false;
@@ -93,9 +92,9 @@ void Player::winBet(int amount)
     bankroll += amount;
 }
 
-void Player::loseBet()
+void Player::loseBet(int amount)
 {
-    // Bankroll already reduced on placeBet; nothing to do.
+   bankroll -= amount;
 }
 
 void Player::pushBet(int amount)

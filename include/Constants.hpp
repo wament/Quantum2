@@ -240,8 +240,7 @@ inline char BasicStrategy::getRecommendedAction(
                     return 'P';
                 else
                     return 'H';
-            if (result == 'N')
-                return 'S'; // don't split, stand on 10s
+            // 'N' = don't split, fall through to hard hand logic
         }
     }
 

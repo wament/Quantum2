@@ -20,7 +20,7 @@ public:
     // Betting
     bool placeBet(int amount);
     void winBet(int amount);
-    void loseBet();
+    void loseBet(int amount);
     void pushBet(int amount);
 
 

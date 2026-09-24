@@ -60,6 +60,7 @@ struct HandOutcome
     bool surrendered = false;      // whether this hand was surrendered
     int insuranceBet = 0;          // insurance wager (only on first hand of round)
     bool insuranceTaken = false;   // whether insurance was taken
+    int playerIndex = 0;           // which player this hand belongs to
 };
 
 struct RoundRecord
@@ -83,6 +84,7 @@ struct ShoeRecord
     std::vector<Card> initialDeck;
     std::vector<RoundRecord> rounds;
     
+    bool isContinuation = false; // true if this shoe was created due to deck exhaustion mid-hand
     bool completed = true; // true if cut card reached, false if player quit mid-shoe
     unsigned long long shuffleSeed = 0; // MT19937 seed used when shoe was created
 };

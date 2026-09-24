@@ -91,6 +91,7 @@ target_sources(Blackjack2 PRIVATE
     src/StatBox.cpp
     src/FontManager.cpp
     src/Replay.cpp
+    src/GameRenderer.cpp
 )
 
 # Copy assets to build output (for local testing)
@@ -144,3 +145,4 @@ endif()
 include(CTest)
 include(Catch)
 catch_discover_tests(Blackjack2Tests)
+

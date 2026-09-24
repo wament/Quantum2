@@ -9,6 +9,7 @@
 #include "Graphics.hpp"
 #include "Player.hpp"
 #include "FontManager.hpp"
+#include "GameRenderer.hpp"
 
 Game::Game()
     : window(
@@ -21,9 +22,11 @@ Game::Game()
 {
     window.setView(gameView);
     players.push_back(Player("William"));
+    npcActionTimer = 0.0f;
+    npcActionDelay = 1.0f;
     loadAssets();
     
-    // Create replay BEFORE startNewGame()
+
     replay = std::make_unique<Replay>(window, cardTexture, FontManager::get());
     auto profile = players[0].getProfile();
     replay->loadHistory(profile.getLongHistory());
@@ -72,18 +75,15 @@ void Game::run()
     {
         deltaTime = clock.restart().asSeconds(); // time since last frame
         processEvents();
-        update(deltaTime); // ← change: pass deltaTime
-        draw();
+        update(deltaTime);
+        renderer.draw(*this);
     }
 }
-
-// --------------------------------------------------
-// Setup
-// --------------------------------------------------
+ 
+// ~~~ Setup ~~~ 
 
 void Game::startNewGame()
 {
-    // Create players based on playerCount
     players.clear();
     players.push_back(Player("William"));
 
@@ -94,7 +94,6 @@ void Game::startNewGame()
         players.push_back(Player(npcNames[i - 1]));
     }
 
-    // Load fresh bankroll from profile
     auto profile = players[0].getProfile();
 
     // Create fresh shoe
@@ -113,7 +112,6 @@ void Game::startNewGame()
     players[0].resetRound(0);
     nextRound();
 
-    // Switch mode
     appMode = AppMode::Playing;
 }
 
@@ -162,22 +160,201 @@ void Game::loadAssets()
 
 void Game::nextRound()
 {
-    // Reset all players for new round
     for (auto& p : players)
     {
-        p.resetRound(initalBet);
+        p.resetRound(initalBet); //replace bet
     }
     dealer.clear();
     currentRoundRecord = {};
     handActions.clear();
-    handActions.resize(1); // start with one hand's actions
+    handActions.resize(players.size()); // one entry per player initially
     roundState = RoundState::PlaceBets;
     activePlayerIndex = 0;
 }
 
-// --------------------------------------------------
-// Events
-// --------------------------------------------------
+// ~~~ Events ~~~ 
+void Game::update(float deltaTime)
+{
+    if (appMode == AppMode::MainMenu)
+        return;
+
+    if (appMode == AppMode::ReplayPlaying || appMode == AppMode::ReplayHistory)
+    {
+        replay->update(deltaTime);
+        return;
+    }
+    if (appMode != AppMode::Playing)
+        return;
+
+    // Fade out end-of-round summary overlay
+    if (hudState.summaryTimer > 0.0f)
+    {
+        hudState.summaryTimer -= deltaTime;
+        if (hudState.summaryTimer < 0.0f)
+            hudState.summaryTimer = 0.0f;
+    }
+
+    if (roundState == RoundState::OfferInsurance)
+    {
+        // Auto-decide insurance for NPCs based on true count
+        if (activePlayerIndex > 0)
+        {
+            float tc = BasicStrategy::computeTrueCount(runningCount, deck.size());
+            auto& p = players[activePlayerIndex];
+            Hand& hand = p.hands[p.currentHand];
+            int maxIns = hand.getBet() / 2;
+
+            if (tc >= 3.0f && maxIns > 0)
+            {
+                // NPC takes insurance
+                hand.setInsuranceBet(maxIns);
+                p.placeBet(maxIns);
+                std::cout << p.getName() << " takes insurance of " << maxIns << " (TC=" << tc << ").\n";
+            }
+            else
+            {
+                std::cout << p.getName() << " declines insurance (TC=" << tc << ").\n";
+            }
+
+            // Advance to next player for insurance
+            ++activePlayerIndex;
+            if (activePlayerIndex >= players.size())
+            {
+                // All players decided on insurance
+                activePlayerIndex = 0;
+                evaluateBlackjack();
+            }
+        }
+    }
+
+    if (roundState == RoundState::PlayerTurn)
+    {
+        // Check if all players are done (check ALL hands, not just current)
+        bool allDone = true;
+        for (auto& p : players)
+        {
+            for (auto& hand : p.hands)
+            {
+                if (!hand.isFinished())
+                {
+                    allDone = false;
+                    break;
+                }
+            }
+            if (!allDone) break;
+        }
+        if (allDone)
+        {
+            roundState = RoundState::DealerTurn;
+            return;
+        }
+
+        // Advance active player to next unfinished hand or next player
+        while (activePlayerIndex < players.size())
+        {
+            auto& p = players[activePlayerIndex];
+            // Skip finished hands
+            while (p.currentHand < p.hands.size() && p.hands[p.currentHand].isFinished())
+            {
+                ++p.currentHand;
+            }
+            // If this player has unfinished hands, process them
+            if (p.currentHand < p.hands.size())
+            {
+                break;
+            } 
+            ++activePlayerIndex; //next player
+        }
+
+        if (activePlayerIndex >= players.size())
+        {
+            roundState = RoundState::DealerTurn;
+            return;
+        }
+
+        auto& p = players[activePlayerIndex];
+        
+        // Ensure current hand has at least two cards (for split hands)
+        if (p.hands[p.currentHand].size() == 1)
+        {
+            dealCardToPlayer(p.hands[p.currentHand]); 
+            if (p.hands[p.currentHand].isSplitAce())
+            {
+                // Check if we can re-split aces
+                bool canResplit = Constants::RESPLIT_ACES_ALLOWED &&
+                                  p.hands[p.currentHand].canSplit() &&
+                                  p.hands.size() < Constants::MAX_SPLIT_HANDS;
+                if (!canResplit)
+                {
+                    p.hands[p.currentHand].setFinished(true);
+                }
+            }
+        } 
+
+        if (activePlayerIndex > 0)
+        {
+            // Set delay based on game speed
+            switch (gameSpeed)
+            {
+            case GameSpeed::Fast:
+                npcActionDelay = 0.3f;
+                break;
+            case GameSpeed::Normal:
+                npcActionDelay = 1.0f;
+                break;
+            case GameSpeed::Slow:
+                npcActionDelay = 2.0f;
+                break;
+            }
+
+            // Use timer to delay NPC actions
+            npcActionTimer -= deltaTime;
+            if (npcActionTimer <= 0.0f)
+            {
+                npcTakeTurn();
+                npcActionTimer = npcActionDelay;
+            }
+        }
+        else
+        {
+            // Human player - no delay
+            npcActionTimer = npcActionDelay;
+        }
+    }
+
+    if (roundState == RoundState::DealerTurn)
+    {
+        dealerTurn();
+    }
+}
+
+void Game::updateHUDState()
+{
+    hudState.bankroll = players[0].getBankroll();
+
+    hudState.currentBet = players[0].hands[0].getBet();
+
+    // Populate all player bankrolls
+    hudState.playerBankrolls.clear();
+    for (auto& p : players)
+    {
+        hudState.playerBankrolls.push_back(p.getBankroll());
+    }
+
+    hudState.runningCount = runningCount;
+
+    hudState.trueCount = BasicStrategy::computeTrueCount(runningCount, deck.size());
+
+    hudState.cardsRemaining = deck.size();
+
+    hudState.kellyFraction = kellyFraction;
+
+    hudState.statusMessage = gameMessage;
+
+    hudState.playerStats = &getStats();
+
+    hudState.currentShoe = &currentShoeRecord;
+}
 
 void Game::processEvents()
 {
@@ -198,7 +375,7 @@ void Game::processEvents()
 
         if (event->is<sf::Event::Resized>())
         {
-            resizeView(window, gameView);
+            renderer.resizeView(window, gameView);
             continue;
         }
 
@@ -233,23 +410,22 @@ void Game::processEvents()
 
 void Game::processMenuEvents(const sf::Event &event)
 {
-    // Mouse click support
     if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
-    {
+    { //Mouse movement
         if (clicked->button == sf::Mouse::Button::Left)
         {
             float cx = static_cast<float>(window.getSize().x) / 2.0f;
             sf::Vector2f mousePos = window.mapPixelToCoords(sf::Vector2i(clicked->position.x, clicked->position.y));
 
-            // Check Play Game (y=250)
-            if (std::abs(mousePos.y - 250.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
+            // Check Play Game (y=220)
+            if (std::abs(mousePos.y - 220.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
             {
                 menuSelection = MenuOption::PlayGame;
                 startNewGame();
                 return;
             }
-            // Check Review History (y=300)
-            if (std::abs(mousePos.y - 300.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
+            // Check Review History (y=340)
+            if (std::abs(mousePos.y - 340.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
             {
                 menuSelection = MenuOption::ReviewHistory;
                 appMode = AppMode::ReplayHistory;
@@ -269,13 +445,17 @@ void Game::processMenuEvents(const sf::Event &event)
             menuSelection = MenuOption::ReviewHistory;
         else if (menuSelection == MenuOption::PlayerCount)
             menuSelection = MenuOption::PlayGame;
-        else
+        else if (menuSelection == MenuOption::GameSpeed)
             menuSelection = MenuOption::PlayerCount;
+        else
+            menuSelection = MenuOption::GameSpeed;
         break;
     case sf::Keyboard::Key::Down:
         if (menuSelection == MenuOption::PlayGame)
             menuSelection = MenuOption::PlayerCount;
         else if (menuSelection == MenuOption::PlayerCount)
+            menuSelection = MenuOption::GameSpeed;
+        else if (menuSelection == MenuOption::GameSpeed)
             menuSelection = MenuOption::ReviewHistory;
         else
             menuSelection = MenuOption::PlayGame;
@@ -283,10 +463,24 @@ void Game::processMenuEvents(const sf::Event &event)
     case sf::Keyboard::Key::Left:
         if (menuSelection == MenuOption::PlayerCount && playerCount > 1)
             setPlayerCount(playerCount - 1);
+        else if (menuSelection == MenuOption::GameSpeed)
+        {
+            if (gameSpeed == GameSpeed::Normal)
+                gameSpeed = GameSpeed::Fast;
+            else if (gameSpeed == GameSpeed::Slow)
+                gameSpeed = GameSpeed::Normal;
+        }
         break;
     case sf::Keyboard::Key::Right:
         if (menuSelection == MenuOption::PlayerCount && playerCount < 6)
             setPlayerCount(playerCount + 1);
+        else if (menuSelection == MenuOption::GameSpeed)
+        {
+            if (gameSpeed == GameSpeed::Fast)
+                gameSpeed = GameSpeed::Normal;
+            else if (gameSpeed == GameSpeed::Normal)
+                gameSpeed = GameSpeed::Slow;
+        }
         break;
     case sf::Keyboard::Key::Enter:
         switch (menuSelection)
@@ -295,6 +489,8 @@ void Game::processMenuEvents(const sf::Event &event)
             startNewGame(); // creates deck, resets, deals first hand
             break;
         case MenuOption::PlayerCount:
+            break;
+        case MenuOption::GameSpeed:
             break;
         case MenuOption::ReviewHistory:
         {
@@ -464,13 +660,8 @@ void Game::processGameEvents(const sf::Event &event)
                 currentShoeRecord.initialDeck = deck.getCards();
                 gameState = GameState::Started;
             }
-            else if (roundState == RoundState::Cleanup &&
-                     gameState != GameState::LastHand)
-            {
-                // Don't start a new round if cut card was reached -
-                // the shoe ends after this hand
-                nextRound();
-            }
+            else if (roundState == RoundState::Cleanup && gameState != GameState::LastHand) 
+                nextRound(); 
         }
         if (key->code == sf::Keyboard::Key::Escape)
         {
@@ -560,26 +751,7 @@ void Game::processGameEvents(const sf::Event &event)
                 break;
             }
             }
-        }
-
-        if (key->code == sf::Keyboard::Key::R)
-        {
-            if (gameState == GameState::GameOver)
-            {
-                deck.create(Constants::NUM_DECKS);
-                deck.shuffle();
-                currentShoeRecord.initialDeck = deck.getCards();
-
-                gameState = GameState::Started;
-            }
-            else if (roundState == RoundState::Cleanup &&
-                     gameState != GameState::LastHand)
-            {
-                // Don't start a new round if cut card was reached -
-                // the shoe ends after this hand
-                nextRound();
-            }
-        }
+        } 
 
         if (key->code == sf::Keyboard::Key::Y)
         {
@@ -595,177 +767,9 @@ void Game::processGameEvents(const sf::Event &event)
             pauseSelection = PauseOption::Resume;
         }
     }
-}
-
-// --------------------------------------------------
-// Betting
-// --------------------------------------------------
-
-void Game::update(float deltaTime)
-{
-    if (appMode == AppMode::MainMenu)
-        return;
-
-    if (appMode == AppMode::ReplayPlaying || appMode == AppMode::ReplayHistory)
-    {
-        replay->update(deltaTime);
-        return;
-    }
-    if (appMode != AppMode::Playing)
-        return;
-
-    // Fade out end-of-round summary overlay
-    if (hudState.summaryTimer > 0.0f)
-    {
-        hudState.summaryTimer -= deltaTime;
-        if (hudState.summaryTimer < 0.0f)
-            hudState.summaryTimer = 0.0f;
-    }
-
-    if (roundState == RoundState::OfferInsurance)
-    {
-        // Auto-decide insurance for NPCs based on true count
-        if (activePlayerIndex > 0)
-        {
-            float tc = BasicStrategy::computeTrueCount(runningCount, deck.size());
-            auto& p = players[activePlayerIndex];
-            Hand& hand = p.hands[p.currentHand];
-            int maxIns = hand.getBet() / 2;
-
-            if (tc >= 3.0f && maxIns > 0)
-            {
-                // NPC takes insurance
-                hand.setInsuranceBet(maxIns);
-                p.placeBet(maxIns);
-                std::cout << p.getName() << " takes insurance of " << maxIns << " (TC=" << tc << ").\n";
-            }
-            else
-            {
-                std::cout << p.getName() << " declines insurance (TC=" << tc << ").\n";
-            }
-
-            // Advance to next player for insurance
-            ++activePlayerIndex;
-            if (activePlayerIndex >= players.size())
-            {
-                // All players decided on insurance
-                activePlayerIndex = 0;
-                evaluateBlackjack();
-            }
-        }
-    }
-
-    if (roundState == RoundState::PlayerTurn)
-    {
-        // Check if all players are done (check ALL hands, not just current)
-        bool allDone = true;
-        for (auto& p : players)
-        {
-            for (auto& hand : p.hands)
-            {
-                if (!hand.isFinished())
-                {
-                    allDone = false;
-                    break;
-                }
-            }
-            if (!allDone) break;
-        }
-        if (allDone)
-        {
-            roundState = RoundState::DealerTurn;
-            return;
-        }
-
-        // Advance active player to next unfinished hand or next player
-        while (activePlayerIndex < players.size())
-        {
-            auto& p = players[activePlayerIndex];
-            // Skip finished hands
-            while (p.currentHand < p.hands.size() && p.hands[p.currentHand].isFinished())
-            {
-                ++p.currentHand;
-            }
-            // If this player has unfinished hands, process them
-            if (p.currentHand < p.hands.size())
-            {
-                break;
-            }
-            // Move to next player
-            ++activePlayerIndex;
-        }
-
-        if (activePlayerIndex >= players.size())
-        {
-            roundState = RoundState::DealerTurn;
-            return;
-        }
-
-        auto& p = players[activePlayerIndex];
-        
-        // Ensure current hand has at least two cards (for split hands)
-        if (p.hands[p.currentHand].size() == 1)
-        {
-            dealCardToPlayer(p.hands[p.currentHand]);
-            // Split ace rule: one card only, auto-stand
-                     // Split ace rule: one card only, auto-stand
-            if (p.hands[p.currentHand].isSplitAce())
-            {
-                // Check if we can re-split aces (new card is also an ace)
-                bool canResplit = Constants::RESPLIT_ACES_ALLOWED &&
-                                  p.hands[p.currentHand].canSplit() &&
-                                  p.hands.size() < Constants::MAX_SPLIT_HANDS;
-                if (!canResplit)
-                {
-                    p.hands[p.currentHand].setFinished(true);
-                }
-            }
-        }
-
-        // If NPC player, auto-play
-        if (activePlayerIndex > 0)
-        {
-            npcTakeTurn();
-        }
-    }
-
-    if (roundState == RoundState::DealerTurn)
-    {
-        dealerTurn();
-    }
-}
-
-void Game::updateHUDState()
-{
-    hudState.bankroll = players[0].getBankroll();
-
-    hudState.currentBet = players[0].hands[0].getBet();
-
-    // Populate all player bankrolls
-    hudState.playerBankrolls.clear();
-    for (auto& p : players)
-    {
-        hudState.playerBankrolls.push_back(p.getBankroll());
-    }
-
-    hudState.runningCount = runningCount;
-
-    hudState.trueCount = BasicStrategy::computeTrueCount(runningCount, deck.size());
-
-    hudState.cardsRemaining = deck.size();
-
-    hudState.kellyFraction = kellyFraction;
-
-    hudState.statusMessage = gameMessage;
-
-    hudState.playerStats = &getStats();
-
-    hudState.currentShoe = &currentShoeRecord;
-}
-
-// --------------------------------------------------
-// Player actions
-// --------------------------------------------------
+} 
+ 
+//  ~~~ Player actions ~~~ 
 
 void Game::hit()
 {
@@ -791,8 +795,16 @@ void Game::hit()
 
         hand.setFinished(true);
     }
+    else if (hand.getValue() == 21)
+    {
+        std::cout
+            << "You have 21!\n"
+            << std::endl;
 
-    handActions[p.currentHand].push_back("H");
+        hand.setFinished(true);
+    }
+
+    handActions[getGlobalHandIndexForPlayer(activePlayerIndex, p.currentHand)].push_back("H");
     hudState.basicStrategyHint.clear();
 }
 
@@ -807,7 +819,7 @@ void Game::stand()
     logStrategyDeviation('S');
     hand.setFinished(true);
 
-    handActions[p.currentHand].push_back("S");
+    handActions[getGlobalHandIndexForPlayer(activePlayerIndex, p.currentHand)].push_back("S");
     hudState.basicStrategyHint.clear();
 }
 
@@ -816,6 +828,9 @@ void Game::doubleDown()
     auto& p = players[activePlayerIndex];
     Hand &hand = p.hands[p.currentHand];
     int initalbet = hand.getBet();
+
+    if (hand.isFinished())
+        return;
 
     if (!hand.canDouble())
         return;
@@ -843,7 +858,7 @@ void Game::doubleDown()
 
     hand.setFinished(true);
 
-    handActions[p.currentHand].push_back("D");
+    handActions[getGlobalHandIndexForPlayer(activePlayerIndex, p.currentHand)].push_back("D");
     hudState.basicStrategyHint.clear();
 }
 
@@ -851,6 +866,9 @@ void Game::split()
 {
     auto& p = players[activePlayerIndex];
     int handIndex = p.currentHand;
+
+    if (p.hands[handIndex].isFinished())
+        return;
 
     if (p.hands.size() >= Constants::MAX_SPLIT_HANDS)
     {
@@ -869,7 +887,7 @@ void Game::split()
         << "s.\n";
     newHand.addCard(splitCard); 
 
-    handActions[handIndex].push_back("P");
+    handActions[getGlobalHandIndexForPlayer(activePlayerIndex, p.currentHand)].push_back("P");
     hudState.basicStrategyHint.clear();
 
     dealCardToPlayer(p.hands[handIndex]);
@@ -906,13 +924,79 @@ void Game::surrender()
     hand.setSurrendered(true);
     hand.setFinished(true);
 
-    handActions[p.currentHand].push_back("R");
+    handActions[getGlobalHandIndexForPlayer(activePlayerIndex, p.currentHand)].push_back("R");
     hudState.basicStrategyHint.clear();
 }
 
-// --------------------------------------------------
-// NPC Decision Making
-// --------------------------------------------------
+
+void Game::logStrategyDeviation(char actionTaken)
+{
+    auto& p = players[activePlayerIndex];
+    Hand &hand = p.hands[p.currentHand];
+    int playerValue = hand.getValue();
+    int dealerUpValue = dealer.getDealerUpCard().getBlackjackValue();
+    bool hasAce = hand.isSoft();
+    bool isPair = hand.size() == 2 &&
+                  hand.getCard(0).getBlackjackValue() ==
+                      hand.getCard(1).getBlackjackValue();
+    int pairValue = isPair ? hand.getCard(0).getBlackjackValue() : 0;
+
+    char correct = BasicStrategy::getRecommendedAction(playerValue, dealerUpValue, hasAce, isPair, pairValue);
+
+    PlayerStats &stats = getStats();
+    stats.strategyTotal++;
+
+    if (actionTaken == correct)
+    {
+        stats.strategyHits++;
+    }
+    else
+    {
+        stats.strategyDeviations++;
+        DeviationRecord record;
+        record.playerValue = playerValue;
+        record.dealerUpValue = dealerUpValue;
+        record.wasSoft = hasAce;
+        record.wasPair = isPair;
+        record.pairValue = pairValue;
+        record.actionTaken = actionTaken;
+        record.correctAction = correct;
+        record.bet = hand.getBet();
+        record.won = false; // filled in later at evaluation time
+        stats.recentDeviations.push_back(record);
+        if (stats.recentDeviations.size() > 10)
+            stats.recentDeviations.erase(stats.recentDeviations.begin());
+    }
+}
+
+char Game::giveBasicStrategyAdvice(Hand &playerHand, Hand &dealerHand)
+{
+    int playerValue = playerHand.getValue();
+    int dealerUpValue = dealerHand.getDealerUpCard().getBlackjackValue();
+    bool hasAce = playerHand.isSoft();
+    bool isPair = playerHand.size() == 2 &&
+                  playerHand.getCard(0).getBlackjackValue() ==
+                      playerHand.getCard(1).getBlackjackValue();
+    int pairValue = isPair ? playerHand.getCard(0).getBlackjackValue() : 0;
+
+    return BasicStrategy::getRecommendedAction(playerValue, dealerUpValue, hasAce, isPair, pairValue);
+}  
+
+size_t Game::getGlobalHandIndexForPlayer(size_t playerIdx, size_t handIdx)
+{
+    size_t globalIndex = 0;
+    for (size_t i = 0; i < playerIdx; i++)
+    {
+        globalIndex += players[i].hands.size();
+    }
+    globalIndex += handIdx;
+    return globalIndex;
+}
+
+size_t Game::incrementGlobalHandIndex(size_t current)
+{
+    return current + 1;
+}
 
 void Game::npcTakeTurn()
 {
@@ -922,7 +1006,6 @@ void Game::npcTakeTurn()
     if (hand.isFinished())
         return;
 
-    // Get basic strategy recommendation
     char action = giveBasicStrategyAdvice(hand, dealer);
 
     switch (action)
@@ -947,10 +1030,8 @@ void Game::npcTakeTurn()
         break;
     }
 }
-
-// --------------------------------------------------
-// Betting
-// --------------------------------------------------
+ 
+//  ~~~ Betting ~~~ 
 
 void Game::increaseBet()
 {
@@ -1021,10 +1102,44 @@ void Game::confirmBet()
 
     deal();
 }
+ 
+// ~~~ Insurance  ~~~ 
+void Game::offerInsurance()
+{
+    auto& p = players[activePlayerIndex];
+    Hand &hand = p.hands[p.currentHand];
 
-// --------------------------------------------------
-// Insurance
-// --------------------------------------------------
+    int maxInsurance = hand.getBet() / 2;
+
+    std::cout << "\nDealer shows an Ace.\n";
+    std::cout << "Insurance? (y/n): ";
+
+    char choice;
+    std::cin >> choice;
+
+    if (tolower(choice) != 'y')
+        return;
+
+    int insurance;
+
+    do
+    {
+        std::cout << "Enter insurance bet (0 - "
+                  << maxInsurance
+                  << "): ";
+
+        std::cin >> insurance;
+
+    } while (insurance < 0 || insurance > maxInsurance);
+
+    hand.setInsuranceBet(insurance);
+
+    p.placeBet(insurance);
+
+    std::cout << "Insurance bet of $"
+              << insurance
+              << " placed.\n";
+}
 
 void Game::increaseInsurance()
 {
@@ -1081,9 +1196,7 @@ const int Game::getMaxInsurance()
     return p.hands[p.currentHand].getBet() / 2;
 }
 
-// --------------------------------------------------
-// Deck / Deal
-// --------------------------------------------------
+// ~~~ Deck / Deal ~~~ 
 
 void Game::deal()
 {
@@ -1117,97 +1230,7 @@ void Game::deal()
         << ".\n";
 }
 
-void Game::evaluateBlackjack()
-{
-    auto& p = players[activePlayerIndex];
-    Hand &hand = p.hands[p.currentHand];
 
-    int bet = hand.getBet();
-
-    if (dealer.isBlackjack())
-    {
-        if (hand.getInsuranceBet() > 0)
-        {
-            // Pays 2:1, plus the original insurance bet back.
-            p.winBet(hand.getInsuranceBet() * 3);
-
-            std::cout << "Insurance wins!\n";
-        }
-
-        if (hand.isBlackjack())
-        {
-            p.pushBet(bet);
-        }
-        else
-        {
-            p.loseBet();
-        }
-
-        roundState = RoundState::DealerTurn;
-        return;
-    }
-
-    // Dealer does not have blackjack.
-    if (hand.getInsuranceBet() > 0)
-    {
-        std::cout << "Insurance lost.\n";
-        hand.setInsuranceBet(0);
-    }
-    else
-    {
-        roundState = RoundState::PlayerTurn;
-    }
-
-    // Only natural (non-split) blackjack pays 3:2
-    if (hand.isBlackjack() && !hand.isSplit())
-    {
-        p.winBet(bet * Constants::BLACKJACK_PAYOUT);
-
-        std::cout << "Blackjack!\n";
-
-        // Track blackjack (non-split only)
-        getStats().blackjacks++;
-
-        roundState = RoundState::DealerTurn;
-    }
-}
-
-void Game::offerInsurance()
-{
-    auto& p = players[activePlayerIndex];
-    Hand &hand = p.hands[p.currentHand];
-
-    int maxInsurance = hand.getBet() / 2;
-
-    std::cout << "\nDealer shows an Ace.\n";
-    std::cout << "Insurance? (y/n): ";
-
-    char choice;
-    std::cin >> choice;
-
-    if (tolower(choice) != 'y')
-        return;
-
-    int insurance;
-
-    do
-    {
-        std::cout << "Enter insurance bet (0 - "
-                  << maxInsurance
-                  << "): ";
-
-        std::cin >> insurance;
-
-    } while (insurance < 0 || insurance > maxInsurance);
-
-    hand.setInsuranceBet(insurance);
-
-    p.placeBet(insurance);
-
-    std::cout << "Insurance bet of $"
-              << insurance
-              << " placed.\n";
-}
 
 // Central helper: apply Hi-Lo count update and check for cut card after drawing
 void Game::afterDraw(Card card)
@@ -1245,39 +1268,22 @@ std::vector<Card> Game::collectTableCards() const
 
     return tableCards;
 }
-
 // Handle the rare case where the deck runs out before the cut card
 void Game::handleEmptyDeck()
 {
-    std::cout << "Deck empty before cut card - starting new shoe.\n";
+    std::cout << "Deck empty before cut card - reshuffling remaining cards.\n";
 
-    // Collect all cards on the table (these are dealt from the new shoe)
+    // Collect all cards currently on the table (these are dealt from the new shoe)
     std::vector<Card> tableCards = collectTableCards();
 
-    // Calculate the running count for the new shoe based on visible table cards
-    // (all table cards except the dealer's down card, which is index 0)
-    runningCount = 0;
-    for (const auto& card : tableCards)
-    {
-        runningCount += BasicStrategy::calculateHiLoValue(card.getBlackjackValue());
-    }
-    // Subtract the dealer's down card (first card in tableCards)
-    if (!tableCards.empty())
-    {
-        runningCount -= BasicStrategy::calculateHiLoValue(tableCards[0].getBlackjackValue());
-    }
-    std::cout << "New shoe running count (visible cards): " << runningCount << "\n";
-
     // Save the current (incomplete) shoe record to the profile before reshuffling
-    // Mark it as incomplete since it ended due to deck exhaustion, not cut card
     currentShoeRecord.completed = false;
     PlayerProfile profile = players[0].getProfile();
     profile.addShoeRecord(currentShoeRecord);
     players[0].updateProfile(profile);
     players[0].saveProfile();
 
-    // Create a new shoe from the remaining deck cards ONLY
-    // (table cards are NOT put back - they're dealt from the new shoe)
+    // Create a new shoe: full shoe minus the cards on the table
     deck.create(Constants::NUM_DECKS);
     std::vector<Card>& cards = const_cast<std::vector<Card>&>(deck.getCards());
     for (const auto& tableCard : tableCards)
@@ -1293,23 +1299,22 @@ void Game::handleEmptyDeck()
     }
     deck.shuffle();
 
-    // Start fresh shoe record
+    // Start fresh shoe record, marked as continuation
     currentShoeRecord = {};
     currentShoeRecord.initialDeck = deck.getCards();
+    currentShoeRecord.isContinuation = true;
 
-    // Reset game state for the new shoe
+    // Reset running count for the new shoe
+    runningCount = 0;
     gameState = GameState::Started;
 
     std::cout << "New shoe created with " << deck.size() << " cards.\n";
 }
 
 void Game::dealCardToPlayer(Hand &hand)
-{
-    // Check if deck is empty (rare fallback case)
-    if (deck.empty())
-    {
-        handleEmptyDeck();
-    }
+{ 
+    if (deck.empty()) 
+        handleEmptyDeck(); 
 
     Card card = deck.draw();
     afterDraw(card);
@@ -1317,50 +1322,32 @@ void Game::dealCardToPlayer(Hand &hand)
 }
 
 void Game::dealCardToDealer()
-{
-    // Check if deck is empty (rare fallback case)
-    if (deck.empty())
-    {
-        handleEmptyDeck();
-    }
+{ 
+    if (deck.empty()) 
+        handleEmptyDeck(); 
 
     Card card = deck.draw();
     afterDraw(card);
     dealer.addCard(card);
 }
-
-// --------------------------------------------------
-// Dealer
-// --------------------------------------------------
-
+ 
+// ~~~ Dealer  ~~~ 
 void Game::dealerTurn()
 {
-    bool doNotDraw = false;
-    int numBusted = 0;
+    bool anyUnresolved = false;
     for (auto& p : players)
     {
-        for (Hand hand : p.hands)
+        for (const Hand& hand : p.hands)
         {
-            if (hand.isBlackjack() && !hand.isSplit())
-            {
-                doNotDraw = true;
-            }
-
             if (hand.isBust())
-            {
-                numBusted++;
-            }
+                continue;
+            if (hand.isBlackjack() && !hand.isSplit())
+                continue;
+            anyUnresolved = true;
         }
     }
-    
-    int totalHands = 0;
-    for (auto& p : players)
-    {
-        totalHands += p.hands.size();
-    }
-    
-    if (numBusted == totalHands)
-        doNotDraw = true;
+
+    bool doNotDraw = !anyUnresolved;
 
     // Hit soft 17 (H17 rule): dealer must draw when total is 17 and soft.
     while ((dealer.getValue() < Constants::DEALER_STAND ||
@@ -1470,20 +1457,27 @@ void Game::evaluateHands()
                                        .count();
 
     // Evaluate each hand for all players
-    for (auto& p : players)
+    for (size_t pIdx = 0; pIdx < players.size(); pIdx++)
     {
+        auto& p = players[pIdx];
         for (size_t handIndex = 0; handIndex < p.hands.size(); handIndex++)
         {
             const Hand &hand = p.hands[handIndex];
 
             std::cout << "Entering evaluateHands() on hand " << (handIndex + 1)
-                      << ". Bankroll = " << p.getBankroll() << std::endl;
+                      << " for " << p.getName() << ". Bankroll = " << p.getBankroll() << std::endl;
 
             HandOutcome outcome;
-            outcome.wager = hand.getBet();
-            outcome.actions = handActions[handIndex];
+            outcome.wager = hand.getBet(); 
+            outcome.playerIndex = static_cast<int>(pIdx);
+            outcome.actions = handActions[getGlobalHandIndexForPlayer(pIdx, handIndex)];
+            for (size_t c = 0; c < hand.size(); c++)
+                outcome.cards.push_back(hand.getCard(c));
 
+            // Track hands finished
+            stats.handsFinished++;
             int netProfitOnHand = 0;
+            bool isNaturalBlackjack = hand.isBlackjack() && !hand.isSplit();
 
             if (hand.isSurrendered())
             {
@@ -1495,7 +1489,7 @@ void Game::evaluateHands()
             }
             else if (hand.isBust() || (hand.getValue() < dealer.getValue() && !dealer.isBust()))
             {
-                p.loseBet();
+                if (!isNaturalBlackjack) p.loseBet(hand.getBet());
                 outcome.payout = 0;
                 outcome.won = false;
                 stats.losses++;
@@ -1504,31 +1498,35 @@ void Game::evaluateHands()
             }
             else if (hand.getValue() > dealer.getValue() || dealer.isBust())
             {
-                p.winBet(hand.getBet() * 2);
-                outcome.payout = hand.getBet();
+                if (isNaturalBlackjack)
+                {
+                    // Natural blackjack pays 3:2
+                    p.winBet(hand.getBet() * Constants::BLACKJACK_PAYOUT);
+                    outcome.payout = hand.getBet() * Constants::BLACKJACK_PAYOUT;
+                }
+                else
+                {
+                    p.winBet(hand.getBet() * 2);
+                    outcome.payout = hand.getBet() * 2;
+                }
                 outcome.won = true;
                 stats.wins++;
-                netProfitOnHand = hand.getBet();
+                netProfitOnHand = outcome.payout - hand.getBet();
                 roundWon = true;
             }
             else
             {
-                p.pushBet(hand.getBet());
+                if (!isNaturalBlackjack) p.pushBet(hand.getBet());
                 outcome.payout = hand.getBet();
                 outcome.won = true; // push counts as non-loss
                 stats.pushes++;
                 netProfitOnHand = 0;
             }
 
-            // Capture the cards for this hand
-            for (size_t c = 0; c < hand.size(); c++)
-                outcome.cards.push_back(hand.getCard(c));
-
+            // Push to record AFTER payout is set
             currentRoundRecord.playerHands.push_back(outcome);
 
-            // Track hands finished
-            stats.handsFinished++;
-
+            // Capture the cards for this hand
             // Track greatest single hand win
             if (netProfitOnHand > stats.greatestHand)
                 stats.greatestHand = netProfitOnHand;
@@ -1548,6 +1546,8 @@ void Game::evaluateHands()
                 stats.greatestSessionWin = sessionCumulativeWinLoss;
             if (sessionCumulativeWinLoss < stats.greatestSessionLoss)
                 stats.greatestSessionLoss = sessionCumulativeWinLoss;
+            
+            incrementGlobalHandIndex(getGlobalHandIndexForPlayer(pIdx, handIndex));
         }
     }
 
@@ -1578,30 +1578,29 @@ void Game::evaluateHands()
         hudState.streak = 0;
     }
 
-    // Build player summaries for HUD overlay
+    // Build player summaries for HUD overlay - one unique message per player
     hudState.playerSummaries.clear();
     for (size_t i = 0; i < players.size(); i++)
     {
         std::ostringstream oss;
-        oss << players[i].getName() << ": ";
         int playerNet = 0;
         for (auto& outcome : currentRoundRecord.playerHands)
         {
-            if (outcome.won && outcome.payout > outcome.wager)
-                oss << "W";
-            else if (!outcome.won && outcome.payout < outcome.wager)
-                oss << "L";
-            else
-                oss << "P";
-            playerNet += outcome.payout - outcome.wager;
+            if (outcome.playerIndex != static_cast<int>(i))
+                continue; // skip other players' hands
+            int handProfit = outcome.payout - outcome.wager;
+            playerNet += handProfit;
         }
+        oss << players[i].getName() << ": ";
         if (playerNet > 0)
-            oss << " +" << playerNet;
+            oss << "Win +" << playerNet;
         else if (playerNet < 0)
-            oss << " " << playerNet;
+            oss << "Loss " << playerNet;
+        else
+            oss << "Push";
         hudState.playerSummaries.push_back(oss.str());
     }
-    hudState.summaryTimer = 6.0f;
+    hudState.summaryTimer = 10.0f;
 
     std::cout << "Exiting evaluation with " << players[0].getBankroll() << std::endl;
 
@@ -1617,500 +1616,56 @@ void Game::evaluateHands()
     roundState = RoundState::Cleanup;
 }
 
-void Game::logStrategyDeviation(char actionTaken)
+void Game::evaluateBlackjack()
 {
     auto& p = players[activePlayerIndex];
     Hand &hand = p.hands[p.currentHand];
-    int playerValue = hand.getValue();
-    int dealerUpValue = dealer.getDealerUpCard().getBlackjackValue();
-    bool hasAce = hand.isSoft();
-    bool isPair = hand.size() == 2 &&
-                  hand.getCard(0).getBlackjackValue() ==
-                      hand.getCard(1).getBlackjackValue();
-    int pairValue = isPair ? hand.getCard(0).getBlackjackValue() : 0;
 
-    char correct = BasicStrategy::getRecommendedAction(playerValue, dealerUpValue, hasAce, isPair, pairValue);
+    int bet = hand.getBet();
 
-    PlayerStats &stats = getStats();
-    stats.strategyTotal++;
-
-    if (actionTaken == correct)
+    if (dealer.isBlackjack())
     {
-        stats.strategyHits++;
-    }
-    else
-    {
-        stats.strategyDeviations++;
-        DeviationRecord record;
-        record.playerValue = playerValue;
-        record.dealerUpValue = dealerUpValue;
-        record.wasSoft = hasAce;
-        record.wasPair = isPair;
-        record.pairValue = pairValue;
-        record.actionTaken = actionTaken;
-        record.correctAction = correct;
-        record.bet = hand.getBet();
-        record.won = false; // filled in later at evaluation time
-        stats.recentDeviations.push_back(record);
-        if (stats.recentDeviations.size() > 10)
-            stats.recentDeviations.erase(stats.recentDeviations.begin());
-    }
-}
+        if (hand.getInsuranceBet() > 0)
+        {
+            // Pays 2:1, plus the original insurance bet back.
+            p.winBet(hand.getInsuranceBet() * 3);
 
-char Game::giveBasicStrategyAdvice(Hand &playerHand, Hand &dealerHand)
-{
-    int playerValue = playerHand.getValue();
-    int dealerUpValue = dealerHand.getDealerUpCard().getBlackjackValue();
-    bool hasAce = playerHand.isSoft();
-    bool isPair = playerHand.size() == 2 &&
-                  playerHand.getCard(0).getBlackjackValue() ==
-                      playerHand.getCard(1).getBlackjackValue();
-    int pairValue = isPair ? playerHand.getCard(0).getBlackjackValue() : 0;
+            std::cout << "Insurance wins!\n";
+        }
 
-    return BasicStrategy::getRecommendedAction(playerValue, dealerUpValue, hasAce, isPair, pairValue);
-}
+        if (hand.isBlackjack())
+        {
+            p.pushBet(bet);
+        }
+        else
+        {
+            p.loseBet(hand.getBet());
+        }
 
-// --------------------------------------------------
-// Drawing
-// --------------------------------------------------
-
-void Game::draw()
-{
-    window.clear();
-
-    window.draw(*backgroundSprite);
-
-    switch (appMode)
-    {
-    case AppMode::MainMenu:
-        drawMainMenu();
-        break;
-    case AppMode::Playing:
-        drawDealer();
-        drawPlayers();
-        drawChips();
-        // drawDeck();
-        if (roundState == RoundState::OfferInsurance)
-            drawInsurance();
-
-        updateHUDState();
-        hud.update(hudState);
-        hud.draw(window);
-        break;
-    case AppMode::Paused:
-        // Draw the game underneath
-        drawDealer();
-        drawPlayers();
-        drawChips();
-        updateHUDState();
-        hud.update(hudState);
-        hud.draw(window);
-        // Draw pause overlay
-        drawPauseMenu();
-        break;
-    case AppMode::ReplayHistory:
-    case AppMode::ReplayPlaying:
-        replay->draw();
-        break;
-    }
-
-    window.display();
-}
-
-void Game::resizeView(sf::RenderWindow &window, sf::View &view)
-{
-    float windowRatio = static_cast<float>(window.getSize().x) /
-                        static_cast<float>(window.getSize().y);
-
-    float viewRatio = view.getSize().x / view.getSize().y;
-
-    if (windowRatio > viewRatio)
-    {
-        // Window is wider: add horizontal space
-        view.setViewport(sf::FloatRect(
-            {(1.f - viewRatio / windowRatio) / 2.f, 0.f},
-            {viewRatio / windowRatio, 1.f}));
-    }
-    else
-    {
-        // Window is taller: add vertical space
-        view.setViewport(sf::FloatRect(
-            {0.f, (1.f - windowRatio / viewRatio) / 2.f},
-            {1.f, windowRatio / viewRatio}));
-    }
-
-    window.setView(view);
-}
-
-void Game::drawDealer()
-{
-    if (roundState == RoundState::PlayerTurn || roundState == RoundState::OfferInsurance)
-    {
-        auto back =
-            Graphics::makeCardBackSprite(
-                cardTexture);
-
-        back.setPosition(sf::Vector2f(Constants::DEALER_X, Constants::DEALER_Y));
-
-        window.draw(back);
-
-        auto up =
-            Graphics::makeCardSprite(
-                dealer.getCard(0),
-                cardTexture);
-
-        up.setPosition(sf::Vector2f(Constants::DEALER_X - 10, Constants::DEALER_Y));
-
-        window.draw(up);
-
+        roundState = RoundState::DealerTurn;
         return;
     }
 
-    for (std::size_t i = 0; i < dealer.size(); i++)
+    // Dealer does not have blackjack.
+    if (hand.getInsuranceBet() > 0)
     {
-        Graphics::drawCard(
-            window,
-            cardTexture,
-            dealer.getCard(i),
-            Constants::DEALER_X +
-                i * 60,
-            Constants::DEALER_Y);
+        std::cout << "Insurance lost.\n";
+        hand.setInsuranceBet(0);
     }
-}
-
-sf::Vector2f Game::getPlayerPosition(size_t playerIndex, size_t totalPlayers) const
-{
-    // For 1-2 players, use the original fixed position
-    if (totalPlayers <= 2)
+    else
     {
-        return {playerIndex * 200.f, 0.f};
+        roundState = RoundState::PlayerTurn;
     }
 
-    // For 3+ players, center the group on the table and apply
-    // vertical displacement following the table's curvature
-    float spacing = 200.f;
-    float totalWidth = (totalPlayers - 1) * spacing;
-    float centerX = Constants::WINDOW_WIDTH / 2.f;
-    float startX = centerX - totalWidth / 2.f;
-    float absoluteX = startX + playerIndex * spacing;
-    // Return offset from PLAYER_X since draw code adds PLAYER_X
-    float x = absoluteX - Constants::PLAYER_X;
-
-    // Vertical displacement: curve the players along the table edge
-    // The center player(s) should be lower (closer to bottom), edges higher
-    float normalizedPos = static_cast<float>(playerIndex) / static_cast<float>(totalPlayers - 1);
-    // Parabolic curve: center dips down, edges rise up
-    float curve = -40.f * (normalizedPos - 0.5f) * (normalizedPos - 0.5f);
-    float y = curve;
-
-    return {x, y};
-}
-
-void Game::drawPlayers()
-{
-    // Draw each player's hands
-    for (size_t playerIndex = 0; playerIndex < players.size(); playerIndex++)
+    // Only natural (non-split) blackjack pays 3:2
+    if (hand.isBlackjack() && !hand.isSplit())
     {
-        auto& p = players[playerIndex];
-        sf::Vector2f pos = getPlayerPosition(playerIndex, players.size());
-        float xOffset = pos.x;
-        float yOffset = pos.y;
+        std::cout << "Blackjack!\n";
 
-        // Active player highlight
-        if (playerIndex == activePlayerIndex && roundState == RoundState::PlayerTurn)
-        {
-            sf::RectangleShape highlight(sf::Vector2f(200.f, 120.f));
-            highlight.setFillColor(sf::Color(255, 255, 0, 30));
-            highlight.setOutlineColor(sf::Color(255, 255, 0, 150));
-            highlight.setOutlineThickness(2.f);
-            highlight.setPosition(sf::Vector2f(Constants::PLAYER_X + xOffset - 10.f, Constants::PLAYER_Y + yOffset - 20.f));
-            window.draw(highlight);
+        // Track blackjack (non-split only)
+        getStats().blackjacks++;
 
-            sf::Text turnLabel(FontManager::get(), "YOUR TURN", 14.f);
-            turnLabel.setFillColor(sf::Color(255, 255, 0));
-            turnLabel.setPosition(sf::Vector2f(Constants::PLAYER_X + xOffset, Constants::PLAYER_Y + yOffset - 40.f));
-            window.draw(turnLabel);
-        }
-
-        for (std::size_t handIndex = 0;
-             handIndex < p.hands.size();
-             handIndex++)
-        {
-            const Hand &hand = p.hands[handIndex];
-
-            for (std::size_t i = 0;
-                 i < hand.size();
-                 i++)
-            {
-                Graphics::drawCard(
-                    window,
-                    cardTexture,
-                    hand.getCard(i),
-                    Constants::PLAYER_X +
-                        xOffset +
-                        handIndex * 142 +
-                        i * 16,
-
-                    Constants::PLAYER_Y + yOffset -
-                        i * 16);
-            }
-        }
+        // Mark hand as finished; payout happens in evaluateHands()
+        hand.setFinished(true);
     }
-}
-
-void Game::drawChips()
-{
-    struct Chip
-    {
-        int value;
-        sf::Color color;
-    };
-
-    const std::vector<Chip> denominations =
-        {
-            {50000, sf::Color(128, 0, 128)}, // $500
-            {10000, sf::Color::Black},       // $100
-            {2500, sf::Color(0, 180, 0)},    // $25
-            {500, sf::Color::Red},           // $5
-            {250, sf::Color(255, 105, 180)}, // $2.50
-            {100, sf::Color::White}          // $1
-        };
-
-    // Draw chips for all players
-    for (size_t playerIndex = 0; playerIndex < players.size(); playerIndex++)
-    {
-        auto& p = players[playerIndex];
-        sf::Vector2f pos = getPlayerPosition(playerIndex, players.size());
-        float xOffset = pos.x;
-        float yOffset = pos.y;
-
-        int handIndex = 0;
-        for (Hand &hand : p.hands)
-        {
-            int totalBet = hand.getBet();
-            int stackBet = hand.isDoubledDown() ? totalBet / 2 : totalBet;
-
-            if (totalBet <= 0)
-            {
-                handIndex++;
-                continue;
-            }
-
-            //
-            // Position based on the same math as cards
-            //
-            float handX =
-                Constants::PLAYER_X +
-                xOffset +
-                handIndex * 80;
-
-            float handWidth =
-                Constants::CARD_WIDTH +
-                (hand.size() - 1) * 16;
-
-            float chipX =
-                handX +
-                handWidth / 2.f;
-
-            float chipY =
-                Constants::PLAYER_Y + yOffset +
-                Constants::CARD_HEIGHT +
-                45.f;
-
-            //
-            // Convert dollars to cents
-            //
-            int remaining =
-                stackBet * 100;
-
-            std::vector<Chip> stack;
-
-            for (const auto &chip : denominations)
-            {
-                while (remaining >= chip.value)
-                {
-                    stack.push_back(chip);
-                    remaining -= chip.value;
-                }
-            }
-
-            //
-            // Draw stack
-            //
-            for (std::size_t i = 0;
-                 i < stack.size();
-                 i++)
-            {
-                sf::CircleShape chip(Constants::CHIP_RADIUS);
-
-                chip.setFillColor(
-                    stack[i].color);
-
-                chip.setOutlineColor(
-                    sf::Color::White);
-
-                chip.setOutlineThickness(1.f);
-
-                chip.setOrigin(sf::Vector2f(Constants::CHIP_RADIUS, Constants::CHIP_RADIUS));
-
-                chip.setPosition(sf::Vector2f(chipX, chipY - i * 3.f));
-
-                window.draw(chip);
-            }
-
-            //
-            // Draw total bet
-            //
-
-            sf::Text text(FontManager::get(), "$" + std::to_string(totalBet), 16.f);
-            text.setFillColor(sf::Color::White);
-
-            sf::FloatRect bounds =
-                text.getLocalBounds();
-
-            text.setOrigin(sf::Vector2f(bounds.size.x / 2.f, bounds.size.y / 2.f));
-
-            text.setPosition(sf::Vector2f(chipX, chipY - stack.size() * 3.f));
-
-            window.draw(text);
-
-            //
-            // Draw second stack when doubled
-            //
-            if (hand.isDoubledDown())
-            {
-                float secondX =
-                    chipX + 35.f;
-
-                for (std::size_t i = 0;
-                     i < stack.size();
-                     i++)
-                {
-                    sf::CircleShape chip(Constants::CHIP_RADIUS);
-
-                    chip.setFillColor(
-                        stack[i].color);
-
-                    chip.setOutlineColor(
-                        sf::Color::White);
-
-                    chip.setOutlineThickness(1.f);
-
-                    chip.setOrigin(sf::Vector2f(Constants::CHIP_RADIUS, Constants::CHIP_RADIUS));
-
-                    chip.setPosition(sf::Vector2f(secondX, chipY - i * 3.f));
-
-                    window.draw(chip);
-                }
-            }
-            handIndex++;
-        }
-    }
-}
-
-void Game::drawDeck()
-{
-    for (std::size_t i = 0;
-         i < deck.size();
-         i++)
-    {
-        Graphics::drawCard(
-            window,
-            cardTexture,
-            deck.getCard(i),
-            Constants::DECK_X +
-                (i % 52) * 20,
-
-            Constants::DECK_Y +
-                (i / 52) * 80);
-    }
-}
-
-void Game::drawInsurance()
-{
-    auto& p = players[activePlayerIndex];
-    sf::Text text(FontManager::get(),
-                  "Dealer shows an Ace\n\n"
-                  "Insurance Bet: $" +
-                      std::to_string(p.hands[p.currentHand].getInsuranceBet()) +
-                      "\n\n"
-                      "Up/Down : Change\n"
-                      "Enter : Confirm\n"
-                      "Esc : Decline",
-                  12.f);
-    text.setFillColor(sf::Color::White);
-
-    text.setPosition(sf::Vector2f(400.f, 500.f));
-
-    window.draw(text);
-}
-
-void Game::drawMenuItem(const std::string &label, bool selected, float y)
-{
-    sf::Text text(FontManager::get(), label, 24);
-    text.setFillColor(selected ? sf::Color(255, 215, 0) : sf::Color(200, 200, 200));
-
-    sf::FloatRect bounds = text.getLocalBounds();
-    text.setOrigin(sf::Vector2f(bounds.size.x / 2.0f, bounds.size.y / 2.0f));
-    text.setPosition(sf::Vector2f(static_cast<float>(window.getSize().x) / 2.0f, y));
-
-    window.draw(text);
-}
-
-
-void Game::drawMainMenu()
-{
-    window.clear(sf::Color(20, 20, 30));
-
-    float cx = static_cast<float>(window.getSize().x) / 2.0f;
-
-    sf::Text title(FontManager::get(), "BLACKJACK", 36);
-    title.setFillColor(sf::Color(255, 215, 0));
-    sf::FloatRect tb = title.getLocalBounds();
-    title.setOrigin(sf::Vector2f(tb.size.x / 2.0f, 0));
-    title.setPosition(sf::Vector2f(cx, 150.0f));
-    window.draw(title);
-
-    drawMenuItem("Play Game", menuSelection == MenuOption::PlayGame, 230.0f);
-
-    drawMenuItem("Players: " + std::to_string(playerCount) + " (Left/Right)", menuSelection == MenuOption::PlayerCount, 270.0f);
-    drawMenuItem("Review History", menuSelection == MenuOption::ReviewHistory, 310.0f);
-
-    sf::Text instr(FontManager::get(), "Up/Down: navigate  Enter: select  Esc: quit", 14);
-    instr.setFillColor(sf::Color(140, 140, 140));
-    instr.setPosition(sf::Vector2f(cx, 400.0f));
-    window.draw(instr);
-}
-
-void Game::drawPauseMenu()
-{
-    float w = static_cast<float>(window.getSize().x);
-    float h = static_cast<float>(window.getSize().y);
-    float cx = w / 2.0f;
-
-    // Semi-transparent overlay (50% opacity)
-    sf::RectangleShape overlay(sf::Vector2f(w, h));
-    overlay.setFillColor(sf::Color(0, 0, 0, 128));
-    window.draw(overlay);
-
-    // Title
-    sf::Text title(FontManager::get(), "PAUSED", 36);
-    title.setFillColor(sf::Color(255, 215, 0));
-    sf::FloatRect tb = title.getLocalBounds();
-    title.setOrigin(sf::Vector2f(tb.size.x / 2.0f, 0));
-    title.setPosition(sf::Vector2f(cx, h * 0.25f));
-    window.draw(title);
-
-    // Menu items
-    drawMenuItem("Resume", pauseSelection == PauseOption::Resume, h * 0.40f);
-    drawMenuItem("Restart", pauseSelection == PauseOption::Restart, h * 0.48f);
-    drawMenuItem("Quit to Menu", pauseSelection == PauseOption::QuitToMenu, h * 0.56f);
-
-    // Instructions
-    sf::Text instr(FontManager::get(), "Up/Down: navigate  Enter: select  Esc: resume", 14);
-    instr.setFillColor(sf::Color(140, 140, 140));
-    sf::FloatRect ib = instr.getLocalBounds();
-    instr.setOrigin(sf::Vector2f(ib.size.x / 2.0f, 0));
-    instr.setPosition(sf::Vector2f(cx, h * 0.68f));
-    window.draw(instr);
 }
