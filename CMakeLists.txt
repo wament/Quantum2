@@ -92,6 +92,8 @@ target_sources(Blackjack2 PRIVATE
     src/FontManager.cpp
     src/Replay.cpp
     src/GameRenderer.cpp
+    src/InputHandler.cpp
+    src/HandEvaluator.cpp
 )
 
 # Copy assets to build output (for local testing)

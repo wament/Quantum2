@@ -1,0 +1,10 @@
+its noahs birthday
+
+
+I haven't made one of these in a while lol. I forgot I was writing these. I guess i just used git more.
+I've been making readmes and plan documents though. Prompting the AI and editing.
+The game is coming along nicely. I sometimes ask myself why im doing this. I use ai the whole time, and I watch youtube on my second monitor.
+Sometimes its faster for me to do the coding. Like when I was fine tuning the placement of the player hands.
+The ai would have fumbled that task, and taken way too long.
+But there was another bug with the end of hand summary for a full table of players. The payout amount was summed over all players
+instead of just for each player. Finding the bug would have been super time consuming and annoying. I still needed to nudge the ai several times, but it worked.

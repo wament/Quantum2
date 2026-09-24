@@ -136,21 +136,21 @@ void GameRenderer::drawPlayers(Game &game)
         std::string playerLabel = p.getName() + "  $" + std::to_string(p.getBankroll());
         sf::Text bankrollText(FontManager::get(), playerLabel, 16.f);
         bankrollText.setFillColor(sf::Color(180, 255, 180));
-        bankrollText.setPosition(sf::Vector2f(Constants::PLAYER_X + xOffset - 20, Constants::PLAYER_Y + yOffset + 140.f));
+        bankrollText.setPosition(sf::Vector2f(Constants::PLAYER_X + xOffset - 20, Constants::PLAYER_Y + yOffset + 160.f));
         game.window.draw(bankrollText);
 
         if (playerIndex == game.activePlayerIndex && game.roundState == RoundState::PlayerTurn)
         {
-            sf::RectangleShape highlight(sf::Vector2f(200.f, 120.f));
+            sf::RectangleShape highlight(sf::Vector2f(120.f, 260.f));
             highlight.setFillColor(sf::Color(255, 255, 0, 30));
             highlight.setOutlineColor(sf::Color(255, 255, 0, 150));
             highlight.setOutlineThickness(2.f);
-            highlight.setPosition(sf::Vector2f(Constants::PLAYER_X + xOffset - 10.f, Constants::PLAYER_Y + yOffset - 20.f));
+            highlight.setPosition(sf::Vector2f(Constants::PLAYER_X + xOffset - 30.f, Constants::PLAYER_Y + yOffset - 40.f));
             game.window.draw(highlight);
 
             sf::Text turnLabel(FontManager::get(), "YOUR TURN", 14.f);
             turnLabel.setFillColor(sf::Color(255, 255, 0));
-            turnLabel.setPosition(sf::Vector2f(Constants::PLAYER_X + xOffset, Constants::PLAYER_Y + yOffset - 30.f));
+            turnLabel.setPosition(sf::Vector2f(Constants::PLAYER_X + xOffset - 10, Constants::PLAYER_Y + yOffset + 180.f));
             game.window.draw(turnLabel);
         }
 
@@ -309,7 +309,7 @@ void GameRenderer::drawSummaryOverlay(Game &game)
         sf::Vector2f pos = getPlayerPosition(game, i, game.players.size());
         float handWidth = Constants::CARD_WIDTH + (game.players[i].hands.size() - 1) * 16;
         float summaryX = Constants::PLAYER_X + pos.x + handWidth / 2.f - 50.f;
-        float summaryY = Constants::PLAYER_Y + pos.y + Constants::CARD_HEIGHT + 100.f;
+        float summaryY = Constants::PLAYER_Y + pos.y + Constants::CARD_HEIGHT + 120.f;
 
         sf::Text text(FontManager::get(), game.hudState.playerSummaries[i], 14.f);
         text.setFillColor(textColor);

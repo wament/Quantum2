@@ -11,6 +11,8 @@
 #include "HUDState.hpp"
 #include "Replay.hpp"
 #include "GameRenderer.hpp"
+#include "InputHandler.hpp"
+#include "HandEvaluator.hpp"
 
 enum class RoundState
 {
@@ -64,11 +66,15 @@ public:
     float deltaTime;
 
     friend class GameRenderer;
+    friend class InputHandler;
+    friend class HandEvaluator;
 
 private: 
     AppMode appMode = AppMode::MainMenu;
     std::unique_ptr<Replay> replay;
     GameRenderer renderer;
+    InputHandler inputHandler;
+    HandEvaluator evaluator;
     // ---------------- SFML ----------------
 
     sf::RenderWindow window;
@@ -155,11 +161,6 @@ private:
 
     // ---------------- Game Loop ----------------
 
-    void processEvents();
-    void processMenuEvents(const sf::Event &event);
-    void processGameEvents(const sf::Event &event);
-    void processPauseEvents(const sf::Event &event);
-
     void update(float deltaTime);
 
     void updateHUDState();
@@ -211,10 +212,6 @@ private:
 
     void offerInsurance();
 
-    void evaluateHands();
-
-    void evaluateBlackjack();
-
     const int getMaxInsurance();
 
     char giveBasicStrategyAdvice(Hand &playerHand, Hand &dealerHand);
@@ -227,4 +224,3 @@ private:
     size_t getGlobalHandIndexForPlayer(size_t playerIdx, size_t handIdx); 
     size_t incrementGlobalHandIndex(size_t current);
 };
-

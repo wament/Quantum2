@@ -18,7 +18,9 @@ Game::Game()
           sf::FloatRect(
               {0.f, 0.f},
               {static_cast<float>(Constants::WINDOW_WIDTH),
-               static_cast<float>(Constants::WINDOW_HEIGHT)}))
+               static_cast<float>(Constants::WINDOW_HEIGHT)})),
+      inputHandler(*this),
+      evaluator(*this)
 {
     window.setView(gameView);
     players.push_back(Player("William"));
@@ -26,7 +28,6 @@ Game::Game()
     npcActionDelay = 1.0f;
     loadAssets();
     
-
     replay = std::make_unique<Replay>(window, cardTexture, FontManager::get());
     auto profile = players[0].getProfile();
     replay->loadHistory(profile.getLongHistory());
@@ -74,7 +75,7 @@ void Game::run()
     while (window.isOpen())
     {
         deltaTime = clock.restart().asSeconds(); // time since last frame
-        processEvents();
+        inputHandler.processEvents();
         update(deltaTime);
         renderer.draw(*this);
     }
@@ -222,7 +223,7 @@ void Game::update(float deltaTime)
             {
                 // All players decided on insurance
                 activePlayerIndex = 0;
-                evaluateBlackjack();
+                evaluator.evaluateBlackjack();
             }
         }
     }
@@ -356,420 +357,7 @@ void Game::updateHUDState()
     hudState.currentShoe = &currentShoeRecord;
 }
 
-void Game::processEvents()
-{
-    while (true)
-    {
-        auto event = window.pollEvent();
-        
-        if (!event.has_value())
-            break;
-
-        if (event->is<sf::Event::Closed>())
-        {
-            players[0].updateProfile(players[0].getProfile());
-            players[0].saveProfile();
-            window.close();
-            return;
-        }
-
-        if (event->is<sf::Event::Resized>())
-        {
-            renderer.resizeView(window, gameView);
-            continue;
-        }
-
-        switch (appMode)
-        {
-        case AppMode::MainMenu:
-            processMenuEvents(event.value());
-            break;
-        case AppMode::Playing:
-            processGameEvents(event.value());
-            break;
-        case AppMode::Paused:
-            processPauseEvents(event.value());
-            break;
-        case AppMode::ReplayHistory:
-        case AppMode::ReplayPlaying:
-        {
-            sf::Event replayEvent = event.value();
-            replay->processEvents(replayEvent);
-            if (appMode == AppMode::ReplayHistory &&
-                replayEvent.is<sf::Event::KeyPressed>() &&
-                replayEvent.getIf<sf::Event::KeyPressed>()->code == sf::Keyboard::Key::Escape)
-            {
-                appMode = AppMode::MainMenu;
-                menuSelection = MenuOption::PlayGame;
-            }
-            break;
-        }
-        }
-    }
-}
-
-void Game::processMenuEvents(const sf::Event &event)
-{
-    if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
-    { //Mouse movement
-        if (clicked->button == sf::Mouse::Button::Left)
-        {
-            float cx = static_cast<float>(window.getSize().x) / 2.0f;
-            sf::Vector2f mousePos = window.mapPixelToCoords(sf::Vector2i(clicked->position.x, clicked->position.y));
-
-            // Check Play Game (y=220)
-            if (std::abs(mousePos.y - 220.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
-            {
-                menuSelection = MenuOption::PlayGame;
-                startNewGame();
-                return;
-            }
-            // Check Review History (y=340)
-            if (std::abs(mousePos.y - 340.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
-            {
-                menuSelection = MenuOption::ReviewHistory;
-                appMode = AppMode::ReplayHistory;
-                return;
-            }
-        }
-    }
-
-    auto pressed = event.getIf<sf::Event::KeyPressed>();
-    if (!pressed)
-        return;
-
-    switch (pressed->code)
-    {
-    case sf::Keyboard::Key::Up:
-        if (menuSelection == MenuOption::PlayGame)
-            menuSelection = MenuOption::ReviewHistory;
-        else if (menuSelection == MenuOption::PlayerCount)
-            menuSelection = MenuOption::PlayGame;
-        else if (menuSelection == MenuOption::GameSpeed)
-            menuSelection = MenuOption::PlayerCount;
-        else
-            menuSelection = MenuOption::GameSpeed;
-        break;
-    case sf::Keyboard::Key::Down:
-        if (menuSelection == MenuOption::PlayGame)
-            menuSelection = MenuOption::PlayerCount;
-        else if (menuSelection == MenuOption::PlayerCount)
-            menuSelection = MenuOption::GameSpeed;
-        else if (menuSelection == MenuOption::GameSpeed)
-            menuSelection = MenuOption::ReviewHistory;
-        else
-            menuSelection = MenuOption::PlayGame;
-        break;
-    case sf::Keyboard::Key::Left:
-        if (menuSelection == MenuOption::PlayerCount && playerCount > 1)
-            setPlayerCount(playerCount - 1);
-        else if (menuSelection == MenuOption::GameSpeed)
-        {
-            if (gameSpeed == GameSpeed::Normal)
-                gameSpeed = GameSpeed::Fast;
-            else if (gameSpeed == GameSpeed::Slow)
-                gameSpeed = GameSpeed::Normal;
-        }
-        break;
-    case sf::Keyboard::Key::Right:
-        if (menuSelection == MenuOption::PlayerCount && playerCount < 6)
-            setPlayerCount(playerCount + 1);
-        else if (menuSelection == MenuOption::GameSpeed)
-        {
-            if (gameSpeed == GameSpeed::Fast)
-                gameSpeed = GameSpeed::Normal;
-            else if (gameSpeed == GameSpeed::Normal)
-                gameSpeed = GameSpeed::Slow;
-        }
-        break;
-    case sf::Keyboard::Key::Enter:
-        switch (menuSelection)
-        {
-        case MenuOption::PlayGame:
-            startNewGame(); // creates deck, resets, deals first hand
-            break;
-        case MenuOption::PlayerCount:
-            break;
-        case MenuOption::GameSpeed:
-            break;
-        case MenuOption::ReviewHistory:
-        {
-            auto profile = players[0].getProfile();
-            replay->loadHistory(profile.getLongHistory());
-            replay->setStartingBankroll(players[0].getBankroll());
-            appMode = AppMode::ReplayHistory;
-            break;
-        }
-        }
-        break;
-    case sf::Keyboard::Key::Escape:
-        window.close();
-        break;
-    }
-}
-
-void Game::processPauseEvents(const sf::Event &event)
-{
-    // Mouse click support
-    if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
-    {
-        if (clicked->button == sf::Mouse::Button::Left)
-        {
-            float cx = static_cast<float>(window.getSize().x) / 2.0f;
-            sf::Vector2f mousePos = window.mapPixelToCoords(sf::Vector2i(clicked->position.x, clicked->position.y));
-
-            // Check Resume (y=200)
-            if (std::abs(mousePos.y - 200.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
-            {
-                appMode = AppMode::Playing;
-                return;
-            }
-            // Check Restart (y=250)
-            if (std::abs(mousePos.y - 250.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
-            {
-                {
-                    PlayerProfile profile = players[0].getProfile();
-                    profile.addShoeRecord(currentShoeRecord);
-                    players[0].updateProfile(profile);
-                    players[0].saveProfile();
-                }
-                startNewGame();
-                return;
-            }
-            // Check Quit to Menu (y=300)
-            if (std::abs(mousePos.y - 300.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
-            {
-                {
-                    PlayerProfile profile = players[0].getProfile();
-                    profile.addShoeRecord(currentShoeRecord);
-                    players[0].updateProfile(profile);
-                    players[0].saveProfile();
-                }
-                appMode = AppMode::MainMenu;
-                menuSelection = MenuOption::PlayGame;
-                return;
-            }
-        }
-    }
-
-    auto pressed = event.getIf<sf::Event::KeyPressed>();
-    if (!pressed)
-        return;
-
-    switch (pressed->code)
-    {
-    case sf::Keyboard::Key::Up:
-    case sf::Keyboard::Key::W:
-        if (pauseSelection == PauseOption::Resume)
-            pauseSelection = PauseOption::QuitToMenu;
-        else if (pauseSelection == PauseOption::Restart)
-            pauseSelection = PauseOption::Resume;
-        else
-            pauseSelection = PauseOption::Restart;
-        break;
-    case sf::Keyboard::Key::Down:
-    case sf::Keyboard::Key::S:
-        if (pauseSelection == PauseOption::Resume)
-            pauseSelection = PauseOption::Restart;
-        else if (pauseSelection == PauseOption::Restart)
-            pauseSelection = PauseOption::QuitToMenu;
-        else
-            pauseSelection = PauseOption::Resume;
-        break;
-    case sf::Keyboard::Key::Enter:
-    case sf::Keyboard::Key::Space:
-        switch (pauseSelection)
-        {
-        case PauseOption::Resume:
-            appMode = AppMode::Playing;
-            break;
-        case PauseOption::Restart:
-        {
-            PlayerProfile profile = players[0].getProfile();
-            profile.addShoeRecord(currentShoeRecord);
-            players[0].updateProfile(profile);
-            players[0].saveProfile();
-            startNewGame();
-            break;
-        }
-        case PauseOption::QuitToMenu:
-        {
-            PlayerProfile profile = players[0].getProfile();
-            profile.addShoeRecord(currentShoeRecord);
-            players[0].updateProfile(profile);
-            players[0].saveProfile();
-            appMode = AppMode::MainMenu;
-            menuSelection = MenuOption::PlayGame;
-            break;
-        }
-        }
-        break;
-    case sf::Keyboard::Key::Escape:
-        appMode = AppMode::Playing;
-        break;
-    }
-}
-
-void Game::processGameEvents(const sf::Event &event)
-{
-    // Mouse button pressed (slider)
-    if (auto pressed = event.getIf<sf::Event::MouseButtonPressed>())
-    {
-        if (pressed->button == sf::Mouse::Button::Left)
-        {
-            sf::FloatRect slider = hud.getRiskSliderBounds();
-            if (slider.contains(sf::Vector2f(pressed->position.x, pressed->position.y)))
-            {
-                hudState.riskSliderDragging = true;
-            }
-        }
-    }
-
-    // Mouse button released (slider)
-    if (auto released = event.getIf<sf::Event::MouseButtonReleased>())
-    {
-        if (released->button == sf::Mouse::Button::Left && hudState.riskSliderDragging)
-        {
-            hudState.riskSliderDragging = false;
-        }
-    }
-
-    // Mouse moved (slider)
-    if (auto moved = event.getIf<sf::Event::MouseMoved>())
-    {
-        if (hudState.riskSliderDragging)
-        {
-            sf::FloatRect slider = hud.getRiskSliderBounds();
-            float frac = (moved->position.x - slider.position.x) / slider.size.x;
-            frac = std::max(0.0f, std::min(1.0f, frac));
-            hudState.kellyFraction = frac;
-            kellyFraction = frac;
-        }
-    }
-
-    // Key pressed 
-    if (auto key = event.getIf<sf::Event::KeyPressed>())
-    {
-        // R (next round/restart) and Escape work regardless of active player
-        if (key->code == sf::Keyboard::Key::R)
-        {
-            if (gameState == GameState::GameOver)
-            {
-                deck.create(Constants::NUM_DECKS);
-                deck.shuffle();
-                currentShoeRecord.initialDeck = deck.getCards();
-                gameState = GameState::Started;
-            }
-            else if (roundState == RoundState::Cleanup && gameState != GameState::LastHand) 
-                nextRound(); 
-        }
-        if (key->code == sf::Keyboard::Key::Escape)
-        {
-            appMode = AppMode::Paused;
-            pauseSelection = PauseOption::Resume;
-        }
-        // Only human player responds to game input 
-        if (activePlayerIndex != 0)
-            return;
-
-        if (roundState == RoundState::PlaceBets)
-        {
-            switch (key->code)
-            {
-            case sf::Keyboard::Key::Up:
-                increaseBet();
-                break;
-
-            case sf::Keyboard::Key::Down:
-                decreaseBet();
-                break;
-
-            case sf::Keyboard::Key::Left:
-            {
-                float tc = BasicStrategy::computeTrueCount(runningCount, deck.size());
-                int optimal = calculateOptimalBet(tc, kellyFraction, players[0].getBankroll() + players[0].hands[0].getBet(),
-                                                  Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
-                players[0].hands[0].setBet(optimal);
-                std::cout << "Optimal bet (TC=" << tc << ") set to "
-                          << optimal << ".\n";
-                break;
-            }
-
-            case sf::Keyboard::Key::Right:
-                confirmBet();
-                break;
-
-            default:
-                break;
-            }
-        }
-        else if (roundState == RoundState::OfferInsurance)
-        {
-            switch (key->code)
-            {
-            case sf::Keyboard::Key::Up:
-                increaseInsurance();
-                break;
-
-            case sf::Keyboard::Key::Down:
-                decreaseInsurance();
-                break;
-
-            case sf::Keyboard::Key::Right:
-                confirmInsurance();
-                break;
-
-            case sf::Keyboard::Key::Left:
-                declineInsurance();
-                break;
-            }
-        }
-        else if (roundState == RoundState::PlayerTurn)
-        {
-            switch (key->code)
-            {
-            case sf::Keyboard::Key::H:
-                hit();
-                break;
-
-            case sf::Keyboard::Key::S:
-                stand();
-                break;
-
-            case sf::Keyboard::Key::D:
-                doubleDown();
-                break;
-
-            case sf::Keyboard::Key::P:
-                split();
-                break;
-
-            case sf::Keyboard::Key::I:
-            {
-                char choice = giveBasicStrategyAdvice(players[activePlayerIndex].hands[players[activePlayerIndex].currentHand], dealer);
-                hudState.basicStrategyHint = "Book says: " + std::string(1, choice);
-                break;
-            }
-            }
-        } 
-
-        if (key->code == sf::Keyboard::Key::Y)
-        {
-            if (roundState == RoundState::PlayerTurn)
-            {
-                surrender();
-            }
-        }
-
-        if (key->code == sf::Keyboard::Key::Escape)
-        {
-            appMode = AppMode::Paused;
-            pauseSelection = PauseOption::Resume;
-        }
-    }
-} 
- 
-//  ~~~ Player actions ~~~ 
+// ~~~ Player actions ~~~ 
 
 void Game::hit()
 {
@@ -1179,7 +767,7 @@ void Game::confirmInsurance()
                   << ".\n";
     }
 
-    evaluateBlackjack();
+    evaluator.evaluateBlackjack();
 }
 
 void Game::declineInsurance()
@@ -1187,7 +775,7 @@ void Game::declineInsurance()
     auto& p = players[activePlayerIndex];
     p.hands[p.currentHand].setInsuranceBet(0);
     std::cout << "Insurance Denied" << std::endl;
-    evaluateBlackjack();
+    evaluator.evaluateBlackjack();
 }
 
 const int Game::getMaxInsurance()
@@ -1220,7 +808,7 @@ void Game::deal()
         roundState = RoundState::OfferInsurance;
     }
     else
-        evaluateBlackjack();
+        evaluator.evaluateBlackjack();
 
     std::cout
         << "You have a "
@@ -1229,7 +817,6 @@ void Game::deal()
         << dealer.getDealerUpCardToString()
         << ".\n";
 }
-
 
 
 // Central helper: apply Hi-Lo count update and check for cut card after drawing
@@ -1409,7 +996,7 @@ void Game::dealerTurn()
         }
     }
 
-    evaluateHands();
+    evaluator.evaluateHands();
 
     if (gameState ==
         GameState::LastHand)
@@ -1432,240 +1019,5 @@ void Game::dealerTurn()
         currentShoeRecord = {};
         std::cout
             << "New shoe required. Press R.\n";
-    }
-}
-
-void Game::evaluateHands()
-{
-    PlayerStats &stats = getStats();
-
-    // Track win/loss streak
-    bool roundWon = false;
-    bool roundLost = false;
-
-    // Build the new RoundRecord
-    currentRoundRecord.dealerCards.clear();
-    for (size_t i = 0; i < dealer.size(); i++)
-        currentRoundRecord.dealerCards.push_back(dealer.getCard(i));
-
-    currentRoundRecord.playerHands.clear();
-    currentRoundRecord.runningCount = runningCount;
-    currentRoundRecord.trueCount = BasicStrategy::computeTrueCount(runningCount, deck.size());
-    currentRoundRecord.cardsRemaining = deck.size();
-    currentRoundRecord.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
-                                       std::chrono::system_clock::now().time_since_epoch())
-                                       .count();
-
-    // Evaluate each hand for all players
-    for (size_t pIdx = 0; pIdx < players.size(); pIdx++)
-    {
-        auto& p = players[pIdx];
-        for (size_t handIndex = 0; handIndex < p.hands.size(); handIndex++)
-        {
-            const Hand &hand = p.hands[handIndex];
-
-            std::cout << "Entering evaluateHands() on hand " << (handIndex + 1)
-                      << " for " << p.getName() << ". Bankroll = " << p.getBankroll() << std::endl;
-
-            HandOutcome outcome;
-            outcome.wager = hand.getBet(); 
-            outcome.playerIndex = static_cast<int>(pIdx);
-            outcome.actions = handActions[getGlobalHandIndexForPlayer(pIdx, handIndex)];
-            for (size_t c = 0; c < hand.size(); c++)
-                outcome.cards.push_back(hand.getCard(c));
-
-            // Track hands finished
-            stats.handsFinished++;
-            int netProfitOnHand = 0;
-            bool isNaturalBlackjack = hand.isBlackjack() && !hand.isSplit();
-
-            if (hand.isSurrendered())
-            {
-                p.winBet(hand.getBet() / 2);
-                outcome.payout = hand.getBet() / 2;
-                outcome.won = false;
-                stats.losses++;
-                netProfitOnHand = hand.getBet() / 2 - hand.getBet();
-            }
-            else if (hand.isBust() || (hand.getValue() < dealer.getValue() && !dealer.isBust()))
-            {
-                if (!isNaturalBlackjack) p.loseBet(hand.getBet());
-                outcome.payout = 0;
-                outcome.won = false;
-                stats.losses++;
-                netProfitOnHand = -hand.getBet();
-                roundLost = true;
-            }
-            else if (hand.getValue() > dealer.getValue() || dealer.isBust())
-            {
-                if (isNaturalBlackjack)
-                {
-                    // Natural blackjack pays 3:2
-                    p.winBet(hand.getBet() * Constants::BLACKJACK_PAYOUT);
-                    outcome.payout = hand.getBet() * Constants::BLACKJACK_PAYOUT;
-                }
-                else
-                {
-                    p.winBet(hand.getBet() * 2);
-                    outcome.payout = hand.getBet() * 2;
-                }
-                outcome.won = true;
-                stats.wins++;
-                netProfitOnHand = outcome.payout - hand.getBet();
-                roundWon = true;
-            }
-            else
-            {
-                if (!isNaturalBlackjack) p.pushBet(hand.getBet());
-                outcome.payout = hand.getBet();
-                outcome.won = true; // push counts as non-loss
-                stats.pushes++;
-                netProfitOnHand = 0;
-            }
-
-            // Push to record AFTER payout is set
-            currentRoundRecord.playerHands.push_back(outcome);
-
-            // Capture the cards for this hand
-            // Track greatest single hand win
-            if (netProfitOnHand > stats.greatestHand)
-                stats.greatestHand = netProfitOnHand;
-
-            // Update cumulative trackers
-            shoeCumulativeWinLoss += netProfitOnHand;
-            sessionCumulativeWinLoss += netProfitOnHand;
-
-            // Update shoe-level extremes
-            if (shoeCumulativeWinLoss > stats.greatestWin)
-                stats.greatestWin = shoeCumulativeWinLoss;
-            if (shoeCumulativeWinLoss < stats.greatestLoss)
-                stats.greatestLoss = shoeCumulativeWinLoss;
-
-            // Update session-level extremes
-            if (sessionCumulativeWinLoss > stats.greatestSessionWin)
-                stats.greatestSessionWin = sessionCumulativeWinLoss;
-            if (sessionCumulativeWinLoss < stats.greatestSessionLoss)
-                stats.greatestSessionLoss = sessionCumulativeWinLoss;
-            
-            incrementGlobalHandIndex(getGlobalHandIndexForPlayer(pIdx, handIndex));
-        }
-    }
-
-    // Update streak based on round result
-    if (roundWon && !roundLost)
-    {
-        if (hudState.streakIsWin)
-            hudState.streak++;
-        else
-        {
-            hudState.streak = 1;
-            hudState.streakIsWin = true;
-        }
-    }
-    else if (roundLost && !roundWon)
-    {
-        if (!hudState.streakIsWin)
-            hudState.streak++;
-        else
-        {
-            hudState.streak = 1;
-            hudState.streakIsWin = false;
-        }
-    }
-    else
-    {
-        // Mixed result (some wins, some losses) or all pushes - reset streak
-        hudState.streak = 0;
-    }
-
-    // Build player summaries for HUD overlay - one unique message per player
-    hudState.playerSummaries.clear();
-    for (size_t i = 0; i < players.size(); i++)
-    {
-        std::ostringstream oss;
-        int playerNet = 0;
-        for (auto& outcome : currentRoundRecord.playerHands)
-        {
-            if (outcome.playerIndex != static_cast<int>(i))
-                continue; // skip other players' hands
-            int handProfit = outcome.payout - outcome.wager;
-            playerNet += handProfit;
-        }
-        oss << players[i].getName() << ": ";
-        if (playerNet > 0)
-            oss << "Win +" << playerNet;
-        else if (playerNet < 0)
-            oss << "Loss " << playerNet;
-        else
-            oss << "Push";
-        hudState.playerSummaries.push_back(oss.str());
-    }
-    hudState.summaryTimer = 10.0f;
-
-    std::cout << "Exiting evaluation with " << players[0].getBankroll() << std::endl;
-
-    // Save to profile and shoe record
-    PlayerProfile profile = players[0].getProfile();
-    profile.addRoundRecord(currentRoundRecord);
-    players[0].updateProfile(profile);
-    players[0].saveProfile();
-
-    currentShoeRecord.rounds.push_back(currentRoundRecord);
-
-    handActions.clear();
-    roundState = RoundState::Cleanup;
-}
-
-void Game::evaluateBlackjack()
-{
-    auto& p = players[activePlayerIndex];
-    Hand &hand = p.hands[p.currentHand];
-
-    int bet = hand.getBet();
-
-    if (dealer.isBlackjack())
-    {
-        if (hand.getInsuranceBet() > 0)
-        {
-            // Pays 2:1, plus the original insurance bet back.
-            p.winBet(hand.getInsuranceBet() * 3);
-
-            std::cout << "Insurance wins!\n";
-        }
-
-        if (hand.isBlackjack())
-        {
-            p.pushBet(bet);
-        }
-        else
-        {
-            p.loseBet(hand.getBet());
-        }
-
-        roundState = RoundState::DealerTurn;
-        return;
-    }
-
-    // Dealer does not have blackjack.
-    if (hand.getInsuranceBet() > 0)
-    {
-        std::cout << "Insurance lost.\n";
-        hand.setInsuranceBet(0);
-    }
-    else
-    {
-        roundState = RoundState::PlayerTurn;
-    }
-
-    // Only natural (non-split) blackjack pays 3:2
-    if (hand.isBlackjack() && !hand.isSplit())
-    {
-        std::cout << "Blackjack!\n";
-
-        // Track blackjack (non-split only)
-        getStats().blackjacks++;
-
-        // Mark hand as finished; payout happens in evaluateHands()
-        hand.setFinished(true);
     }
 }
