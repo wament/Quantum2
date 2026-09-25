@@ -1,6 +1,6 @@
 #include "Player.hpp"
 #include "Constants.hpp"
-#include <iostream>
+#include "Logger.hpp"
 #include <cstdlib>
 #include <filesystem>
 
@@ -31,6 +31,11 @@ Player::Player(const std::string& playerName)
     if (profile.getBankroll() == 0)
     {
         profile = PlayerProfile(playerName);
+        Logger::info("New player profile created for " + playerName + ".");
+    }
+    else
+    {
+        Logger::info() << "Loaded profile for " << playerName << " with bankroll " << bankroll << ".";
     }
     bankroll = profile.getBankroll();
 }
@@ -57,7 +62,7 @@ void Player::saveProfile()
     profile.setBankroll(bankroll);
     std::string savePath = getSavePath();
     profile.save(savePath);
-    std::cout << "Profile saved to " << savePath << std::endl;
+    Logger::debug("Profile saved to " + savePath + ".");
 }
 
 void Player::resetRound(int previousBet)

@@ -2,7 +2,7 @@
 #include "Game.hpp"
 #include "Constants.hpp" 
 #include "FontManager.hpp"
-#include <iostream>
+#include "Logger.hpp"
 
 InputHandler::InputHandler(Game& game) : game(game) {}
 
@@ -17,6 +17,7 @@ void InputHandler::processEvents()
 
         if (event->is<sf::Event::Closed>())
         {
+            Logger::info("=== Closing game ===");
             game.players[0].updateProfile(game.players[0].getProfile());
             game.players[0].saveProfile();
             game.window.close();
@@ -114,9 +115,20 @@ void InputHandler::processMenuEvents(const sf::Event& event)
         else if (game.menuSelection == MenuOption::GameSpeed)
         {
             if (game.gameSpeed == GameSpeed::Normal)
+            {
                 game.gameSpeed = GameSpeed::Fast;
+                Logger::info() << "Game speed set to Fast.";
+            }
             else if (game.gameSpeed == GameSpeed::Slow)
+            {
                 game.gameSpeed = GameSpeed::Normal;
+                Logger::info() << "Game speed set to Normal.";
+            }
+            else if (game.gameSpeed == GameSpeed::AutoPlay)
+            {
+                game.gameSpeed = GameSpeed::Slow;
+                Logger::info() << "Game speed set to Slow.";
+            }
         }
         break;
     case sf::Keyboard::Key::Right:
@@ -125,15 +137,27 @@ void InputHandler::processMenuEvents(const sf::Event& event)
         else if (game.menuSelection == MenuOption::GameSpeed)
         {
             if (game.gameSpeed == GameSpeed::Fast)
+            {
                 game.gameSpeed = GameSpeed::Normal;
+                Logger::info() << "Game speed set to Normal.";
+            }
             else if (game.gameSpeed == GameSpeed::Normal)
+            {
                 game.gameSpeed = GameSpeed::Slow;
+                Logger::info() << "Game speed set to Slow.";
+            }
+            else if (game.gameSpeed == GameSpeed::Slow)
+            {
+                game.gameSpeed = GameSpeed::AutoPlay;
+                Logger::info() << "Game speed set to AutoPlay.";
+            }
         }
         break;
     case sf::Keyboard::Key::Enter:
         switch (game.menuSelection)
         {
         case MenuOption::PlayGame:
+            Logger::info() << "Starting game from menu.";
             game.startNewGame();
             break;
         case MenuOption::PlayerCount:
@@ -142,6 +166,7 @@ void InputHandler::processMenuEvents(const sf::Event& event)
             break;
         case MenuOption::ReviewHistory:
         {
+            Logger::info() << "Entering replay history.";
             auto profile = game.players[0].getProfile();
             game.replay->loadHistory(profile.getLongHistory());
             game.replay->setStartingBankroll(game.players[0].getBankroll());
@@ -175,6 +200,7 @@ void InputHandler::processGameEvents(const sf::Event& event)
         if (released->button == sf::Mouse::Button::Left && game.hudState.riskSliderDragging)
         {
             game.hudState.riskSliderDragging = false;
+            Logger::info() << "Kelly fraction set to " << game.kellyFraction << ".";
         }
     }
 
@@ -196,19 +222,29 @@ void InputHandler::processGameEvents(const sf::Event& event)
         {
             if (game.gameState == GameState::GameOver)
             {
+                Logger::info() << "Starting new shoe.";
                 game.deck.create(Constants::NUM_DECKS);
                 game.deck.shuffle();
                 game.currentShoeRecord.initialDeck = game.deck.getCards();
                 game.gameState = GameState::Started;
             }
             else if (game.roundState == RoundState::Cleanup && game.gameState != GameState::LastHand)
+            {
+                Logger::info() << "Starting next round.";
                 game.nextRound();
+            }
         }
         if (key->code == sf::Keyboard::Key::Escape)
         {
+            Logger::info() << "Game paused.";
             game.appMode = AppMode::Paused;
             game.pauseSelection = PauseOption::Resume;
         }
+
+        // In auto-play mode, player cannot take actions (except R and Escape handled above)
+        if (game.gameSpeed == GameSpeed::AutoPlay)
+            return;
+
         if (game.activePlayerIndex != 0)
             return;
 
@@ -228,7 +264,7 @@ void InputHandler::processGameEvents(const sf::Event& event)
                 int optimal = game.calculateOptimalBet(tc, game.kellyFraction, game.players[0].getBankroll() + game.players[0].hands[0].getBet(),
                                                       Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
                 game.players[0].hands[0].setBet(optimal);
-                std::cout << "Optimal bet (TC=" << tc << ") set to " << optimal << ".\n";
+                Logger::info() << "Optimal bet (TC=" << tc << ") set to " << optimal << ".";
                 break;
             }
             case sf::Keyboard::Key::Right:
@@ -276,6 +312,7 @@ void InputHandler::processGameEvents(const sf::Event& event)
             {
                 char choice = game.giveBasicStrategyAdvice(game.players[game.activePlayerIndex].hands[game.players[game.activePlayerIndex].currentHand], game.dealer);
                 game.hudState.basicStrategyHint = "Book says: " + std::string(1, choice);
+                Logger::info() << "Basic strategy advice: " << choice;
                 break;
             }
             }
@@ -287,12 +324,6 @@ void InputHandler::processGameEvents(const sf::Event& event)
             {
                 game.surrender();
             }
-        }
-
-        if (key->code == sf::Keyboard::Key::Escape)
-        {
-            game.appMode = AppMode::Paused;
-            game.pauseSelection = PauseOption::Resume;
         }
     }
 }
@@ -366,10 +397,12 @@ void InputHandler::processPauseEvents(const sf::Event& event)
         switch (game.pauseSelection)
         {
         case PauseOption::Resume:
+            Logger::info() << "Game resumed.";
             game.appMode = AppMode::Playing;
             break;
         case PauseOption::Restart:
         {
+            Logger::info() << "Restarting game.";
             PlayerProfile profile = game.players[0].getProfile();
             profile.addShoeRecord(game.currentShoeRecord);
             game.players[0].updateProfile(profile);
@@ -379,6 +412,7 @@ void InputHandler::processPauseEvents(const sf::Event& event)
         }
         case PauseOption::QuitToMenu:
         {
+            Logger::info() << "Returning to main menu.";
             PlayerProfile profile = game.players[0].getProfile();
             profile.addShoeRecord(game.currentShoeRecord);
             game.players[0].updateProfile(profile);

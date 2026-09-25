@@ -1,6 +1,5 @@
 #include "Game.hpp"
 
-#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <filesystem>
@@ -10,6 +9,7 @@
 #include "Player.hpp"
 #include "FontManager.hpp"
 #include "GameRenderer.hpp"
+#include "Logger.hpp"
 
 Game::Game()
     : window(
@@ -33,7 +33,7 @@ Game::Game()
     replay->loadHistory(profile.getLongHistory());
     replay->setStartingBankroll(players[0].getBankroll());
 #pragma region
-    std::cout << R"(
+    Logger::info(R"(
 
 =========================================================
                     ♠ BLACKJACK ♣
@@ -64,7 +64,7 @@ Close the window at any time to quit.
 
 =========================================================
 
-)";
+)");
 #pragma endregion
 }
 
@@ -85,6 +85,7 @@ void Game::run()
 
 void Game::startNewGame()
 {
+    Logger::info("Starting new game");
     players.clear();
     players.push_back(Player("William"));
 
@@ -119,17 +120,17 @@ void Game::startNewGame()
 void Game::setPlayerCount(int count)
 {
     playerCount = std::max(1, std::min(6, count));
+    Logger::debug() << "Player count set to " << playerCount;
 }
 
 void Game::loadAssets()
 {
-    std::cout << "Current working directory: "
-              << std::filesystem::current_path() << '\n';
+    Logger::debug("Current working directory: " + std::filesystem::current_path().string());
 
     if (!FontManager::load("assets/fonts/noto/NotoSans-Regular.ttf",
          "assets/fonts/roboto/RobotoFlex-VariableFont.ttf"))
     {
-        std::cout << "Failed to load font!\n";
+        Logger::error("Failed to load font!");
         return;
     }
 
@@ -161,6 +162,7 @@ void Game::loadAssets()
 
 void Game::nextRound()
 {
+    Logger::info("New round");
     for (auto& p : players)
     {
         p.resetRound(initalBet); //replace bet
@@ -172,7 +174,6 @@ void Game::nextRound()
     roundState = RoundState::PlaceBets;
     activePlayerIndex = 0;
 }
-
 // ~~~ Events ~~~ 
 void Game::update(float deltaTime)
 {
@@ -195,37 +196,53 @@ void Game::update(float deltaTime)
             hudState.summaryTimer = 0.0f;
     }
 
+    // Auto-play: countdown after-hand delay
+    if (hudState.afterHandTimer > 0.0f)
+    {
+        hudState.afterHandTimer -= deltaTime;
+        if (hudState.afterHandTimer < 0.0f)
+            hudState.afterHandTimer = 0.0f;
+    }
+
+    // Auto-play: countdown after-shoe delay
+    if (hudState.afterShoeTimer > 0.0f)
+    {
+        hudState.afterShoeTimer -= deltaTime;
+        if (hudState.afterShoeTimer < 0.0f)
+            hudState.afterShoeTimer = 0.0f;
+    }
+
+    // Auto-play: auto-advance to new shoe after shoe delay
+    if (gameState == GameState::GameOver && gameSpeed == GameSpeed::AutoPlay)
+    {
+        if (hudState.afterShoeTimer <= 0.0f)
+        {
+            Logger::info() << "Auto-play: starting new shoe.";
+            deck.create(Constants::NUM_DECKS);
+            deck.shuffle();
+            currentShoeRecord.initialDeck = deck.getCards();
+            currentShoeRecord.rounds.clear();
+            runningCount = 0;
+            shoeCumulativeWinLoss = 0;
+            gameState = GameState::Started;
+            nextRound();
+        }
+    }
+
+    // Auto-play: auto-bet with Kelly strategy
+    if (roundState == RoundState::PlaceBets && gameSpeed == GameSpeed::AutoPlay)
+    {
+        float tc = BasicStrategy::computeTrueCount(runningCount, deck.size());
+        int optimal = calculateOptimalBet(tc, kellyFraction, players[0].getBankroll(),
+                                          Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
+        players[0].hands[0].setBet(optimal);
+        Logger::info() << "Auto-play betting " << optimal << " (TC=" << tc << ")";
+        confirmBet();
+    }
+
     if (roundState == RoundState::OfferInsurance)
     {
-        // Auto-decide insurance for NPCs based on true count
-        if (activePlayerIndex > 0)
-        {
-            float tc = BasicStrategy::computeTrueCount(runningCount, deck.size());
-            auto& p = players[activePlayerIndex];
-            Hand& hand = p.hands[p.currentHand];
-            int maxIns = hand.getBet() / 2;
-
-            if (tc >= 3.0f && maxIns > 0)
-            {
-                // NPC takes insurance
-                hand.setInsuranceBet(maxIns);
-                p.placeBet(maxIns);
-                std::cout << p.getName() << " takes insurance of " << maxIns << " (TC=" << tc << ").\n";
-            }
-            else
-            {
-                std::cout << p.getName() << " declines insurance (TC=" << tc << ").\n";
-            }
-
-            // Advance to next player for insurance
-            ++activePlayerIndex;
-            if (activePlayerIndex >= players.size())
-            {
-                // All players decided on insurance
-                activePlayerIndex = 0;
-                evaluator.evaluateBlackjack();
-            }
-        }
+        offerInsurance();
     }
 
     if (roundState == RoundState::PlayerTurn)
@@ -263,7 +280,7 @@ void Game::update(float deltaTime)
             if (p.currentHand < p.hands.size())
             {
                 break;
-            } 
+            }
             ++activePlayerIndex; //next player
         }
 
@@ -274,11 +291,11 @@ void Game::update(float deltaTime)
         }
 
         auto& p = players[activePlayerIndex];
-        
+
         // Ensure current hand has at least two cards (for split hands)
         if (p.hands[p.currentHand].size() == 1)
         {
-            dealCardToPlayer(p.hands[p.currentHand]); 
+            dealCardToPlayer(p.hands[p.currentHand]);
             if (p.hands[p.currentHand].isSplitAce())
             {
                 // Check if we can re-split aces
@@ -290,15 +307,18 @@ void Game::update(float deltaTime)
                     p.hands[p.currentHand].setFinished(true);
                 }
             }
-        } 
+        }
 
-        if (activePlayerIndex > 0)
+        if (activePlayerIndex > 0 || gameSpeed == GameSpeed::AutoPlay)
         {
             // Set delay based on game speed
             switch (gameSpeed)
             {
             case GameSpeed::Fast:
                 npcActionDelay = 0.3f;
+                break;
+            case GameSpeed::AutoPlay:
+                npcActionDelay = 0.15f;
                 break;
             case GameSpeed::Normal:
                 npcActionDelay = 1.0f;
@@ -326,6 +346,14 @@ void Game::update(float deltaTime)
     if (roundState == RoundState::DealerTurn)
     {
         dealerTurn();
+    }
+
+    if (roundState == RoundState::Cleanup && gameSpeed == GameSpeed::AutoPlay)
+    {
+        if (gameState != GameState::GameOver && hudState.afterHandTimer <= 0.0f)
+        {
+            nextRound();
+        }
     }
 }
 
@@ -370,25 +398,16 @@ void Game::hit()
     logStrategyDeviation('H');
     dealCardToPlayer(hand);
 
-    std::cout
-        << "Hit! You have "
-        << hand.getValue()
-        << ". " << std::endl;
+    Logger::info() << p.getName() << " hits. Has " << hand.getValue();
 
     if (hand.isBust())
     {
-        std::cout
-            << "Bust!\n"
-            << std::endl;
-
+        Logger::info() << p.getName() << " busts!";
         hand.setFinished(true);
     }
     else if (hand.getValue() == 21)
     {
-        std::cout
-            << "You have 21!\n"
-            << std::endl;
-
+        Logger::info() << p.getName() << " has 21!";
         hand.setFinished(true);
     }
 
@@ -400,10 +419,7 @@ void Game::stand()
 {
     auto& p = players[activePlayerIndex];
     Hand &hand = p.hands[p.currentHand];
-    std::cout
-        << "Stand on "
-        << hand.getValue()
-        << ".\n";
+    Logger::info() << p.getName() << " stands on " << hand.getValue() << ".";
     logStrategyDeviation('S');
     hand.setFinished(true);
 
@@ -411,22 +427,31 @@ void Game::stand()
     hudState.basicStrategyHint.clear();
 }
 
-void Game::doubleDown()
+bool Game::doubleDown()
 {
     auto& p = players[activePlayerIndex];
     Hand &hand = p.hands[p.currentHand];
     int initalbet = hand.getBet();
 
     if (hand.isFinished())
-        return;
+    {
+        Logger::warn() << p.getName() << " tried to double down but hand is finished.";
+        return false;
+    }
 
     if (!hand.canDouble())
-        return;
+    {
+        Logger::warn() << p.getName() << " tried to double down but hand cannot double (not 2 cards).";
+        return false;
+    }
 
     logStrategyDeviation('D');
     hand.setDoubledDown(true);
     if (!p.placeBet(initalbet))
-        return;
+    {
+        Logger::warn() << p.getName() << " tried to double down but cannot afford the bet.";
+        return false;
+    }
 
     hand.setBet(initalbet * 2);
     dealCardToPlayer(hand);
@@ -437,43 +462,44 @@ void Game::doubleDown()
     stats.betsPlaced++;
     stats.betSum += initalbet;
 
-    std::cout
-        << "Doubling "
-        << initalbet << " to " << hand.getBet()
-        << " on a "
-        << hand.getValue()
-        << "!\n";
+    Logger::info() << p.getName() << " doubles " << initalbet << " to " << hand.getBet() << " on a " << hand.getValue() << ".";
 
     hand.setFinished(true);
 
     handActions[getGlobalHandIndexForPlayer(activePlayerIndex, p.currentHand)].push_back("D");
     hudState.basicStrategyHint.clear();
+    return true;
 }
 
-void Game::split()
+bool Game::split()
 {
     auto& p = players[activePlayerIndex];
     int handIndex = p.currentHand;
 
     if (p.hands[handIndex].isFinished())
-        return;
+    {
+        Logger::warn() << p.getName() << " tried to split but hand is finished.";
+        return false;
+    }
 
     if (p.hands.size() >= Constants::MAX_SPLIT_HANDS)
     {
-        return;
+        Logger::warn() << p.getName() << " tried to split but has reached max split hands (" << Constants::MAX_SPLIT_HANDS << ").";
+        return false;
     }
 
     if (!p.hands[handIndex].canSplit())
-        return;
+    {
+        Logger::warn() << p.getName() << " tried to split but hand cannot split (not a pair or already hit).";
+        return false;
+    }
 
     logStrategyDeviation('P');
     Hand newHand;
     Card splitCard = p.hands[handIndex].takeLastCard();
-    std::cout
-        << "Splitting "
-        << splitCard.getBlackjackValueToString()
-        << "s.\n";
+    Logger::info() << p.getName() << " splits " << splitCard.getBlackjackValueToString() << "s.";
     newHand.addCard(splitCard); 
+    newHand.setBet(p.hands[handIndex].getBet());
 
     handActions[getGlobalHandIndexForPlayer(activePlayerIndex, p.currentHand)].push_back("P");
     hudState.basicStrategyHint.clear();
@@ -490,30 +516,37 @@ void Game::split()
     stats.splits++;
     stats.betsPlaced++;
     stats.betSum += p.hands[handIndex].getBet(); // new hand inherits bet amount
+    return true;
 }
 
-void Game::surrender()
+bool Game::surrender()
 {
     auto& p = players[activePlayerIndex];
     Hand &hand = p.hands[p.currentHand];
 
     // Cannot surrender a finished hand
     if (hand.isFinished())
-        return;
+    {
+        Logger::warn() << p.getName() << " tried to surrender but hand is finished.";
+        return false;
+    }
 
     // Only allowed on the first two cards
     if (!hand.canDouble())
-        return;
+    {
+        Logger::warn() << p.getName() << " tried to surrender but hand cannot surrender (already hit or not 2 cards).";
+        return false;
+    }
 
     logStrategyDeviation('R');
-    std::cout
-        << "Surrender. You lose half your bet.\n";
+    Logger::info() << p.getName() << " surrenders. Loses half their bet.";
 
     hand.setSurrendered(true);
     hand.setFinished(true);
 
     handActions[getGlobalHandIndexForPlayer(activePlayerIndex, p.currentHand)].push_back("R");
     hudState.basicStrategyHint.clear();
+    return true;
 }
 
 
@@ -541,6 +574,7 @@ void Game::logStrategyDeviation(char actionTaken)
     else
     {
         stats.strategyDeviations++;
+        Logger::info() << "Strategy deviation: took " << actionTaken << " but book says " << correct << ".";
         DeviationRecord record;
         record.playerValue = playerValue;
         record.dealerUpValue = dealerUpValue;
@@ -586,39 +620,6 @@ size_t Game::incrementGlobalHandIndex(size_t current)
     return current + 1;
 }
 
-void Game::npcTakeTurn()
-{
-    auto& p = players[activePlayerIndex];
-    Hand& hand = p.hands[p.currentHand];
-
-    if (hand.isFinished())
-        return;
-
-    char action = giveBasicStrategyAdvice(hand, dealer);
-
-    switch (action)
-    {
-    case 'H':
-        hit();
-        break;
-    case 'S':
-        stand();
-        break;
-    case 'D':
-        doubleDown();
-        break;
-    case 'P':
-        split();
-        break;
-    case 'R':
-        surrender();
-        break;
-    default:
-        stand();
-        break;
-    }
-}
- 
 //  ~~~ Betting ~~~ 
 
 void Game::increaseBet()
@@ -626,9 +627,7 @@ void Game::increaseBet()
     if (players[0].hands[0].getBet() < Constants::MAXIMUM_BET)
     {
         players[0].hands[0].setBet(players[0].hands[0].getBet() + 5);
-        std::cout << "Increased bet to "
-                  << players[0].hands[players[0].currentHand].getBet()
-                  << ".\n";
+        Logger::debug() << "Increased bet to " << players[0].hands[players[0].currentHand].getBet() << ".";
     }
 }
 
@@ -637,9 +636,7 @@ void Game::decreaseBet()
     if (players[0].hands[0].getBet() >= Constants::MINIMUM_BET)
     {
         players[0].hands[0].setBet(players[0].hands[0].getBet() - 5);
-        std::cout << "Decreased bet to "
-                  << players[0].hands[players[0].currentHand].getBet()
-                  << ".\n";
+        Logger::debug() << "Decreased bet to " << players[0].hands[players[0].currentHand].getBet() << ".";
     }
 }
 
@@ -656,8 +653,7 @@ void Game::confirmBet()
 
     if (!players[0].placeBet(currentBet))
     {
-        std::cout << "Not enough bankroll. " << players[0].getBankroll() << " is your max. Or "
-                  << players[0].getBankroll() / 2 << " if you want to double.\n";
+        Logger::warn() << "Not enough bankroll. " << players[0].getBankroll() << " is your max. Or " << players[0].getBankroll() / 2 << " if you want to double.";
         return;
     }
 
@@ -668,14 +664,7 @@ void Game::confirmBet()
     stats.betsPlaced++;
     stats.betSum += currentBet;
 
-    std::cout << "You bet "
-              << players[0].hands[players[0].currentHand].getBet()
-              << ". Your remaining bankroll is: "
-              << players[0].getBankroll()
-              << "\n"
-              << "The running count is: "
-              << runningCount
-              << ".\n";
+    Logger::info() << players[0].getName() << " bets " << players[0].hands[players[0].currentHand].getBet() << ". Remaining bankroll: " << players[0].getBankroll() << ". Running count: " << runningCount << ".";
 
     // NPCs auto-bet minimum
     for (size_t i = 1; i < players.size(); i++)
@@ -684,7 +673,7 @@ void Game::confirmBet()
         if (players[i].placeBet(npcBet))
         {
             players[i].hands[0].setBet(npcBet);
-            std::cout << players[i].getName() << " bets " << npcBet << ".\n";
+            Logger::info() << players[i].getName() << " bets " << npcBet << ".";
         }
     }
 
@@ -695,38 +684,33 @@ void Game::confirmBet()
 void Game::offerInsurance()
 {
     auto& p = players[activePlayerIndex];
-    Hand &hand = p.hands[p.currentHand];
+    Hand& hand = p.hands[p.currentHand];
+    int maxIns = hand.getBet() / 2;
 
-    int maxInsurance = hand.getBet() / 2;
-
-    std::cout << "\nDealer shows an Ace.\n";
-    std::cout << "Insurance? (y/n): ";
-
-    char choice;
-    std::cin >> choice;
-
-    if (tolower(choice) != 'y')
-        return;
-
-    int insurance;
-
-    do
+    // Auto-decide for NPCs and auto-play human
+    if (activePlayerIndex > 0 || gameSpeed == GameSpeed::AutoPlay)
     {
-        std::cout << "Enter insurance bet (0 - "
-                  << maxInsurance
-                  << "): ";
+        float tc = BasicStrategy::computeTrueCount(runningCount, deck.size());
+        if (tc >= 3.0f && maxIns > 0)
+        {
+            hand.setInsuranceBet(maxIns);
+            p.placeBet(maxIns);
+            Logger::info() << p.getName() << " takes insurance of " << maxIns << " (TC=" << tc << ")";
+        }
+        else
+        {
+            Logger::info() << p.getName() << " declines insurance (TC=" << tc << ")";
+        }
 
-        std::cin >> insurance;
-
-    } while (insurance < 0 || insurance > maxInsurance);
-
-    hand.setInsuranceBet(insurance);
-
-    p.placeBet(insurance);
-
-    std::cout << "Insurance bet of $"
-              << insurance
-              << " placed.\n";
+        // Advance to next player
+        ++activePlayerIndex;
+        if (activePlayerIndex >= players.size())
+        {
+            activePlayerIndex = 0;
+            evaluator.evaluateBlackjack();
+        }
+    }
+    // else: human player in manual mode - wait for input (handled in InputHandler)
 }
 
 void Game::increaseInsurance()
@@ -736,9 +720,7 @@ void Game::increaseInsurance()
     {
         p.hands[p.currentHand].setInsuranceBet(
             p.hands[p.currentHand].getInsuranceBet() + 1);
-        std::cout << "Increased insurance to "
-                  << p.hands[p.currentHand].getInsuranceBet()
-                  << ".\n";
+        Logger::info() << p.getName() << " increases insurance to " << p.hands[p.currentHand].getInsuranceBet() << ".";
     }
 }
 
@@ -749,9 +731,7 @@ void Game::decreaseInsurance()
     {
         p.hands[p.currentHand].setInsuranceBet(
             p.hands[p.currentHand].getInsuranceBet() - 1);
-        std::cout << "Decreased insurance to "
-                  << p.hands[p.currentHand].getInsuranceBet()
-                  << ".\n";
+        Logger::info() << p.getName() << " decreases insurance to " << p.hands[p.currentHand].getInsuranceBet() << ".";
     }
 }
 
@@ -762,20 +742,31 @@ void Game::confirmInsurance()
     if (insBet > 0)
     {
         p.placeBet(insBet);
-        std::cout << "Placed insurance bet of"
-                  << insBet
-                  << ".\n";
+        Logger::info() << p.getName() << " places insurance bet of " << insBet << ".";
     }
 
-    evaluator.evaluateBlackjack();
+    // Advance to next player for insurance decision
+    ++activePlayerIndex;
+    if (activePlayerIndex >= players.size())
+    {
+        activePlayerIndex = 0;
+        evaluator.evaluateBlackjack();
+    }
 }
 
 void Game::declineInsurance()
 {
     auto& p = players[activePlayerIndex];
     p.hands[p.currentHand].setInsuranceBet(0);
-    std::cout << "Insurance Denied" << std::endl;
-    evaluator.evaluateBlackjack();
+    Logger::info() << p.getName() << " declines insurance.";
+
+    // Advance to next player for insurance decision
+    ++activePlayerIndex;
+    if (activePlayerIndex >= players.size())
+    {
+        activePlayerIndex = 0;
+        evaluator.evaluateBlackjack();
+    }
 }
 
 const int Game::getMaxInsurance()
@@ -804,28 +795,69 @@ void Game::deal()
 
     if (dealer.getDealerUpCard().isAce())
     {
-        std::cout << "offered insurance" << std::endl;
+        Logger::info("Dealer shows an Ace. Insurance offered.");
         roundState = RoundState::OfferInsurance;
     }
     else
         evaluator.evaluateBlackjack();
 
-    std::cout
-        << "You have a "
-        << players[0].hands[0].getValue()
-        << " against dealers "
-        << dealer.getDealerUpCardToString()
-        << ".\n";
+    Logger::info() << players[0].getName() << " has a " << players[0].hands[0].getValue() << " against dealer's " << dealer.getDealerUpCardToString() << ".";
 }
 
 
-// Central helper: apply Hi-Lo count update and check for cut card after drawing
+void Game::npcTakeTurn()
+{
+    auto& p = players[activePlayerIndex];
+    Hand& hand = p.hands[p.currentHand];
+
+    if (hand.isFinished())
+        return;
+
+    Logger::debug(p.getName() + " is thinking...");
+    char action = giveBasicStrategyAdvice(hand, dealer);
+
+    // If strategy says split but we've reached max split hands,
+    // fall back to hard hand strategy
+    if (action == 'P' && p.hands.size() >= Constants::MAX_SPLIT_HANDS)
+    {
+        int playerValue = hand.getValue();
+        int dealerUpValue = dealer.getDealerUpCard().getBlackjackValue();
+        bool hasAce = hand.isSoft();
+        action = BasicStrategy::getRecommendedAction(playerValue, dealerUpValue, hasAce, false, 0);
+    }
+
+    switch (action)
+    {
+    case 'H':
+        hit();
+        break;
+    case 'S':
+        stand();
+        break;
+    case 'D':
+        if (!doubleDown())
+            hit(); // Can't double, hit instead
+        break;
+    case 'P':
+        if (!split())
+            hit(); // Can't split, hit instead
+        break;
+    case 'R':
+        if (!surrender())
+            hit();
+        break;
+    default:
+        stand();
+        break;
+    }
+}
 void Game::afterDraw(Card card)
 {
     runningCount = BasicStrategy::updateHiLo(runningCount, card.getBlackjackValue());
 
     if (deck.reachedCutCard())
     {
+        Logger::info("Cut card reached. Last hand of shoe.");
         gameState = GameState::LastHand;
     }
 }
@@ -858,7 +890,7 @@ std::vector<Card> Game::collectTableCards() const
 // Handle the rare case where the deck runs out before the cut card
 void Game::handleEmptyDeck()
 {
-    std::cout << "Deck empty before cut card - reshuffling remaining cards.\n";
+    Logger::warn() << "Deck empty before cut card - reshuffling remaining cards.";
 
     // Collect all cards currently on the table (these are dealt from the new shoe)
     std::vector<Card> tableCards = collectTableCards();
@@ -895,7 +927,7 @@ void Game::handleEmptyDeck()
     runningCount = 0;
     gameState = GameState::Started;
 
-    std::cout << "New shoe created with " << deck.size() << " cards.\n";
+    Logger::info() << "New shoe created with " << deck.size() << " cards.";
 }
 
 void Game::dealCardToPlayer(Hand &hand)
@@ -941,57 +973,36 @@ void Game::dealerTurn()
             (dealer.getValue() == Constants::DEALER_STAND && dealer.isSoft())) &&
            !doNotDraw)
     {
-        std::cout
-            << "Dealer has "
-            << dealer.getValue()
-            << "\n";
+        Logger::debug() << "Dealer has " << dealer.getValue();
 
         dealCardToDealer();
     }
 
     if (dealer.isBust())
     {
-        std::cout
-            << "Dealer busted with "
-            << dealer.getValue()
-            << ". Too many!\n";
+        Logger::info() << "Dealer busted with " << dealer.getValue() << ". Too many!";
     }
     else
     {
-
         switch (dealer.getValue())
         {
         case 17:
-            std::cout
-                << "Dealer stands on the edge of "
-                << dealer.getValue()
-                << "." << std::endl;
+            Logger::info() << "Dealer stands on the edge of " << dealer.getValue() << ".";
             break;
         case 18:
-            std::cout
-                << "Dealer stands on "
-                << dealer.getValue()
-                << "." << std::endl;
+            Logger::info() << "Dealer stands on " << dealer.getValue() << ".";
             break;
         case 19:
-            std::cout
-                << "Dealer stands on "
-                << dealer.getValue()
-                << ". It's bigger than average." << std::endl;
+            Logger::info() << "Dealer stands on " << dealer.getValue() << ". It's bigger than average.";
             break;
         case 20:
-            std::cout
-                << "Dealer stands on "
-                << dealer.getValue()
-                << ". Dealer always has 20." << std::endl;
+            Logger::info() << "Dealer stands on " << dealer.getValue() << ". Dealer always has 20.";
             break;
         case 21:
-            std::cout
-                << "Dealer stands on "
-                << dealer.getValue()
-                << ". That's the name of the game folks." << std::endl;
+            Logger::info() << "Dealer stands on " << dealer.getValue() << ". That's the name of the game folks.";
             break;
         default:
+            Logger::info() << "Dealer stands on " << dealer.getValue() << ".";
             break;
         }
     }
@@ -1017,7 +1028,16 @@ void Game::dealerTurn()
         players[0].saveProfile();
 
         currentShoeRecord = {};
-        std::cout
-            << "New shoe required. Press R.\n";
+        Logger::info() << "Shoe completed. Final shoe profit: " << shoeCumulativeWinLoss << ".";
+
+        if (gameSpeed == GameSpeed::AutoPlay)
+        { 
+            Logger::info() << "Auto-play: Starting a new shoe.";
+            hudState.afterShoeTimer = Constants::AUTOPLAY_AFTER_SHOE_DELAY;
+        }
+        else
+        {
+            Logger::info() << "New shoe required. Press R.";
+        }
     }
 }

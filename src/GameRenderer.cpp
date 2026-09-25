@@ -157,11 +157,29 @@ void GameRenderer::drawPlayers(Game &game)
         for (std::size_t handIndex = 0; handIndex < p.hands.size(); handIndex++)
         {
             const Hand &hand = p.hands[handIndex];
+            float handX = Constants::PLAYER_X + xOffset + handIndex * 70;
+            float handY = Constants::PLAYER_Y + yOffset;
+
+            // Draw cards for this hand
             for (std::size_t i = 0; i < hand.size(); i++)
             {
-                Graphics::drawCard(game.window, game.cardTexture, hand.getCard(i),
-                                  Constants::PLAYER_X + xOffset + handIndex * 70 + i * 16,
-                                  Constants::PLAYER_Y + yOffset - i * 16);
+                float cardX = handX + i * 16;
+                float cardY = handY - i * 16;
+
+                // Only rotate the third card (double down card) 90 degrees
+                if (hand.isDoubledDown() && i == 2)
+                {
+                    auto sprite = Graphics::makeCardSprite(hand.getCard(i), game.cardTexture);
+                    sprite.setPosition(sf::Vector2f(cardX, cardY));
+                    sprite.setOrigin(sf::Vector2f(Constants::CARD_WIDTH / 2.f, Constants::CARD_HEIGHT / 2.f));
+                    sprite.move(sf::Vector2f(Constants::CARD_WIDTH / 2.f, Constants::CARD_HEIGHT / 2.f));
+                    sprite.rotate(sf::degrees(90.f));
+                    game.window.draw(sprite);
+                }
+                else
+                {
+                    Graphics::drawCard(game.window, game.cardTexture, hand.getCard(i), cardX, cardY);
+                }
             }
             
             // Draw BUSTED label on top of busted hands
@@ -170,10 +188,25 @@ void GameRenderer::drawPlayers(Game &game)
                 sf::Text bustedText(FontManager::get(), "BUSTED", 18.f);
                 bustedText.setFillColor(sf::Color(255, 0, 0));
                 bustedText.setStyle(sf::Text::Bold);
-                float labelX = Constants::PLAYER_X + xOffset + handIndex * 70;
-                float labelY = Constants::PLAYER_Y + yOffset + 5.f;
-                bustedText.setPosition(sf::Vector2f(labelX, labelY));
+                bustedText.setPosition(sf::Vector2f(handX, handY + 5.f));
                 game.window.draw(bustedText);
+            }
+
+            // Draw white flag for surrendered hands
+            if (hand.isSurrendered())
+            {
+                sf::RectangleShape pole(sf::Vector2f(3.f, 30.f));
+                pole.setFillColor(sf::Color(128, 128, 128));
+                pole.setPosition(sf::Vector2f(handX + 10, handY - 40));
+
+                sf::RectangleShape flag(sf::Vector2f(20.f, 12.f));
+                flag.setFillColor(sf::Color::White);
+                flag.setOutlineColor(sf::Color::Black);
+                flag.setOutlineThickness(1.f);
+                flag.setPosition(sf::Vector2f(handX + 13, handY - 40));
+
+                game.window.draw(pole);
+                game.window.draw(flag);
             }
         }
     }
@@ -242,8 +275,14 @@ void GameRenderer::drawChips(Game &game)
                 game.window.draw(chipShape);
             }
 
+            // Use black text when the top chip is white for contrast
+            sf::Color textColor = sf::Color::White;
+            if (!stack.empty() && stack.back().color == sf::Color::White)
+            {
+                textColor = sf::Color::Black;
+            }
             sf::Text text(FontManager::get(), "$" + std::to_string(totalBet), 16.f);
-            text.setFillColor(sf::Color::White);
+            text.setFillColor(textColor);
             sf::FloatRect bounds = text.getLocalBounds();
             text.setOrigin(sf::Vector2f(bounds.size.x / 2.f, bounds.size.y / 2.f));
             text.setPosition(sf::Vector2f(chipX, chipY - stack.size() * 3.f));
@@ -354,6 +393,9 @@ void GameRenderer::drawMainMenu(Game &game)
         break;
     case GameSpeed::Slow:
         speedLabel += "Slow";
+        break;
+    case GameSpeed::AutoPlay:
+        speedLabel += "AutoPlay";
         break;
     }
     speedLabel += " (Left/Right)";

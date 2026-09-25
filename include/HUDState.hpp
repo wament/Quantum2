@@ -38,4 +38,8 @@ struct HUDState
     // End-of-round summary overlay
     std::vector<std::string> playerSummaries;
     float summaryTimer = 0.0f;
+
+    // Auto-play timers (0 means no wait)
+    float afterHandTimer = 0.0f;
+    float afterShoeTimer = 0.0f;
 };

@@ -53,7 +53,8 @@ enum class PauseOption {
 enum class GameSpeed {
     Fast,
     Normal,
-    Slow
+    Slow,
+    AutoPlay
 };
 
 class Game
@@ -180,11 +181,11 @@ private:
 
     void stand();
 
-    void doubleDown();
+    bool doubleDown();
 
-    void split();
+    bool split();
 
-    void surrender();
+    bool surrender();
 
     void increaseInsurance();
 
@@ -224,3 +225,4 @@ private:
     size_t getGlobalHandIndexForPlayer(size_t playerIdx, size_t handIdx); 
     size_t incrementGlobalHandIndex(size_t current);
 };
+

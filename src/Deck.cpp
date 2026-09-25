@@ -1,5 +1,6 @@
 #include "Deck.hpp"
 #include "Constants.hpp"
+#include "Logger.hpp"
 
 #include <algorithm>
 #include <random>
@@ -46,7 +47,7 @@ void Deck::shuffle()
     cutCardReached = false;
 
     // Place cut card 25 cards from the end of the shoe
-    const std::size_t cutPosition = cards.size() - 25;
+    const std::size_t cutPosition = 25;
 
     cards.insert(
         cards.begin() + cutPosition,
@@ -55,6 +56,8 @@ void Deck::shuffle()
 
     // 3. Capture the new active shoe record immediately
     activeShoeRecord = cards;
+
+    Logger::debug() << "Shoe shuffled. Cards: " << cards.size() << ".";
 }
 
 Card Deck::draw()

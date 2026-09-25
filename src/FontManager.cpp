@@ -1,5 +1,5 @@
 #include "FontManager.hpp"
-#include <iostream>
+#include "Logger.hpp"
 
 sf::Font FontManager::s_font;
 bool FontManager::s_loaded = false;
@@ -16,16 +16,16 @@ bool FontManager::load(const std::string& primaryPath, const std::string& fallba
 
     if (s_loaded)
     {
-        std::cout << "Font loaded: " << primaryPath << std::endl;
+        Logger::info() << "Font loaded: " << primaryPath;
     }
     else if (!fallbackPath.empty())
     {
-        std::cout << "Primary font failed, trying fallback: " << fallbackPath << std::endl;
+        Logger::warn() << "Primary font failed, trying fallback: " << fallbackPath;
         s_fontPath = fallbackPath;
         s_loaded = s_font.openFromFile(fallbackPath);
         if (s_loaded)
         {
-            std::cout << "Fallback font loaded: " << fallbackPath << std::endl;
+            Logger::info() << "Fallback font loaded: " << fallbackPath;
         }
     }
 

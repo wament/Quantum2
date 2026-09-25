@@ -94,6 +94,7 @@ target_sources(Blackjack2 PRIVATE
     src/GameRenderer.cpp
     src/InputHandler.cpp
     src/HandEvaluator.cpp
+    src/Logger.cpp
 )
 
 # Copy assets to build output (for local testing)
@@ -119,6 +120,7 @@ add_executable(Blackjack2Tests
     src/Card.cpp
     src/Deck.cpp
     src/Hand.cpp
+    src/Logger.cpp
     tests/test_card.cpp
     tests/test_deck.cpp
     tests/test_hand.cpp

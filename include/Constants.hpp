@@ -55,6 +55,17 @@ namespace Constants
 
     constexpr bool DOUBLE_AFTER_SPLIT_ALLOWED = true;
     constexpr bool RESPLIT_ACES_ALLOWED = true;
+
+    // Auto-play timing (seconds)
+    constexpr float AUTOPLAY_AFTER_HAND_DELAY = 1.0f;
+    constexpr float AUTOPLAY_AFTER_SHOE_DELAY = 3.0f;
+}
+
+// Summary overlay display time (seconds)
+namespace SummaryTiming
+{
+    constexpr float FAST_AUTOPLAY = 2.0f;
+    constexpr float NORMAL_SLOW = 5.0f;
 }
 
 // Basic Strategy

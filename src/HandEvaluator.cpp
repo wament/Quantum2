@@ -2,9 +2,9 @@
 #include "Game.hpp"
 #include "Constants.hpp" 
 
-#include <iostream>
 #include <sstream>
 #include <chrono>
+#include "Logger.hpp"
 
 HandEvaluator::HandEvaluator(Game& game) : game(game) {}
 
@@ -34,8 +34,8 @@ void HandEvaluator::evaluateHands()
         {
             const Hand& hand = p.hands[handIndex];
 
-            std::cout << "Entering evaluateHands() on hand " << (handIndex + 1)
-                      << " for " << p.getName() << ". Bankroll = " << p.getBankroll() << std::endl;
+            Logger::debug() << "Entering evaluateHands() on hand " << (handIndex + 1)
+                            << " for " << p.getName() << ". Bankroll = " << p.getBankroll();
 
             HandOutcome outcome;
             outcome.wager = hand.getBet();
@@ -55,6 +55,7 @@ void HandEvaluator::evaluateHands()
                 outcome.won = false;
                 stats.losses++;
                 netProfitOnHand = hand.getBet() / 2 - hand.getBet();
+                Logger::info() << p.getName() << " surrendered hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ").";
             }
             else if (hand.isBust() || (hand.getValue() < game.dealer.getValue() && !game.dealer.isBust()))
             {
@@ -64,13 +65,14 @@ void HandEvaluator::evaluateHands()
                 stats.losses++;
                 netProfitOnHand = -hand.getBet();
                 roundLost = true;
+                Logger::info() << p.getName() << " lost hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ").";
             }
             else if (hand.getValue() > game.dealer.getValue() || game.dealer.isBust())
             {
                 if (isNaturalBlackjack)
                 {
-                    p.winBet(hand.getBet() * Constants::BLACKJACK_PAYOUT);
-                    outcome.payout = hand.getBet() * Constants::BLACKJACK_PAYOUT;
+                    p.winBet(hand.getBet() * (1 + Constants::BLACKJACK_PAYOUT));
+                    outcome.payout = hand.getBet() * (1 + Constants::BLACKJACK_PAYOUT);
                 }
                 else
                 {
@@ -81,6 +83,7 @@ void HandEvaluator::evaluateHands()
                 stats.wins++;
                 netProfitOnHand = outcome.payout - hand.getBet();
                 roundWon = true;
+                Logger::info() << p.getName() << " won hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ", payout: " << outcome.payout << ").";
             }
             else
             {
@@ -89,6 +92,7 @@ void HandEvaluator::evaluateHands()
                 outcome.won = true;
                 stats.pushes++;
                 netProfitOnHand = 0;
+                Logger::info() << p.getName() << " pushed hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ").";
             }
 
             game.currentRoundRecord.playerHands.push_back(outcome);
@@ -149,8 +153,7 @@ void HandEvaluator::evaluateHands()
                 continue;
             int handProfit = outcome.payout - outcome.wager;
             playerNet += handProfit;
-        }
-        oss << game.players[i].getName() << ": ";
+        } 
         if (playerNet > 0)
             oss << "Win +" << playerNet;
         else if (playerNet < 0)
@@ -159,9 +162,27 @@ void HandEvaluator::evaluateHands()
             oss << "Push";
         game.hudState.playerSummaries.push_back(oss.str());
     }
-    game.hudState.summaryTimer = 10.0f;
+    if (game.gameSpeed == GameSpeed::Fast || game.gameSpeed == GameSpeed::AutoPlay)
+    {
+        game.hudState.summaryTimer = SummaryTiming::FAST_AUTOPLAY;
+    }
+    else
+    {
+        game.hudState.summaryTimer = SummaryTiming::NORMAL_SLOW;
+    }
 
-    std::cout << "Exiting evaluation with " << game.players[0].getBankroll() << std::endl;
+    if (game.gameSpeed == GameSpeed::AutoPlay)
+    {
+        game.hudState.afterHandTimer = Constants::AUTOPLAY_AFTER_HAND_DELAY;
+    }
+
+    int roundNet = 0;
+    for (const auto& outcome : game.currentRoundRecord.playerHands)
+    {
+        roundNet += outcome.payout - outcome.wager;
+    }
+    Logger::info() << "Round complete. Net: " << (roundNet >= 0 ? "+" : "") << roundNet
+                  << ". Bankroll: " << game.players[0].getBankroll() << ".";
 
     PlayerProfile profile = game.players[0].getProfile();
     profile.addRoundRecord(game.currentRoundRecord);
@@ -176,46 +197,59 @@ void HandEvaluator::evaluateHands()
 
 void HandEvaluator::evaluateBlackjack()
 {
-    auto& p = game.players[game.activePlayerIndex];
-    Hand& hand = p.hands[p.currentHand];
+    bool dealerHasBJ = game.dealer.isBlackjack();
 
-    int bet = hand.getBet();
-
-    if (game.dealer.isBlackjack())
+    for (size_t pIdx = 0; pIdx < game.players.size(); pIdx++)
     {
-        if (hand.getInsuranceBet() > 0)
+        auto& p = game.players[pIdx];
+        for (size_t handIndex = 0; handIndex < p.hands.size(); handIndex++)
         {
-            p.winBet(hand.getInsuranceBet() * 3);
-            std::cout << "Insurance wins!\n";
-        }
+            Hand& hand = p.hands[handIndex];
+            int bet = hand.getBet();
 
-        if (hand.isBlackjack())
-        {
-            p.pushBet(bet);
-        }
-        else
-        {
-            p.loseBet(hand.getBet());
-        }
+            if (dealerHasBJ)
+            {
+                if (hand.getInsuranceBet() > 0)
+                {
+                    p.winBet(hand.getInsuranceBet() * 3);
+                    Logger::info() << p.getName() << " insurance wins!";
+                }
 
-        game.roundState = RoundState::DealerTurn;
-        return;
+                if (hand.isBlackjack())
+                {
+                    p.pushBet(bet);
+                    Logger::info() << p.getName() << " pushes blackjack vs dealer blackjack.";
+                }
+                else
+                {
+                    p.loseBet(hand.getBet());
+                    Logger::info() << p.getName() << " loses to dealer blackjack.";
+                }
+            }
+            else
+            {
+                if (hand.getInsuranceBet() > 0)
+                {
+                    Logger::info() << p.getName() << " insurance lost.";
+                    hand.setInsuranceBet(0);
+                }
+
+                if (hand.isBlackjack() && !hand.isSplit())
+                {
+                    Logger::info() << p.getName() << " has Blackjack!";
+                    game.getStats().blackjacks++;
+                    hand.setFinished(true);
+                }
+            }
+        }
     }
 
-    if (hand.getInsuranceBet() > 0)
+    if (dealerHasBJ)
     {
-        std::cout << "Insurance lost.\n";
-        hand.setInsuranceBet(0);
+        game.roundState = RoundState::DealerTurn;
     }
     else
     {
         game.roundState = RoundState::PlayerTurn;
-    }
-
-    if (hand.isBlackjack() && !hand.isSplit())
-    {
-        std::cout << "Blackjack!\n";
-        game.getStats().blackjacks++;
-        hand.setFinished(true);
     }
 }

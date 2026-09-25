@@ -1,8 +1,8 @@
 #include "PlayerProfile.hpp"
 #include "Serialization.hpp"
 #include "Constants.hpp"
+#include "Logger.hpp"
 #include <fstream>
-#include <iostream>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -50,8 +50,7 @@ PlayerProfile PlayerProfile::load(const std::string &filename)
     std::ifstream file(filename);
     if (!file.is_open())
     {
-        std::cout << "No saved profile found at " << filename
-                  << ". Starting fresh." << std::endl;
+        Logger::warn() << "No saved profile found at " << filename << ". Starting fresh.";
         return PlayerProfile();
     }
 
@@ -63,8 +62,7 @@ PlayerProfile PlayerProfile::load(const std::string &filename)
     }
     catch (const std::exception &e)
     {
-        std::cerr << "Error loading profile: " << e.what()
-                  << ". Starting fresh." << std::endl;
+        Logger::error() << "Error loading profile: " << e.what() << ". Starting fresh.";
         return PlayerProfile();
     }
 }
@@ -78,8 +76,7 @@ void PlayerProfile::save(const std::string &filename) const
     std::ofstream file(filename);
     if (!file.is_open())
     {
-        std::cerr << "Error: could not open " << filename
-                  << " for writing." << std::endl;
+        Logger::error() << "Error: could not open " << filename << " for writing.";
         return;
     }
 
