@@ -25,7 +25,7 @@ namespace Constants
     constexpr int CUT_CARD_VALUE = 14;
 
     // Game rules
-    constexpr int NUM_DECKS = 2;
+    constexpr int NUM_DECKS = 6;
     constexpr int BLACKJACK = 21;
     constexpr int DEALER_STAND = 17;
     constexpr int MAX_SPLIT_HANDS = 4;
@@ -33,7 +33,12 @@ namespace Constants
 
     // Betting Constants
     constexpr int MINIMUM_BET = 10;
-    constexpr int MAXIMUM_BET = 500;
+    constexpr int MAXIMUM_BET = 1000;
+
+    // Kelly betting constants
+    // Blackjack variance per bet (standard deviation ~1.14, variance ~1.3)
+    // Used in Kelly formula: f* = edge / variance
+    constexpr float BLACKJACK_VARIANCE = 1.37f;
 
     // Drawing positions
     constexpr float DEALER_X = 680.f;
@@ -59,6 +64,38 @@ namespace Constants
     // Auto-play timing (seconds)
     constexpr float AUTOPLAY_AFTER_HAND_DELAY = 1.0f;
     constexpr float AUTOPLAY_AFTER_SHOE_DELAY = 3.0f;
+}
+
+// Gameplay configuration
+namespace GameConfig
+{
+    // Starting bankroll for all players (human and NPCs)
+    constexpr int STARTING_BANKROLL = 10000;
+
+    // Default Kelly fraction (1/3 Kelly ≈ 3% Risk of Ruin)
+    constexpr float KELLY_FRACTION = 0.33f;
+
+    // Default player count (1 = human only, up to 6)
+    constexpr int DEFAULT_PLAYER_COUNT = 1;
+
+    // NPC configuration
+    // strategy values: 0=Kelly, 1=Flat, 2=Fibonacci, 3=Paroli, 4=Martingale
+    struct NpcConfig
+    {
+        const char* name;
+        int bankroll;
+        int baseBet;
+        int strategy;
+    };
+
+    constexpr int NPC_COUNT = 5;
+    constexpr NpcConfig NPC_CONFIGS[] = {
+        {"Alice", 10000, 10, 1},  // Flat
+        {"Bob",   10000, 10, 2},  // Fibonacci
+        {"Carol", 10000, 10, 3},  // Paroli
+        {"Dave",  10000, 50, 4},  // Martingale
+        {"Eve",   10000, 50, 0}   // Kelly
+    };
 }
 
 // Summary overlay display time (seconds)
@@ -281,11 +318,20 @@ inline int BasicStrategy::calculateKellyBet(float trueCount, float kellyFraction
     if (trueCount < 2.0f)
         return minBet;
 
+    // Player edge based on true count (Hi-Lo system)
+    // At TC=2, edge is about 0.45%, increasing by ~0.5% per TC point
     float playerEdge = 0.005f * (trueCount - 1.0f) - 0.0005f;
     if (playerEdge <= 0.0f)
         return minBet;
 
-    float rawBet = kellyFraction * static_cast<float>(bankroll) * playerEdge;
+    // Kelly criterion for multi-outcome bets: f* = edge / variance
+    // For blackjack, variance per bet is approximately 1.3
+    float kellyFractionOptimal = playerEdge / Constants::BLACKJACK_VARIANCE;
+
+    // Apply user's Kelly multiplier (0.0 to 1.0 = 0% to full Kelly)
+    // Using less than full Kelly reduces volatility significantly
+    // while sacrificing relatively little growth (half Kelly = 75% of growth)
+    float rawBet = kellyFraction * kellyFractionOptimal * static_cast<float>(bankroll);
     int wager = static_cast<int>(rawBet);
 
     return std::max(minBet, std::min(maxBet, wager));

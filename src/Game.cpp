@@ -3,12 +3,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <filesystem>
-
-#include "Constants.hpp"
-#include "Graphics.hpp"
-#include "Player.hpp"
-#include "FontManager.hpp"
-#include "GameRenderer.hpp"
+   
+#include "FontManager.hpp" 
 #include "Logger.hpp"
 
 Game::Game()
@@ -87,13 +83,20 @@ void Game::startNewGame()
 {
     Logger::info("Starting new game");
     players.clear();
-    players.push_back(Player("William"));
 
-    // NPC names
-    const std::string npcNames[] = {"Alice", "Bob", "Carol", "Dave", "Eve"};
-    for (int i = 1; i < playerCount; i++)
+    // Human player (William) - always first
+    players.push_back(Player("William"));
+    players[0].setBankroll(GameConfig::STARTING_BANKROLL);
+
+    // NPCs from config
+    for (int i = 0; i < GameConfig::NPC_COUNT && i + 1 < playerCount; i++)
     {
-        players.push_back(Player(npcNames[i - 1]));
+        const auto& cfg = GameConfig::NPC_CONFIGS[i];
+        players.push_back(Player(cfg.name));
+        players[i + 1].setBankroll(cfg.bankroll);
+        players[i + 1].setBettingStrategy(static_cast<BettingStrategy>(cfg.strategy), cfg.baseBet);
+        Logger::info() << players[i + 1].getName() << " starts with $" << cfg.bankroll
+                       << " using " << cfg.strategy << " strategy";
     }
 
     auto profile = players[0].getProfile();
@@ -244,13 +247,17 @@ void Game::update(float deltaTime)
     {
         offerInsurance();
     }
-
+ 
     if (roundState == RoundState::PlayerTurn)
     {
         // Check if all players are done (check ALL hands, not just current)
         bool allDone = true;
         for (auto& p : players)
         {
+            // Skip players who didn't bet
+            if (p.hands[0].getBet() == 0)
+                continue;
+
             for (auto& hand : p.hands)
             {
                 if (!hand.isFinished())
@@ -265,12 +272,18 @@ void Game::update(float deltaTime)
         {
             roundState = RoundState::DealerTurn;
             return;
-        }
+        }  
 
         // Advance active player to next unfinished hand or next player
         while (activePlayerIndex < players.size())
         {
             auto& p = players[activePlayerIndex];
+            // Skip players who didn't bet (sitting out)
+            if (p.hands[0].getBet() == 0)
+            {
+                ++activePlayerIndex;
+                continue;
+            }
             // Skip finished hands
             while (p.currentHand < p.hands.size() && p.hands[p.currentHand].isFinished())
             {
@@ -666,14 +679,46 @@ void Game::confirmBet()
 
     Logger::info() << players[0].getName() << " bets " << players[0].hands[players[0].currentHand].getBet() << ". Remaining bankroll: " << players[0].getBankroll() << ". Running count: " << runningCount << ".";
 
-    // NPCs auto-bet minimum
+    // NPCs bet according to their strategy
     for (size_t i = 1; i < players.size(); i++)
     {
-        int npcBet = Constants::MINIMUM_BET;
+        // Skip NPCs who can't afford the minimum bet
+        if (players[i].getBankroll() < Constants::MINIMUM_BET)
+        {
+            Logger::info() << players[i].getName() << " is out of chips and sits out this round.";
+            players[i].hands[0].setBet(0);
+            continue;
+        }
+
+        int npcBet;
+        if (players[i].getBettingStrategy() == BettingStrategy::Kelly)
+        {
+            // Kelly bettors use true count-based sizing (1/3 Kelly)
+            float tc = BasicStrategy::computeTrueCount(runningCount, deck.size());
+            npcBet = calculateOptimalBet(tc, 0.33f, players[i].getBankroll(),
+                                        Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
+        }
+        else
+        {
+            // Progressive bettors use their strategy (uses internal lastRoundWon state)
+            npcBet = players[i].calculateNextBet(false);
+        }
+
+        // Apply table limits, then cap at bankroll
+        npcBet = std::max(npcBet, Constants::MINIMUM_BET);
+        npcBet = std::min(npcBet, Constants::MAXIMUM_BET);
+        npcBet = std::min(npcBet, players[i].getBankroll());
+
         if (players[i].placeBet(npcBet))
         {
             players[i].hands[0].setBet(npcBet);
             Logger::info() << players[i].getName() << " bets " << npcBet << ".";
+        }
+        else
+        {
+            // Shouldn't happen after the checks above, but be safe
+            Logger::warn() << players[i].getName() << " cannot place bet of " << npcBet << ".";
+            players[i].hands[0].setBet(0);
         }
     }
 
@@ -686,6 +731,18 @@ void Game::offerInsurance()
     auto& p = players[activePlayerIndex];
     Hand& hand = p.hands[p.currentHand];
     int maxIns = hand.getBet() / 2;
+
+    // Skip players who didn't bet
+    if (hand.getBet() == 0)
+    {
+        ++activePlayerIndex;
+        if (activePlayerIndex >= players.size())
+        {
+            activePlayerIndex = 0;
+            evaluator.evaluateBlackjack();
+        }
+        return;
+    }
 
     // Auto-decide for NPCs and auto-play human
     if (activePlayerIndex > 0 || gameSpeed == GameSpeed::AutoPlay)
@@ -779,15 +836,21 @@ const int Game::getMaxInsurance()
 
 void Game::deal()
 {
-    // Deal to all players
+    // Deal to all players who have a bet
     for (auto& p : players)
     {
-        dealCardToPlayer(p.hands[0]);
+        if (p.hands[0].getBet() > 0)
+        {
+            dealCardToPlayer(p.hands[0]);
+        }
     }
     dealCardToDealer(); // dealer hole card
     for (auto& p : players)
     {
-        dealCardToPlayer(p.hands[0]);
+        if (p.hands[0].getBet() > 0)
+        {
+            dealCardToPlayer(p.hands[0]);
+        }
     }
     dealCardToDealer(); // dealer up card
 

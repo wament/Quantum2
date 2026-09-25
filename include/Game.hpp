@@ -3,6 +3,7 @@
 #include <SFML/Graphics.hpp>
 #include <vector>
 
+#include "Constants.hpp"
 #include "Deck.hpp"
 #include "Hand.hpp"
 #include "Player.hpp"
@@ -103,9 +104,9 @@ private:
 
     // ---------------- Kelly / Risk of Ruin Slider ----------------
 
-    float kellyFraction = 0.33f; // 1/3 Kelly ≈ 3% RoR
+    float kellyFraction = GameConfig::KELLY_FRACTION; // 1/3 Kelly ≈ 3% RoR
 
-    int playerCount = 1;
+    int playerCount = GameConfig::DEFAULT_PLAYER_COUNT;
 
     void setPlayerCount(int count);
 
@@ -113,7 +114,7 @@ private:
     {
         bool dragging = false;
         sf::FloatRect bounds; // x, y, w, h (w is track width)
-        float value = 0.33f;  // 0.0..1.0 = Kelly fraction
+        float value = GameConfig::KELLY_FRACTION;  // 0.0..1.0 = Kelly fraction
     };
 
     SliderState riskSlider;
@@ -225,4 +226,3 @@ private:
     size_t getGlobalHandIndexForPlayer(size_t playerIdx, size_t handIdx); 
     size_t incrementGlobalHandIndex(size_t current);
 };
-

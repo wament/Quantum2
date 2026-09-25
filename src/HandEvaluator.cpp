@@ -50,7 +50,7 @@ void HandEvaluator::evaluateHands()
 
             if (hand.isSurrendered())
             {
-                p.winBet(hand.getBet() / 2);
+                p.loseBet(hand.getBet() / 2);
                 outcome.payout = hand.getBet() / 2;
                 outcome.won = false;
                 stats.losses++;
@@ -71,12 +71,12 @@ void HandEvaluator::evaluateHands()
             {
                 if (isNaturalBlackjack)
                 {
-                    p.winBet(hand.getBet() * (1 + Constants::BLACKJACK_PAYOUT));
+                    p.winBet(hand.getBet() * Constants::BLACKJACK_PAYOUT);
                     outcome.payout = hand.getBet() * (1 + Constants::BLACKJACK_PAYOUT);
                 }
                 else
                 {
-                    p.winBet(hand.getBet() * 2);
+                    p.winBet(hand.getBet());
                     outcome.payout = hand.getBet() * 2;
                 }
                 outcome.won = true;
@@ -87,7 +87,7 @@ void HandEvaluator::evaluateHands()
             }
             else
             {
-                if (!isNaturalBlackjack) p.pushBet(hand.getBet());
+                if (!isNaturalBlackjack) {}
                 outcome.payout = hand.getBet();
                 outcome.won = true;
                 stats.pushes++;
@@ -96,6 +96,12 @@ void HandEvaluator::evaluateHands()
             }
 
             game.currentRoundRecord.playerHands.push_back(outcome);
+
+            // Record result for NPC progressive betting strategies
+            if (pIdx > 0)
+            {
+                p.recordRoundResult(outcome.won);
+            }
 
             if (netProfitOnHand > stats.greatestHand)
                 stats.greatestHand = netProfitOnHand;
@@ -211,13 +217,12 @@ void HandEvaluator::evaluateBlackjack()
             {
                 if (hand.getInsuranceBet() > 0)
                 {
-                    p.winBet(hand.getInsuranceBet() * 3);
+                    p.winBet(hand.getInsuranceBet() * 2);
                     Logger::info() << p.getName() << " insurance wins!";
                 }
 
                 if (hand.isBlackjack())
                 {
-                    p.pushBet(bet);
                     Logger::info() << p.getName() << " pushes blackjack vs dealer blackjack.";
                 }
                 else
