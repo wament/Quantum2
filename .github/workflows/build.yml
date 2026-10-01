@@ -13,27 +13,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache vcpkg
-        id: cache-vcpkg
-        uses: actions/cache@v4
+      - name: Use vcpkg
+        id: vcpkg-action
+        uses: lukka/run-vcpkg@v2
         with:
-          path: |
-            vcpkg
-          key: vcpkg-macos-${{ hashFiles('**/CMakeLists.txt') }}
-          restore-keys: |
-            vcpkg-macos-
+          destination: '/Users/runner/vcpkg'
 
-      - name: Install vcpkg
-        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git
-          cd vcpkg
-          ./bootstrap-vcpkg.sh -disableMetrics
-          ./vcpkg install sfml --triplet arm64-osx
+      - name: Install SFML
+        run: /Users/runner/vcpkg/vcpkg install sfml --triplet arm64-osx
 
       - name: Configure CMake
         run: |
-          cmake -B build -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release -G "Unix Makefiles"
+          cmake -B build -DCMAKE_TOOLCHAIN_FILE=/Users/runner/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release -G "Unix Makefiles"
 
       - name: Build
         run: cmake --build build --parallel
@@ -55,7 +46,7 @@ jobs:
 
           # Copy SFML frameworks AND dependencies from vcpkg to app's Frameworks/
           mkdir -p "$APP_DIR/Contents/Frameworks"
-          vcpkg_lib="vcpkg/installed/arm64-osx/lib"
+          vcpkg_lib="/Users/runner/vcpkg/installed/arm64-osx/lib"
 
           # Copy SFML frameworks
           cp -R "$vcpkg_lib"/SFML-*.framework "$APP_DIR/Contents/Frameworks/" || true
@@ -97,49 +88,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache vcpkg
-        id: cache-vcpkg
-        uses: actions/cache@v4
+      - name: Use vcpkg
+        id: vcpkg-action
+        uses: lukka/run-vcpkg@v2
         with:
-          path: |
-            vcpkg
-          key: vcpkg-windows-${{ hashFiles('**/CMakeLists.txt') }}
-          restore-keys: |
-            vcpkg-windows-
+          destination: 'C:/vcpkg'
 
       - name: Install SFML via vcpkg
-        if: steps.cache-vcpkg.outputs.cache-hit != 'true'
-        run: |
-          git clone https://github.com/microsoft/vcpkg.git
-          cd vcpkg
-          .\bootstrap-vcpkg.bat -disableMetrics
-          .\vcpkg install sfml:x64-windows
+        run: C:/vcpkg/vcpkg.exe install sfml:x64-windows
 
       - name: Verify vcpkg
         shell: pwsh
         run: |
           Write-Host "Workspace: $env:GITHUB_WORKSPACE"
           Write-Host "vcpkg:"
-          Get-Item "$env:GITHUB_WORKSPACE\vcpkg\vcpkg.exe"
+          Get-Item "C:\vcpkg\vcpkg.exe"
 
           Write-Host "Toolchain:"
-          Get-Item "$env:GITHUB_WORKSPACE\vcpkg\scripts\buildsystems\vcpkg.cmake"
+          Get-Item "C:\vcpkg\scripts\buildsystems\vcpkg.cmake"
 
       - name: Check SFML installation
         shell: pwsh
         run: |
           Write-Host "Installed SFML:"
-          .\vcpkg\vcpkg.exe list | Select-String "sfml"
+          C:\vcpkg\vcpkg.exe list | Select-String "sfml"
 
           Write-Host ""
           Write-Host "SFML config:"
-          Get-Content ".\vcpkg\installed\x64-windows\share\sfml\SFMLConfig.cmake" | Select-Object -First 100
+          Get-Content "C:\vcpkg\installed\x64-windows\share\sfml\SFMLConfig.cmake" | Select-Object -First 100
 
 
       - name: Configure CMake
         shell: pwsh
         run: |
-          $toolchain = Join-Path $env:GITHUB_WORKSPACE "vcpkg/scripts/buildsystems/vcpkg.cmake"
+          $toolchain = "C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
 
           Write-Host "Using vcpkg toolchain: $toolchain"
 
@@ -166,7 +148,7 @@ jobs:
           Copy-Item -Recurse assets "$pkgDir\assets"
 
           # Copy ALL runtime DLLs from vcpkg (SFML + dependencies: freetype, openal, etc.)
-          $vcpkgBin = "vcpkg\installed\x64-windows\bin"
+          $vcpkgBin = "C:/vcpkg/installed/x64-windows/bin"
           Copy-Item "$vcpkgBin\*.dll" "$pkgDir\" -Force 
 
           Compress-Archive -Path "$pkgDir\*" -DestinationPath "Blackjack2-Windows.zip"
