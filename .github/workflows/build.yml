@@ -17,6 +17,7 @@ jobs:
         uses: lukka/run-vcpkg@v11.6
         with:
           runVcpkgInstall: true
+          vcpkgGitCommitId: eb2d3a3279fd019cb7733072d86900d0ad2a1aef
         env:
           VCPKG_DEFAULT_TRIPLET: arm64-osx
 
@@ -89,6 +90,7 @@ jobs:
         uses: lukka/run-vcpkg@v11.6
         with:
           runVcpkgInstall: true
+          vcpkgGitCommitId: eb2d3a3279fd019cb7733072d86900d0ad2a1aef
         env:
           VCPKG_DEFAULT_TRIPLET: x64-windows
 
