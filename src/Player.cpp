@@ -1,3 +1,6 @@
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 #include "Player.hpp"
 #include "Constants.hpp"
 #include "Logger.hpp"
@@ -129,11 +132,11 @@ int Player::calculateNextBet(bool lastRoundWon)
 
     switch (bettingStrategy)
     {
-    case BettingStrategy::Kelly:
+    case BettingStrategy::Kelly: {
         // Kelly is calculated by Game using true count, not here
         return baseBet;
-
-    case BettingStrategy::Martingale:
+    }
+    case BettingStrategy::Martingale: {
         // Double after loss, reset to base after win
         if (!won)
         {
@@ -147,8 +150,8 @@ int Player::calculateNextBet(bool lastRoundWon)
                 currentProgressiveBet = baseBet * 64;
         }
         return currentProgressiveBet;
-
-    case BettingStrategy::Fibonacci:
+    }
+    case BettingStrategy::Fibonacci: {
         // Move up sequence after loss, down two after win
         static const int fibSeq[] = {1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144};
         static const int maxFibIndex = 11;
@@ -163,8 +166,8 @@ int Player::calculateNextBet(bool lastRoundWon)
         }
         currentProgressiveBet = baseBet * fibSeq[fibIndex];
         return currentProgressiveBet;
-
-    case BettingStrategy::Paroli:
+    }
+    case BettingStrategy::Paroli: {
         // Double after win (up to 3 wins), reset after loss
         if (won)
         {
@@ -186,10 +189,10 @@ int Player::calculateNextBet(bool lastRoundWon)
             currentProgressiveBet = baseBet;
         }
         return currentProgressiveBet;
-
-    case BettingStrategy::Flat:
-    default:
+    }
+    default: { // Flat and unknown strategies
         return baseBet;
+    }
     }
 }
 

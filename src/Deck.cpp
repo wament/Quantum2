@@ -40,7 +40,7 @@ void Deck::shuffle()
 
     // 2. Perform the shuffle
     lastShuffleSeed = std::random_device{}();
-    rng = std::mt19937(lastShuffleSeed);
+    rng = std::mt19937(static_cast<std::mt19937::result_type>(lastShuffleSeed));
     std::shuffle(cards.begin(), cards.end(), rng);
 
 
@@ -115,7 +115,7 @@ void Deck::reshuffleWithRemaining(const std::vector<Card>& tableCards)
 
     // Shuffle the combined deck
     lastShuffleSeed = std::random_device{}();
-    rng = std::mt19937(lastShuffleSeed);
+    rng = std::mt19937(static_cast<std::mt19937::result_type>(lastShuffleSeed));
     std::shuffle(cards.begin(), cards.end(), rng);
 
     cutCardReached = false;

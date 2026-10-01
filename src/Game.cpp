@@ -234,7 +234,7 @@ void Game::update(float deltaTime)
     // Auto-play: auto-bet with Kelly strategy
     if (roundState == RoundState::PlaceBets && gameSpeed == GameSpeed::AutoPlay)
     {
-        float tc = BasicStrategy::computeTrueCount(runningCount, deck.size());
+        float tc = BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
         int optimal = calculateOptimalBet(tc, kellyFraction, players[0].getBankroll(),
                                           Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
         players[0].hands[0].setBet(optimal);
@@ -384,7 +384,7 @@ void Game::updateHUDState()
 
     hudState.runningCount = runningCount;
 
-    hudState.trueCount = BasicStrategy::computeTrueCount(runningCount, deck.size());
+    hudState.trueCount = BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
 
     hudState.cardsRemaining = deck.size();
 
@@ -693,7 +693,7 @@ void Game::confirmBet()
         if (players[i].getBettingStrategy() == BettingStrategy::Kelly)
         {
             // Kelly bettors use true count-based sizing (1/3 Kelly)
-            float tc = BasicStrategy::computeTrueCount(runningCount, deck.size());
+            float tc = BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
             npcBet = calculateOptimalBet(tc, 0.33f, players[i].getBankroll(),
                                         Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
         }
@@ -746,7 +746,7 @@ void Game::offerInsurance()
     // Auto-decide for NPCs and auto-play human
     if (activePlayerIndex > 0 || gameSpeed == GameSpeed::AutoPlay)
     {
-        float tc = BasicStrategy::computeTrueCount(runningCount, deck.size());
+        float tc = BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
         if (tc >= 3.0f && maxIns > 0)
         {
             hand.setInsuranceBet(maxIns);
