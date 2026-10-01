@@ -13,18 +13,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use vcpkg
-        id: vcpkg-action
-        uses: lukka/run-vcpkg@v2
+      - name: Use vcpkg and install SFML
+        uses: lukka/run-vcpkg@v11.6
         with:
-          destination: '/Users/runner/vcpkg'
-
-      - name: Install SFML
-        run: /Users/runner/vcpkg/vcpkg install sfml --triplet arm64-osx
+          runVcpkgInstall: true
+        env:
+          VCPKG_DEFAULT_TRIPLET: arm64-osx
 
       - name: Configure CMake
-        run: |
-          cmake -B build -DCMAKE_TOOLCHAIN_FILE=/Users/runner/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release -G "Unix Makefiles"
+        run: cmake -B build -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release -G "Unix Makefiles"
 
       - name: Build
         run: cmake --build build --parallel
@@ -46,7 +43,7 @@ jobs:
 
           # Copy SFML frameworks AND dependencies from vcpkg to app's Frameworks/
           mkdir -p "$APP_DIR/Contents/Frameworks"
-          vcpkg_lib="/Users/runner/vcpkg/installed/arm64-osx/lib"
+          vcpkg_lib="$VCPKG_ROOT/installed/arm64-osx/lib"
 
           # Copy SFML frameworks
           cp -R "$vcpkg_lib"/SFML-*.framework "$APP_DIR/Contents/Frameworks/" || true
@@ -88,47 +85,18 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Use vcpkg
-        id: vcpkg-action
-        uses: lukka/run-vcpkg@v2
+      - name: Use vcpkg and install SFML
+        uses: lukka/run-vcpkg@v11.6
         with:
-          destination: 'C:/vcpkg'
-
-      - name: Install SFML via vcpkg
-        run: C:/vcpkg/vcpkg.exe install sfml:x64-windows
-
-      - name: Verify vcpkg
-        shell: pwsh
-        run: |
-          Write-Host "Workspace: $env:GITHUB_WORKSPACE"
-          Write-Host "vcpkg:"
-          Get-Item "C:\vcpkg\vcpkg.exe"
-
-          Write-Host "Toolchain:"
-          Get-Item "C:\vcpkg\scripts\buildsystems\vcpkg.cmake"
-
-      - name: Check SFML installation
-        shell: pwsh
-        run: |
-          Write-Host "Installed SFML:"
-          C:\vcpkg\vcpkg.exe list | Select-String "sfml"
-
-          Write-Host ""
-          Write-Host "SFML config:"
-          Get-Content "C:\vcpkg\installed\x64-windows\share\sfml\SFMLConfig.cmake" | Select-Object -First 100
-
+          runVcpkgInstall: true
+        env:
+          VCPKG_DEFAULT_TRIPLET: x64-windows
 
       - name: Configure CMake
         shell: pwsh
         run: |
-          $toolchain = "C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
-
+          $toolchain = Join-Path $env:VCPKG_ROOT "scripts/buildsystems/vcpkg.cmake"
           Write-Host "Using vcpkg toolchain: $toolchain"
-
-          if (!(Test-Path $toolchain)) {
-              Write-Error "vcpkg toolchain file not found!"
-              exit 1
-          }
           cmake -B build --toolchain $toolchain -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
@@ -148,8 +116,8 @@ jobs:
           Copy-Item -Recurse assets "$pkgDir\assets"
 
           # Copy ALL runtime DLLs from vcpkg (SFML + dependencies: freetype, openal, etc.)
-          $vcpkgBin = "C:/vcpkg/installed/x64-windows/bin"
-          Copy-Item "$vcpkgBin\*.dll" "$pkgDir\" -Force 
+          $vcpkgBin = Join-Path "$env:VCPKG_ROOT\installed\x64-windows" "bin"
+          Copy-Item "$vcpkgBin\*.dll" "$pkgDir\" -Force
 
           Compress-Archive -Path "$pkgDir\*" -DestinationPath "Blackjack2-Windows.zip"
 
