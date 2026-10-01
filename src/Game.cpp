@@ -85,8 +85,7 @@ void Game::startNewGame()
     players.clear();
 
     // Human player (William) - always first
-    players.push_back(Player("William"));
-    players[0].setBankroll(GameConfig::STARTING_BANKROLL);
+    players.push_back(Player("William")); 
 
     // NPCs from config
     for (int i = 0; i < GameConfig::NPC_COUNT && i + 1 < playerCount; i++)
