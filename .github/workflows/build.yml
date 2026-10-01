@@ -107,6 +107,24 @@ jobs:
       - name: Package Windows
         shell: pwsh
         run: |
+          # Debug output to help locate vcpkg installation
+          Write-Host "VCPKG_ROOT is set to: $env:VCPKG_ROOT"
+          
+          # Find the actual location of installed packages dynamically
+          $vcpkgBin = Join-Path "$env:VCPKG_ROOT\installed\x64-windows" "bin"
+          Write-Host "Looking for DLLs in: $vcpkgBin"
+          
+          if (-not (Test-Path -LiteralPath $vcpkgBin)) {
+              # Standard location doesn't exist, search dynamically
+              $dllDirs = Get-ChildItem -Path "$env:VCPKG_ROOT\installed" -Directory -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "bin" }
+              if ($dllDirs.Count -gt 0) {
+                  $vcpkgBin = $dllDirs[0].FullName
+                  Write-Host "Found DLL directory at: $vcpkgBin"
+              } else {
+                  throw "Could not find vcpkg installed packages directory under $env:VCPKG_ROOT\installed"
+              }
+          }
+
           $buildDir = "build\Release"
           $pkgDir = "package"
           New-Item -ItemType Directory -Path $pkgDir -Force
@@ -118,8 +136,11 @@ jobs:
           Copy-Item -Recurse assets "$pkgDir\assets"
 
           # Copy ALL runtime DLLs from vcpkg (SFML + dependencies: freetype, openal, etc.)
-          $vcpkgBin = Join-Path "$env:VCPKG_ROOT\installed\x64-windows" "bin"
-          Copy-Item "$vcpkgBin\*.dll" "$pkgDir\" -Force
+          Write-Host "Copying DLLs from: $vcpkgBin"
+          Get-ChildItem -Path $vcpkgBin -Filter "*.dll" | ForEach-Object {
+              Copy-Item $_.FullName "$pkgDir\" -Force
+              Write-Host "Copied: $($_.Name)"
+          }
 
           Compress-Archive -Path "$pkgDir\*" -DestinationPath "Blackjack2-Windows.zip"
 
