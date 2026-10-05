@@ -40,6 +40,7 @@ void HandEvaluator::evaluateHands()
             HandOutcome outcome;
             outcome.wager = hand.getBet();
             outcome.playerIndex = static_cast<int>(pIdx);
+            outcome.playerName = p.getName();
             outcome.actions = game.handActions[game.getGlobalHandIndexForPlayer(pIdx, handIndex)];
             for (size_t c = 0; c < hand.size(); c++)
                 outcome.cards.push_back(hand.getCard(c));

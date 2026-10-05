@@ -1,3 +1,5 @@
+#include <cmath>
+#include "Game.hpp"
 #include "GameRenderer.hpp"
 #include "Game.hpp"
 #include "Constants.hpp"
@@ -357,14 +359,90 @@ void GameRenderer::drawSummaryOverlay(Game &game)
     }
 }
 
-void GameRenderer::drawMenuItem(Game &game, const std::string &label, bool selected, float y)
+void GameRenderer::drawMenuItem(Game &game, const std::string &label, bool selected, float y, bool hovered)
 {
     sf::Text text(FontManager::get(), label, 24);
-    text.setFillColor(selected ? sf::Color(255, 215, 0) : sf::Color(200, 200, 200));
+
+    // Hovered and keyboard-selected options are both drawn in gold; hovering is
+    // additionally bolded so the option under the cursor stands out clearly.
+    if (hovered || selected)
+        text.setFillColor(sf::Color(255, 215, 0));
+    else
+        text.setFillColor(sf::Color(200, 200, 200));
+
+    if (hovered)
+        text.setStyle(sf::Text::Bold);
+
     sf::FloatRect bounds = text.getLocalBounds();
     text.setOrigin(sf::Vector2f(bounds.size.x / 2.0f, bounds.size.y / 2.0f));
     text.setPosition(sf::Vector2f(static_cast<float>(game.window.getSize().x) / 2.0f, y));
     game.window.draw(text);
+}
+
+int GameRenderer::getHoveredMenuItemIndex(Game &game) const
+{
+    float cx = static_cast<float>(game.window.getSize().x) / 2.0f;
+    sf::Vector2f mousePos = game.window.mapPixelToCoords(sf::Mouse::getPosition(game.window));
+
+    int hoveredIndex = -1;
+    const float rowHalfHeight = 30.f; // comfortably covers a size-24 menu line
+    float bestDistance = rowHalfHeight;
+    for (int i = 0; i < static_cast<int>(mainMenuItems().size()); ++i)
+    {
+        const MainMenuItem &item = mainMenuItems()[i];
+        float distance = std::abs(mousePos.y - item.y);
+        if (distance < bestDistance && std::abs(mousePos.x - cx) < 250.f)
+        {
+            // Keep the option whose centre is closest to the cursor so that a
+            // point between two rows resolves unambiguously to the nearer one.
+            bestDistance = distance;
+            hoveredIndex = i;
+        }
+    }
+    return hoveredIndex;
+}
+
+// Vertical pixel-centre of pause-menu row `index` at the current window height. Uses the
+// fractional positions from pauseMenuItems() so it matches drawPauseMenu and the click/hover
+// hit-testing exactly -- one source of truth for where those rows sit.
+float GameRenderer::pauseRowY(Game &game, int index) const
+{
+    if (index < 0 || index >= static_cast<int>(pauseMenuItems().size()))
+        return -1.f;
+
+    float height = game.window.getSize().y;
+    return height * pauseMenuItems()[index].yFrac;
+}
+
+// Index of the pause-menu row currently under the mouse cursor, or -1 if none. Nearest-centre
+// within each row's half-height and centred horizontally around the screen centre -- used by both
+// hover highlighting (drawPauseMenu) and click selection (processPauseEvents) so they agree.
+int GameRenderer::getHoveredPauseMenuItemIndex(Game &game) const
+{
+    constexpr float rowHalfHeight = 20.f;
+
+    sf::Vector2i mousePos = sf::Mouse::getPosition(game.window);
+    int hoveredIndex = -1;
+    double bestDistance = 1e9;
+    for (int i = 0; i < static_cast<int>(pauseMenuItems().size()); ++i)
+    {
+        float y = pauseRowY(game, i);
+        if (y <= 0.f)
+            continue;
+
+        // Rows are horizontally centred around the screen's horizontal centre.
+        float cx = game.window.getSize().x / 2.0f;
+        if (std::abs(static_cast<float>(mousePos.x) - cx) > 150.f)
+            continue;
+
+        double distance = std::abs(static_cast<double>(static_cast<float>(mousePos.y) - y));
+        if (distance <= static_cast<double>(rowHalfHeight) && distance < bestDistance)
+        {
+            bestDistance = distance;
+            hoveredIndex = i;
+        }
+    }
+    return hoveredIndex;
 }
 
 void GameRenderer::drawMainMenu(Game &game)
@@ -379,28 +457,42 @@ void GameRenderer::drawMainMenu(Game &game)
     title.setPosition(sf::Vector2f(cx, 150.0f));
     game.window.draw(title);
 
-    drawMenuItem(game, "Play Game", game.menuSelection == MenuOption::PlayGame, 220.0f);
-    drawMenuItem(game, "Players: " + std::to_string(game.playerCount) + " (Left/Right)",
-                game.menuSelection == MenuOption::PlayerCount, 260.0f);
-    std::string speedLabel = "Speed: ";
-    switch (game.gameSpeed)
+    int hoveredIndex = getHoveredMenuItemIndex(game);
+
+    for (int i = 0; i < static_cast<int>(mainMenuItems().size()); ++i)
     {
-    case GameSpeed::Fast:
-        speedLabel += "Fast";
-        break;
-    case GameSpeed::Normal:
-        speedLabel += "Normal";
-        break;
-    case GameSpeed::Slow:
-        speedLabel += "Slow";
-        break;
-    case GameSpeed::AutoPlay:
-        speedLabel += "AutoPlay";
-        break;
+        const MainMenuItem &item = mainMenuItems()[i];
+        std::string label;
+        switch (item.option)
+        {
+        case MenuOption::PlayGame:
+            label = "Play Game";
+            break;
+        case MenuOption::PlayerCount:
+            label = "Players: " + std::to_string(game.playerCount) + " (Left/Right)";
+            break;
+        case MenuOption::GameSpeed:
+        {
+            std::string speedLabel = "Speed: ";
+            switch (game.gameSpeed)
+            {
+            case GameSpeed::Fast:      speedLabel += "Fast"; break;
+            case GameSpeed::Normal:    speedLabel += "Normal"; break;
+            case GameSpeed::Slow:      speedLabel += "Slow"; break;
+            case GameSpeed::AutoPlay:  speedLabel += "AutoPlay"; break;
+            }
+            speedLabel += " (Left/Right)";
+            label = speedLabel;
+            break;
+        }
+        case MenuOption::ReviewHistory:
+            label = "Review History";
+            break;
+        }
+
+        bool hovered = (i == hoveredIndex);
+        drawMenuItem(game, label, game.menuSelection == item.option, item.y, hovered);
     }
-    speedLabel += " (Left/Right)";
-    drawMenuItem(game, speedLabel, game.menuSelection == MenuOption::GameSpeed, 300.0f);
-    drawMenuItem(game, "Review History", game.menuSelection == MenuOption::ReviewHistory, 340.0f);
 
     sf::Text instr(FontManager::get(), "Up/Down: navigate  Enter: select  Esc: quit", 14);
     instr.setFillColor(sf::Color(140, 140, 140));
@@ -425,9 +517,15 @@ void GameRenderer::drawPauseMenu(Game &game)
     title.setPosition(sf::Vector2f(cx, h * 0.25f));
     game.window.draw(title);
 
-    drawMenuItem(game, "Resume", game.pauseSelection == PauseOption::Resume, h * 0.40f);
-    drawMenuItem(game, "Restart", game.pauseSelection == PauseOption::Restart, h * 0.48f);
-    drawMenuItem(game, "Quit to Menu", game.pauseSelection == PauseOption::QuitToMenu, h * 0.56f);
+    int hoveredIndex = getHoveredPauseMenuItemIndex(game);
+    for (int i = 0; i < static_cast<int>(pauseMenuItems().size()); ++i)
+    {
+        const PauseMenuItem &item = pauseMenuItems()[i];
+        bool selected = (game.pauseSelection == item.option);
+        bool hovered = (i == hoveredIndex);
+
+        drawMenuItem(game, item.label, selected, pauseRowY(game, i), hovered);
+    }
 
     sf::Text instr(FontManager::get(), "Up/Down: navigate  Enter: select  Esc: resume", 14);
     instr.setFillColor(sf::Color(140, 140, 140));

@@ -1,5 +1,3 @@
-// src/Replay.cpp
-
 #include "Replay.hpp"
 
 #include "Constants.hpp"
@@ -65,7 +63,7 @@ void Replay::loadHistory(const std::vector<ShoeRecord> &shoes)
         historyEntries.push_back(entry);
 
         // For the next shoe's startingCount we'd need to track
-        // runningCount through the full shoe — currently we approximate
+        // runningCount through the full shoe - currently we approximate
         // by using the last round's runningCount if available.
         if (!shoe.rounds.empty())
         {
@@ -160,20 +158,25 @@ Replay::buildSteps(const ShoeRecord &shoe)
     {
         const auto &round = shoe.rounds[r];
 
-        // --- Initial deal: player hand 0 card 0, dealer hole, player hand 0 card 1, dealer up ---
-        // We replay the exact deal order from Game::deal().
-        // Player hand 0 card 0
-        if (!round.playerHands.empty())
+        // --- Initial deal: replay Game::deal() order across ALL seats at the table ---
+        // Order: [all active seats] first card -> dealer hole card ->
+        //        [all active seats] second card -> dealer up card.
+        for (int h = 0; h < static_cast<int>(round.playerHands.size()); ++h)
         {
-            ReplayInternals::ReplayStep s;
-            s.roundIndex = r;
-            s.type = ReplayInternals::ReplayStep::Type::DealCard;
-            s.handIndex = 0;
-            s.card = round.playerHands[0].cards[0];
-            addCardStep(s);
+            const auto &handOutcome = round.playerHands[h];
+            if (handOutcome.cards.size() >= 1)
+            {
+                ReplayInternals::ReplayStep s;
+                s.roundIndex = r;
+                s.type = ReplayInternals::ReplayStep::Type::DealCard;
+                s.handIndex = h;
+                s.card = handOutcome.cards[0];
+                addCardStep(s);
+            }
         }
 
         // Dealer hole card
+        if (!round.dealerCards.empty())
         {
             ReplayInternals::ReplayStep holeStep;
             holeStep.roundIndex = r;
@@ -183,15 +186,18 @@ Replay::buildSteps(const ShoeRecord &shoe)
             addCardStep(holeStep);
         }
 
-        // Player hand 0 card 1
-        if (!round.playerHands.empty() && round.playerHands[0].cards.size() >= 2)
+        for (int h = 0; h < static_cast<int>(round.playerHands.size()); ++h)
         {
-            ReplayInternals::ReplayStep s;
-            s.roundIndex = r;
-            s.type = ReplayInternals::ReplayStep::Type::DealCard;
-            s.handIndex = 0;
-            s.card = round.playerHands[0].cards[1];
-            addCardStep(s);
+            const auto &handOutcome = round.playerHands[h];
+            if (handOutcome.cards.size() >= 2)
+            {
+                ReplayInternals::ReplayStep s;
+                s.roundIndex = r;
+                s.type = ReplayInternals::ReplayStep::Type::DealCard;
+                s.handIndex = h;
+                s.card = handOutcome.cards[1];
+                addCardStep(s);
+            }
         }
 
         // Dealer up card
@@ -383,6 +389,7 @@ ReplayInternals::ReplayState Replay::buildStateAtStep(int stepIndex) const
         // Build HandSnapshot using HandOutcome data + Hand constructor
         ReplayInternals::ReplayState::HandSnapshot hs;
         hs.bet = ho.wager;
+        hs.playerName = ho.playerName;
         hs.actionsTaken = ho.actions;
         hs.isFinished = true; // will be refined if mid-hand
         hs.isSplit = false;   // infer if needed
@@ -579,6 +586,8 @@ void Replay::selectPreviousShoe()
     if (selectedHistoryIndex > 0)
     {
         --selectedHistoryIndex;
+        // Keep the newly selected row within view while scrolling with the arrow keys.
+        adjustHistorySelectionVisibility();
     }
 }
 
@@ -587,7 +596,81 @@ void Replay::selectNextShoe()
     if (selectedHistoryIndex < static_cast<int>(historyEntries.size()) - 1)
     {
         ++selectedHistoryIndex;
+        // Keep the newly selected row within view while scrolling with the arrow keys.
+        adjustHistorySelectionVisibility();
     }
+}
+
+// Index of the list row under `mousePos` (window pixels), or -1 if none. Rows start at y=120 in
+// window space with 40px height and the highlight background spans x [50, 1250] (see drawHistoryList).
+// The current scroll offset shifts each row's on-screen position so hover highlighting and click
+// selection agree on exactly the same rows as drawn -- one source of truth for hover + click.
+int Replay::hoveredHistoryRow(sf::Vector2i mousePos) const
+{
+    if (historyEntries.empty())
+        return -1;
+
+    constexpr float topStart = 120.f; // matches drawHistoryList row origin
+    constexpr float lineHeight = 40.f;
+
+    for (int i = 0; i < static_cast<int>(historyEntries.size()); ++i)
+    {
+        // Scroll offset shifts rows up so off-screen entries become hoverable and clickable.
+        float rowTop = topStart + static_cast<float>(i) * lineHeight -
+                       static_cast<float>(historyScrollOffset) * lineHeight;
+
+        // Match the draw clip exactly: only rows actually drawn below the header are selectable,
+        // so a row that has scrolled into the title is not hoverable either.
+        if (rowTop < topStart) continue;
+
+        bool inX = mousePos.x >= 50 && mousePos.x <= 1250;
+        bool inY = (mousePos.y >= static_cast<int>(rowTop - 5.f)) &&
+                   (mousePos.y <= static_cast<int>(rowTop + lineHeight));
+        if (inX && inY)
+            return i;
+    }
+
+    return -1;
+}
+
+// How many shoe rows fit in the list's visible area above the window bottom edge. Rows begin at y=120
+// and are 40px tall, so this is one source of truth shared by scrolling, the scrollbar, and clamping.
+int Replay::historyVisibleRowCount() const
+{
+    constexpr float topStart = 120.f;
+    constexpr float lineHeight = 40.f;
+    int windowHeight = window.getSize().y;
+    if (windowHeight <= topStart + lineHeight)
+        return 0;
+    return static_cast<int>((windowHeight - topStart - lineHeight) / lineHeight) + 1;
+}
+
+// Largest scroll offset that still leaves at least one row visible in the list.
+int Replay::maxHistoryScrollOffset() const
+{
+    int maxOffset = static_cast<int>(historyEntries.size()) - historyVisibleRowCount();
+    return maxOffset > 0 ? maxOffset : 0;
+}
+
+// After arrow-key navigation, clamp the scroll offset so the selected row stays within view. Used by
+// selectPreviousShoe / selectNextShoe to keep keyboard scrolling consistent with wheel scrolling.
+void Replay::adjustHistorySelectionVisibility()
+{
+    int visible = historyVisibleRowCount();
+    if (visible < 1)
+        return;
+
+    // Bring the selected row back into view when it scrolls above or below the visible window.
+    if (selectedHistoryIndex < historyScrollOffset)
+        historyScrollOffset = selectedHistoryIndex;                       // scrolled up past selection
+    else if (selectedHistoryIndex >= historyScrollOffset + visible)
+        historyScrollOffset = selectedHistoryIndex - visible + 1;         // scrolled down past selection
+
+    int maxOffset = maxHistoryScrollOffset();
+    if (historyScrollOffset < 0)
+        historyScrollOffset = 0;
+    if (historyScrollOffset > maxOffset)
+        historyScrollOffset = maxOffset;
 }
 
 void Replay::setStartingBankroll(int bankroll)
@@ -642,6 +725,46 @@ void Replay::processEvents(sf::Event &event)
         // Let Game handle shutdown; just exit replay mode.
         exitReplay();
         return;
+    }
+
+    // Track cursor position for history-list hover highlighting and click selection.
+    if (auto mouseMove = event.getIf<sf::Event::MouseMoved>())
+    {
+        replayCursorPos = sf::Vector2i(mouseMove->position.x, mouseMove->position.y);
+    }
+
+    // Left-click a row to load it, matching the Enter/Right keyboard path above so the history
+    // list selects exactly like every other menu: hover to highlight, left-click to pick.
+    if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
+    {
+        if (mode == Mode::HistoryList &&
+            clicked->button == sf::Mouse::Button::Left)
+        {
+            int hoveredIndex = hoveredHistoryRow(replayCursorPos);
+            if (hoveredIndex >= 0 && !allShoes.empty())
+            {
+                selectedHistoryIndex = hoveredIndex;
+                loadShoe(allShoes[selectedHistoryIndex], selectedHistoryIndex);
+            }
+        }
+    }
+
+    // Mouse wheel scrolls the shoe list: up reveals earlier entries, down reveals later ones. This is
+    // one path shared with keyboard Up/Down and the hover/click selection above -- off-screen rows are
+    // selectable once scrolled into view. A positive delta scrolls up (fewer rows past the top).
+    if (auto wheel = event.getIf<sf::Event::MouseWheelScrolled>())
+    {
+        if (mode == Mode::HistoryList && !historyEntries.empty())
+        {
+            int offsetDelta = wheel->delta > 0.f ? -1 : +1;
+            historyScrollOffset += offsetDelta;
+
+            int maxOffset = maxHistoryScrollOffset();
+            if (historyScrollOffset < 0)
+                historyScrollOffset = 0;
+            if (historyScrollOffset > maxOffset)
+                historyScrollOffset = maxOffset;
+        }
     }
 
     // Handle KeyPressed events
@@ -833,13 +956,13 @@ void Replay::draw()
 
 void Replay::drawHistoryList()
 {
-    sf::Text title(font, "Review History — Select a Shoe", 28);
-    title.setString("Review History — Select a Shoe");
+    sf::Text title(font, "Review History - Select a Shoe", 28);
+    title.setString("Review History - Select a Shoe");
     title.setPosition({60.f, 30.f});
     window.draw(title);
 
-    sf::Text instructions(font, "↑/↓ navigate  •  Enter: replay  •  Esc: exit", 16);
-    instructions.setString("↑/↓ navigate  •  Enter: replay  •  Esc: exit");
+    sf::Text instructions(font, "Up/Down navigate  *  Enter: replay  *  Esc: exit", 16);
+    instructions.setString("Up/Down navigate  *  Enter: replay  *  Esc: exit");
     instructions.setPosition({60.f, 70.f});
     window.draw(instructions);
 
@@ -852,17 +975,30 @@ void Replay::drawHistoryList()
         return;
     }
 
-    float y = 120.f;
+    const float topStart = 120.f; // row origin matches hoveredHistoryRow
     const float lineHeight = 40.f;
+    int maxOffset = maxHistoryScrollOffset();
+
+    int hovered = hoveredHistoryRow(replayCursorPos);
 
     for (int i = 0; i < static_cast<int>(historyEntries.size()); ++i)
     {
         const auto &entry = historyEntries[i];
 
-        bool selected = (i == selectedHistoryIndex);
+        // Scroll offset shifts every row up so off-screen entries are drawn and selectable in view.
+        float rowTop = topStart + static_cast<float>(i) * lineHeight -
+                       static_cast<float>(historyScrollOffset) * lineHeight;
+
+        // Clip rows that have scrolled up into the header: once a row's top reaches the top of
+        // the scroll area it disappears, so list text never draws over the title/instructions.
+        if (rowTop < topStart) continue;
+
+        // Highlight both the keyboard-selected row and whichever row is under the cursor so a
+        // hover then left-click gives the same feedback as every other menu.
+        bool selected = (i == selectedHistoryIndex || i == hovered);
 
         std::ostringstream oss;
-        oss << "Shoe #" << (i + 1) << " — Rounds: " << entry.roundCount
+        oss << "Shoe #" << (i + 1) << " - Rounds: " << entry.roundCount
             << " | Cards: " << entry.cardsDealt
             << " | Net: " << (entry.netProfit >= 0 ? "+" : "") << entry.netProfit
             << " | " << (entry.completed ? "Completed" : "Incomplete");
@@ -873,17 +1009,40 @@ void Replay::drawHistoryList()
         if (selected)
         {
             sf::RectangleShape bg(sf::Vector2f(1200.f, lineHeight));
-            bg.setPosition({50.f, y - 5.f});
+            bg.setPosition({50.f, rowTop - 5.f});
             bg.setFillColor(sf::Color(30, 30, 50));
             bg.setOutlineColor(sf::Color(255, 215, 0));
             bg.setOutlineThickness(1.f);
             window.draw(bg);
         }
 
-        line.setPosition({60.f, y});
+        line.setPosition({60.f, rowTop});
         window.draw(line);
+    }
 
-        y += lineHeight;
+    // Vertical scrollbar: only drawn when the list overflows so the scroll range is discoverable.
+    if (maxOffset > 0 && historyVisibleRowCount() > 0)
+    {
+        float trackX = 1258.f;
+        float trackW = 10.f;
+        float trackH = window.getSize().y - topStart;
+
+        sf::RectangleShape track(sf::Vector2f(trackW, trackH));
+        track.setPosition({trackX, topStart});
+        track.setFillColor(sf::Color(60, 60, 80));
+        window.draw(track);
+
+        float thumbFrac = static_cast<float>(historyVisibleRowCount()) /
+                          static_cast<float>(historyEntries.size());
+        float scrollFrac = maxOffset > 0 ? static_cast<float>(historyScrollOffset) /
+                                           static_cast<float>(maxOffset) : 0.f;
+        float thumbH = std::max(16.f, trackH * thumbFrac);
+        float thumbTop = (trackH - thumbH) > 0.f ? topStart + scrollFrac * (trackH - thumbH) : topStart;
+
+        sf::RectangleShape thumb(sf::Vector2f(trackW, thumbH));
+        thumb.setPosition({trackX, thumbTop});
+        thumb.setFillColor(sf::Color(255, 215, 0));
+        window.draw(thumb);
     }
 }
 
@@ -898,7 +1057,7 @@ void Replay::drawReplayView()
 
     // Title bar
     sf::Text title(font, "", 20);
-    title.setString("Replay — Shoe #" + std::to_string(currentShoeIndex + 1) +
+    title.setString("Replay - Shoe #" + std::to_string(currentShoeIndex + 1) +
                     " | Round " + std::to_string(state.roundIndex + 1) +
                     " of " + std::to_string(state.totalRounds));
     title.setPosition({60.f, 15.f});
@@ -985,7 +1144,8 @@ void Replay::drawTable(const ReplayInternals::ReplayState &state)
 
                                ? sf::Color(255, 215, 0)
                                : sf::Color(200, 200, 200));
-        label.setString(statusStr + " | $" + std::to_string(hand.bet));
+        std::string seatName = hand.playerName.empty() ? "Player" : hand.playerName;
+        label.setString(seatName + ": " + statusStr + " | $" + std::to_string(hand.bet));
         label.setPosition({handX, playerY - hand.cards.size() * 16.f - 20.f});
         window.draw(label);
     }
@@ -1073,7 +1233,7 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState &state)
             actionStr = "Surrender";
             break;
         default:
-            actionStr = "—";
+            actionStr = "-";
             break;
         }
         bsAction.setString(actionStr);
@@ -1107,7 +1267,7 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState &state)
             bool matches = (bookAction == actual[0] || bookAction == tolower(actual[0]));
             actualLabel.setFillColor(matches ? sf::Color(100, 200, 100) : sf::Color(255, 200, 50));
             actualLabel.setString("Actual: " + actualStr +
-                                  (matches ? " ✓" : " (deviation)"));
+                                  (matches ? " [ok]" : " (deviation)"));
             actualLabel.setPosition({panelX + 10.f, y});
             window.draw(actualLabel);
             y += lineHeight + 8.f;
@@ -1143,7 +1303,7 @@ void Replay::drawAnalysisOverlay(const ReplayInternals::ReplayState &state)
         bool betMatches = (actualBet == kellyBet || actualBet == 0);
         sf::Text kellyCompare(font, "", 12);
         kellyCompare.setString(std::string("Actual: $") + std::to_string(actualBet) +
-                               (betMatches ? " ✓" : " (mismatch)"));
+                               (betMatches ? " [ok]" : " (mismatch)"));
         kellyCompare.setPosition({panelX + 10.f, y});
         window.draw(kellyCompare);
         y += lineHeight;
@@ -1276,8 +1436,8 @@ void Replay::drawControls(const ReplayInternals::ReplayState &state)
     window.draw(bar);
 
     // Status: play/pause indicator
-    sf::Text statusText(font, autoPlay ? "▶ Playing" : "⏸ Paused", 16);
-    statusText.setString(autoPlay ? "▶ Playing" : "⏸ Paused");
+    sf::Text statusText(font, autoPlay ? "Playing" : "Paused", 16);
+    statusText.setString(autoPlay ? "Playing" : "Paused");
     statusText.setPosition({70.f, y - 15.f});
     window.draw(statusText);
 
@@ -1289,8 +1449,8 @@ void Replay::drawControls(const ReplayInternals::ReplayState &state)
     window.draw(stepInfo);
 
     // Keyboard shortcuts legend (right side)
-    sf::Text legend(font, "←/→ Step  •  Space Play/Pause  •  H Skip Hand  •  R Skip Round  •  Esc Exit", 12);
-    legend.setString("←/→ Step  •  Space Play/Pause  •  H Skip Hand  •  R Skip Round  •  Esc Exit");
+    sf::Text legend(font, "Left/Right Step  *  Space Play/Pause  *  H Skip Hand  *  R Skip Round  *  Esc Exit", 12);
+    legend.setString("Left/Right Step  *  Space Play/Pause  *  H Skip Hand  *  R Skip Round  *  Esc Exit");
     sf::FloatRect lb = legend.getLocalBounds();
     legend.setPosition({size.x - 70.f - lb.size.x, y - 15.f});
     window.draw(legend);
@@ -1304,14 +1464,20 @@ void Replay::drawStepSummary(const ReplayInternals::ReplayState &state)
 
     const auto &step = steps[state.currentStepIndex];
 
+    // Seat identity for this step (falls back to "Player" for legacy records)
+    std::string seatName = "Player";
+    if (!state.playerHands.empty() &&
+        static_cast<size_t>(step.handIndex) < state.playerHands.size())
+        seatName = state.playerHands[step.handIndex].playerName;
+    if (seatName.empty()) seatName = "Player";
+
     std::string summary;
     switch (step.type)
     {
     case ReplayInternals::ReplayStep::Type::DealCard:
         summary = step.isDealerCard
                       ? "Dealer receives " + step.card.getBlackjackValueToString()
-                      : "Player hand " + std::to_string(step.handIndex + 1) +
-                            " receives " + step.card.getBlackjackValueToString();
+                      : seatName + " receives " + step.card.getBlackjackValueToString();
         break;
     case ReplayInternals::ReplayStep::Type::PlayerDecision:
     {
@@ -1328,7 +1494,7 @@ void Replay::drawStepSummary(const ReplayInternals::ReplayState &state)
             actionName = "Surrender";
         else
             actionName = step.action;
-        summary = "Player hand " + std::to_string(step.handIndex + 1) + " " + actionName;
+        summary = seatName + " " + actionName;
         break;
     }
     case ReplayInternals::ReplayStep::Type::InsuranceOffer:

@@ -3,6 +3,31 @@
 #include <SFML/Graphics.hpp>
 #include <vector>
 
+enum class AppMode {
+    MainMenu,
+    Playing,
+    Paused,
+    ReplayHistory,
+    ReplayPlaying
+};
+enum class MenuOption {
+    PlayGame,
+    PlayerCount,
+    GameSpeed,
+    ReviewHistory
+};
+enum class PauseOption {
+    Resume,
+    Restart,
+    QuitToMenu
+};
+enum class GameSpeed {
+    Fast,
+    Normal,
+    Slow,
+    AutoPlay
+};
+
 #include "Constants.hpp"
 #include "Deck.hpp"
 #include "Hand.hpp"
@@ -29,33 +54,6 @@ enum class GameState
     Started,
     LastHand,
     GameOver
-};
-
-enum class AppMode {
-    MainMenu,
-    Playing,
-    Paused,
-    ReplayHistory,
-    ReplayPlaying
-};
-enum class MenuOption {
-    PlayGame,
-    PlayerCount,
-    GameSpeed,
-    ReviewHistory
-};
-
-enum class PauseOption {
-    Resume,
-    Restart,
-    QuitToMenu
-};
-
-enum class GameSpeed {
-    Fast,
-    Normal,
-    Slow,
-    AutoPlay
 };
 
 class Game

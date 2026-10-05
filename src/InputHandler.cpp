@@ -6,6 +6,158 @@
 
 InputHandler::InputHandler(Game& game) : game(game) {}
 
+// Activates whichever main-menu option is passed in. This is the single path
+// used by both keyboard (Enter) and mouse (left-click) selection so every menu
+// option behaves identically. As an InputHandler member it shares friendship
+// access to Game's private members with the other process* methods.
+void InputHandler::activateMainMenuOption(Game &game, MenuOption option)
+{
+    switch (option)
+    {
+    case MenuOption::PlayGame:
+        Logger::info() << "Starting game from menu.";
+        game.startNewGame();
+        break;
+    case MenuOption::PlayerCount:
+    case MenuOption::GameSpeed:
+        // Left/Right adjust these values; nothing to activate on Enter/click.
+        break;
+    case MenuOption::ReviewHistory:
+    {
+        Logger::info() << "Entering replay history.";
+        auto profile = game.players[0].getProfile();
+        game.replay->loadHistory(profile.getLongHistory());
+        game.replay->setStartingBankroll(game.players[0].getBankroll());
+        game.appMode = AppMode::ReplayHistory;
+        break;
+    }
+    }
+}
+
+// Selects a pause-menu option, mirroring activateMainMenuOption so keyboard Enter and the
+// mouse click behave identically. Only runs while paused (AppMode::Paused). Resume continues
+// the current game; Restart/QuitToMenu persist the finished shoe record before changing mode.
+void InputHandler::activatePauseOption(Game &game, PauseOption option)
+{
+    switch (option)
+    {
+    case PauseOption::Resume:
+        game.appMode = AppMode::Playing;
+        break;
+    case PauseOption::Restart:
+    {
+        PlayerProfile profile = game.players[0].getProfile();
+        profile.addShoeRecord(game.currentShoeRecord);
+        game.players[0].updateProfile(profile);
+        game.players[0].saveProfile();
+        game.startNewGame();
+        break;
+    }
+    case PauseOption::QuitToMenu:
+    {
+        PlayerProfile profile = game.players[0].getProfile();
+        profile.addShoeRecord(game.currentShoeRecord);
+        game.players[0].updateProfile(profile);
+        game.players[0].saveProfile();
+        game.appMode = AppMode::MainMenu;
+        game.menuSelection = MenuOption::PlayGame;
+        break;
+    }
+    }
+}
+
+// Shared by keyboard arrows and the mouse wheel. `forward` = "advance" (like Down/Right):
+// step once in the main-menu cycle, or bump a value option's speed up one level.
+void InputHandler::navigateMenu(bool forward)
+{
+    if (forward)
+    {
+        switch (game.menuSelection)
+        {
+        case MenuOption::PlayGame:
+            game.menuSelection = MenuOption::PlayerCount;
+            break;
+        case MenuOption::PlayerCount:
+            game.menuSelection = MenuOption::GameSpeed;
+            break;
+        case MenuOption::GameSpeed:
+            game.menuSelection = MenuOption::ReviewHistory;
+            break;
+        default: // ReviewHistory wraps to the top.
+            game.menuSelection = MenuOption::PlayGame;
+            break;
+        }
+    }
+    else
+    {
+        switch (game.menuSelection)
+        {
+        case MenuOption::PlayGame:
+            game.menuSelection = MenuOption::ReviewHistory;
+            break;
+        default: // PlayerCount/GameSpeed/ReviewHistory step one option back.
+            game.menuSelection = static_cast<MenuOption>(static_cast<int>(game.menuSelection) - 1);
+            break;
+        }
+    }
+}
+
+// Advances a value option (player count or game speed) in the given direction, matching the
+// Left/Right handling so mouse-wheel scrolling changes values exactly like the arrow keys do.
+// `option` is whichever row is under the cursor when called from scroll handling, so scrolling
+// changes a value without that row having to be keyboard-selected first (game.menuSelection).
+void InputHandler::adjustValue(bool forward, MenuOption option)
+{
+    switch (option)
+    {
+    case MenuOption::PlayerCount:
+        if (forward && game.playerCount < 6)
+            game.setPlayerCount(game.playerCount + 1);
+        else if (!forward && game.playerCount > 1)
+            game.setPlayerCount(game.playerCount - 1);
+        break;
+    case MenuOption::GameSpeed:
+    {
+        constexpr const GameSpeed order[4] = {
+            GameSpeed::Fast, GameSpeed::Normal, GameSpeed::Slow, GameSpeed::AutoPlay};
+        int idx = 0;
+        for (int i = 0; i < 4; ++i)
+            if (order[i] == game.gameSpeed)
+            {
+                idx = i;
+                break;
+            }
+
+        if (forward && idx < 3)
+            idx++;
+        else if (!forward && idx > 0)
+            idx--;
+
+        GameSpeed next = order[idx];
+        if (game.gameSpeed != next)
+        {
+            game.gameSpeed = next;
+            switch (next)
+            {
+            case GameSpeed::Normal:
+                Logger::info() << "Game speed set to Normal.";
+                break;
+            case GameSpeed::Fast:
+                Logger::info() << "Game speed set to Fast.";
+                break;
+            case GameSpeed::Slow:
+                Logger::info() << "Game speed set to Slow.";
+                break;
+            case GameSpeed::AutoPlay:
+                Logger::info() << "Game speed set to AutoPlay.";
+                break;
+            }
+        }
+        break;
+    }
+    }
+}
+
 void InputHandler::processEvents()
 {
     while (true)
@@ -65,22 +217,33 @@ void InputHandler::processMenuEvents(const sf::Event& event)
     {
         if (clicked->button == sf::Mouse::Button::Left)
         {
-            float cx = static_cast<float>(game.window.getSize().x) / 2.0f;
-            sf::Vector2f mousePos = game.window.mapPixelToCoords(sf::Vector2i(clicked->position.x, clicked->position.y));
-
-            if (std::abs(mousePos.y - 220.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
+            // Hover-highlight then left-click: pick whichever option the cursor
+            // is over and activate it exactly like pressing Enter would.
+            int hoveredIndex = game.renderer.getHoveredMenuItemIndex(game);
+            if (hoveredIndex >= 0 && hoveredIndex < static_cast<int>(mainMenuItems().size()))
             {
-                game.menuSelection = MenuOption::PlayGame;
-                game.startNewGame();
-                return;
-            }
-            if (std::abs(mousePos.y - 340.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
-            {
-                game.menuSelection = MenuOption::ReviewHistory;
-                game.appMode = AppMode::ReplayHistory;
+                MenuOption option = mainMenuItems()[hoveredIndex].option;
+                game.menuSelection = option;
+                activateMainMenuOption(game, option);
                 return;
             }
         }
+    }
+
+    // Mouse wheel scrubs the value shown on PlayerCount / GameSpeed rows. Which row is scrubbed
+    // follows the same hover-authority rule as click selection: whichever menu item is under the
+    // cursor if hovering, otherwise the currently selected one (game.menuSelection). A positive wheel
+    // delta scrolls up and increases the value -- exactly mirroring the Left/Right keyboard keys.
+    auto scrolled = event.getIf<sf::Event::MouseWheelScrolled>();
+    if (scrolled && game.appMode == AppMode::MainMenu)
+    {
+        MenuOption target = game.menuSelection;
+        int hoveredIndex = game.renderer.getHoveredMenuItemIndex(game);
+        if (hoveredIndex >= 0 && hoveredIndex < static_cast<int>(mainMenuItems().size()))
+            target = mainMenuItems()[hoveredIndex].option;
+
+        if (target == MenuOption::PlayerCount || target == MenuOption::GameSpeed)
+            adjustValue(scrolled->delta > 0.f, target);
     }
 
     auto pressed = event.getIf<sf::Event::KeyPressed>();
@@ -90,24 +253,10 @@ void InputHandler::processMenuEvents(const sf::Event& event)
     switch (pressed->code)
     {
     case sf::Keyboard::Key::Up:
-        if (game.menuSelection == MenuOption::PlayGame)
-            game.menuSelection = MenuOption::ReviewHistory;
-        else if (game.menuSelection == MenuOption::PlayerCount)
-            game.menuSelection = MenuOption::PlayGame;
-        else if (game.menuSelection == MenuOption::GameSpeed)
-            game.menuSelection = MenuOption::PlayerCount;
-        else
-            game.menuSelection = MenuOption::GameSpeed;
+        navigateMenu(false);
         break;
     case sf::Keyboard::Key::Down:
-        if (game.menuSelection == MenuOption::PlayGame)
-            game.menuSelection = MenuOption::PlayerCount;
-        else if (game.menuSelection == MenuOption::PlayerCount)
-            game.menuSelection = MenuOption::GameSpeed;
-        else if (game.menuSelection == MenuOption::GameSpeed)
-            game.menuSelection = MenuOption::ReviewHistory;
-        else
-            game.menuSelection = MenuOption::PlayGame;
+        navigateMenu(true);
         break;
     case sf::Keyboard::Key::Left:
         if (game.menuSelection == MenuOption::PlayerCount && game.playerCount > 1)
@@ -154,26 +303,7 @@ void InputHandler::processMenuEvents(const sf::Event& event)
         }
         break;
     case sf::Keyboard::Key::Enter:
-        switch (game.menuSelection)
-        {
-        case MenuOption::PlayGame:
-            Logger::info() << "Starting game from menu.";
-            game.startNewGame();
-            break;
-        case MenuOption::PlayerCount:
-            break;
-        case MenuOption::GameSpeed:
-            break;
-        case MenuOption::ReviewHistory:
-        {
-            Logger::info() << "Entering replay history.";
-            auto profile = game.players[0].getProfile();
-            game.replay->loadHistory(profile.getLongHistory());
-            game.replay->setStartingBankroll(game.players[0].getBankroll());
-            game.appMode = AppMode::ReplayHistory;
-            break;
-        }
-        }
+        activateMainMenuOption(game, game.menuSelection);
         break;
     case sf::Keyboard::Key::Escape:
         game.window.close();
@@ -332,39 +462,13 @@ void InputHandler::processPauseEvents(const sf::Event& event)
 {
     if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
     {
-        if (clicked->button == sf::Mouse::Button::Left)
+        // Hover-highlight then left-click: whichever pause row is under the cursor is activated
+        // exactly like pressing Enter -- same shared source of truth as drawing/pausing.
+        int hoveredIndex = game.renderer.getHoveredPauseMenuItemIndex(game);
+        if (clicked->button == sf::Mouse::Button::Left && hoveredIndex >= 0)
         {
-            float cx = static_cast<float>(game.window.getSize().x) / 2.0f;
-            sf::Vector2f mousePos = game.window.mapPixelToCoords(sf::Vector2i(clicked->position.x, clicked->position.y));
-
-            if (std::abs(mousePos.y - 200.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
-            {
-                game.appMode = AppMode::Playing;
-                return;
-            }
-            if (std::abs(mousePos.y - 250.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
-            {
-                {
-                    PlayerProfile profile = game.players[0].getProfile();
-                    profile.addShoeRecord(game.currentShoeRecord);
-                    game.players[0].updateProfile(profile);
-                    game.players[0].saveProfile();
-                }
-                game.startNewGame();
-                return;
-            }
-            if (std::abs(mousePos.y - 300.0f) < 20.0f && std::abs(mousePos.x - cx) < 100.0f)
-            {
-                {
-                    PlayerProfile profile = game.players[0].getProfile();
-                    profile.addShoeRecord(game.currentShoeRecord);
-                    game.players[0].updateProfile(profile);
-                    game.players[0].saveProfile();
-                }
-                game.appMode = AppMode::MainMenu;
-                game.menuSelection = MenuOption::PlayGame;
-                return;
-            }
+            const PauseMenuItem &item = pauseMenuItems()[hoveredIndex];
+            activatePauseOption(game, item.option);
         }
     }
 
@@ -394,34 +498,7 @@ void InputHandler::processPauseEvents(const sf::Event& event)
         break;
     case sf::Keyboard::Key::Enter:
     case sf::Keyboard::Key::Space:
-        switch (game.pauseSelection)
-        {
-        case PauseOption::Resume:
-            Logger::info() << "Game resumed.";
-            game.appMode = AppMode::Playing;
-            break;
-        case PauseOption::Restart:
-        {
-            Logger::info() << "Restarting game.";
-            PlayerProfile profile = game.players[0].getProfile();
-            profile.addShoeRecord(game.currentShoeRecord);
-            game.players[0].updateProfile(profile);
-            game.players[0].saveProfile();
-            game.startNewGame();
-            break;
-        }
-        case PauseOption::QuitToMenu:
-        {
-            Logger::info() << "Returning to main menu.";
-            PlayerProfile profile = game.players[0].getProfile();
-            profile.addShoeRecord(game.currentShoeRecord);
-            game.players[0].updateProfile(profile);
-            game.players[0].saveProfile();
-            game.appMode = AppMode::MainMenu;
-            game.menuSelection = MenuOption::PlayGame;
-            break;
-        }
-        }
+        activatePauseOption(game, game.pauseSelection);
         break;
     case sf::Keyboard::Key::Escape:
         game.appMode = AppMode::Playing;
