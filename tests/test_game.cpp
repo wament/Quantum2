@@ -1,5 +1,6 @@
 #include <catch2/catch_all.hpp>
 #include <Constants.hpp>
+#include <BasicStrategy.hpp>
 #include <Hand.hpp>
 #include <Deck.hpp>
 #include <vector>

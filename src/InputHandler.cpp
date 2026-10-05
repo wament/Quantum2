@@ -1,6 +1,7 @@
 #include "InputHandler.hpp"
 #include "Game.hpp"
-#include "Constants.hpp" 
+#include "Constants.hpp"
+#include "BasicStrategy.hpp"
 #include "FontManager.hpp"
 #include "Logger.hpp"
 

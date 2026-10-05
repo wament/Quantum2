@@ -82,6 +82,7 @@ target_sources(Blackjack2 PRIVATE
     src/Card.cpp
     src/Deck.cpp
     src/Game.cpp
+    src/BasicStrategy.cpp
     src/Graphics.cpp
     src/Hand.cpp
     src/Player.cpp
@@ -119,6 +120,7 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(Blackjack2Tests
     src/Card.cpp
     src/Deck.cpp
+    src/BasicStrategy.cpp
     src/Hand.cpp
     src/Logger.cpp
     tests/test_card.cpp

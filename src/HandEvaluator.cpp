@@ -1,6 +1,7 @@
 #include "HandEvaluator.hpp"
 #include "Game.hpp"
-#include "Constants.hpp" 
+#include "Constants.hpp"
+#include "BasicStrategy.hpp"
 
 #include <sstream>
 #include <chrono>

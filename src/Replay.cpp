@@ -1,6 +1,7 @@
 #include "Replay.hpp"
 
 #include "Constants.hpp"
+#include "BasicStrategy.hpp"
 #include "Graphics.hpp"
 #include "FontManager.hpp"
 #include "Hand.hpp"
