@@ -47,6 +47,8 @@ void HandEvaluator::evaluateHands()
 
             stats.handsFinished++;
             int netProfitOnHand = 0;
+            // Only a natural (2-card) unsplit blackjack pays 3:2. A split hand that totals 21 is not
+            // treated as one, so it settles at even money — the !hand.isSplit() guard drives every branch.
             bool isNaturalBlackjack = hand.isBlackjack() && !hand.isSplit();
 
             if (hand.isSurrendered())
@@ -214,6 +216,8 @@ void HandEvaluator::evaluateBlackjack()
             Hand& hand = p.hands[handIndex];
             int bet = hand.getBet();
 
+            // Insurance pays 2:1 and settles independently of the hand's win/loss, so it is paid whenever
+            // it was taken. An own natural blackjack then just pushes versus a dealer blackjack.
             if (dealerHasBJ)
             {
                 if (hand.getInsuranceBet() > 0)

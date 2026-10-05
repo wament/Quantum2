@@ -26,22 +26,3 @@ struct Card
     [[nodiscard]] int getHiLoValue() const;  // Hi-Lo counting value (-1, 0, +1)
     [[nodiscard]] char getSuitSymbol() const;  // Unicode suit symbol
 };
-
-/*
-
-inline void to_json(json& j, const Card& c)
-{
-    j =
-    {
-        {"value", c.value},
-        {"suit", static_cast<int>(c.suit)}
-    };
-}
-
-inline void from_json(const json& j, Card& c)
-{
-    c.value = j.at("value");
-    c.suit = static_cast<Suit>(j.at("suit").get<int>());
-}
-
-*/

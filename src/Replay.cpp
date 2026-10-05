@@ -103,7 +103,6 @@ void Replay::loadShoe(const ShoeRecord &shoe, int shoeIndex)
     // Start before first step so the first stepForward() shows the first card dealt
     currentStepIndex = -1;
     currentState = ReplayInternals::ReplayState();
-    // currentStepIndex already set to -1 above
     currentState.totalSteps = static_cast<int>(steps.size());
     currentState.totalRounds = static_cast<int>(shoe.rounds.size());
 
@@ -248,7 +247,6 @@ Replay::buildSteps(const ShoeRecord &shoe)
                 // Determine the action that caused this card
                 std::string action = "H"; // default: hit
 
-                // Find matching action from actions list
                 int hitCount = 0;
                 int cardIndex = 2;
                 for (const auto &a : hand.actions)
@@ -492,7 +490,6 @@ int Replay::findNextDecisionStep(int fromStepIndex) const
 // Navigation Commands
 // --------------------------------------------------
 
-// src/Replay.cpp (continued from stepForward())
 
 void Replay::stepForward()
 {
@@ -719,7 +716,6 @@ bool Replay::isAtEnd() const
 
 void Replay::processEvents(sf::Event &event)
 {
-    // Check for Closed event
     if (event.is<sf::Event::Closed>())
     {
         // Let Game handle shutdown; just exit replay mode.
@@ -1140,7 +1136,6 @@ void Replay::drawTable(const ReplayInternals::ReplayState &state)
             statusStr += " S";
 
         label.setFillColor((h == static_cast<size_t>(state.currentHandIndex))
-                               // src/Replay.cpp (continued from drawTable label color)
 
                                ? sf::Color(255, 215, 0)
                                : sf::Color(200, 200, 200));

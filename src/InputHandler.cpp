@@ -6,10 +6,9 @@
 
 InputHandler::InputHandler(Game& game) : game(game) {}
 
-// Activates whichever main-menu option is passed in. This is the single path
-// used by both keyboard (Enter) and mouse (left-click) selection so every menu
-// option behaves identically. As an InputHandler member it shares friendship
-// access to Game's private members with the other process* methods.
+// Single code path for keyboard (Enter) and mouse (left-click) menu activation, so every option
+// behaves identically. Reads Game's private members directly — hence the friendship access that
+// lets the other process* methods touch them too. This is the source of truth for selection.
 void InputHandler::activateMainMenuOption(Game &game, MenuOption option)
 {
     switch (option)
@@ -34,9 +33,8 @@ void InputHandler::activateMainMenuOption(Game &game, MenuOption option)
     }
 }
 
-// Selects a pause-menu option, mirroring activateMainMenuOption so keyboard Enter and the
-// mouse click behave identically. Only runs while paused (AppMode::Paused). Resume continues
-// the current game; Restart/QuitToMenu persist the finished shoe record before changing mode.
+// Pause-menu activation for Enter/click — see activateMainMenuOption(). Only runs while paused
+// (AppMode::Paused); Restart/QuitToMenu persist the finished shoe record before changing mode.
 void InputHandler::activatePauseOption(Game &game, PauseOption option)
 {
     switch (option)
@@ -217,8 +215,7 @@ void InputHandler::processMenuEvents(const sf::Event& event)
     {
         if (clicked->button == sf::Mouse::Button::Left)
         {
-            // Hover-highlight then left-click: pick whichever option the cursor
-            // is over and activate it exactly like pressing Enter would.
+            // Left-click activates whichever row the cursor hovers over — see activateMainMenuOption().
             int hoveredIndex = game.renderer.getHoveredMenuItemIndex(game);
             if (hoveredIndex >= 0 && hoveredIndex < static_cast<int>(mainMenuItems().size()))
             {
@@ -230,10 +227,9 @@ void InputHandler::processMenuEvents(const sf::Event& event)
         }
     }
 
-    // Mouse wheel scrubs the value shown on PlayerCount / GameSpeed rows. Which row is scrubbed
-    // follows the same hover-authority rule as click selection: whichever menu item is under the
-    // cursor if hovering, otherwise the currently selected one (game.menuSelection). A positive wheel
-    // delta scrolls up and increases the value -- exactly mirroring the Left/Right keyboard keys.
+    // Mouse wheel scrubs PlayerCount / GameSpeed rows via hover authority (hovered row if under the
+    // cursor, else game.menuSelection) — same row-selection rule as click in activateMainMenuOption().
+    // Positive delta scrolls up and increases the value, mirroring the Left/Right keys.
     auto scrolled = event.getIf<sf::Event::MouseWheelScrolled>();
     if (scrolled && game.appMode == AppMode::MainMenu)
     {
@@ -462,8 +458,7 @@ void InputHandler::processPauseEvents(const sf::Event& event)
 {
     if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
     {
-        // Hover-highlight then left-click: whichever pause row is under the cursor is activated
-        // exactly like pressing Enter -- same shared source of truth as drawing/pausing.
+        // Hover-highlight drives the paused row; left-click activates — see activateMainMenuOption().
         int hoveredIndex = game.renderer.getHoveredPauseMenuItemIndex(game);
         if (clicked->button == sf::Mouse::Button::Left && hoveredIndex >= 0)
         {

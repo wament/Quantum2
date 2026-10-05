@@ -16,8 +16,8 @@ private:
     Game& game;
     void processMenuEvents(const sf::Event& event);
     void activateMainMenuOption(Game &game, MenuOption option);
-    // Same as above but for the pause menu (Resume/Restart/Quit). Shared by keyboard
-    // Enter and the mouse click so selecting works identically.
+    // Pause-menu activation for Enter/click — see activateMainMenuOption(). Runs only while paused;
+    // Restart/QuitToMenu persist the shoe record before changing mode.
     void activatePauseOption(Game &game, PauseOption option);
 
     // Shared by keyboard arrows AND the mouse wheel. `forward` = "advance" (like

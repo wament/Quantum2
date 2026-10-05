@@ -24,7 +24,6 @@ HUD::~HUD()
 
 void HUD::initialize(sf::Font &font)
 {
-    // Initialize all panels with the font
     m_leftPanel.initialize(font);
     m_rightPanel.initialize(font);
     m_bottomPanel.initialize(font);
@@ -37,22 +36,18 @@ void HUD::initialize(sf::Font &font)
 
     // Panels are flush against screen edges (no external margin)
 
-    // Bottom panel: full width, anchored to bottom
     m_bottomPanel.setBounds(
         sf::Vector2f(0.f, Constants::WINDOW_HEIGHT - BOTTOM_HEIGHT),
         sf::Vector2f(Constants::WINDOW_WIDTH, BOTTOM_HEIGHT));
 
-    // Left panel: flush left, from top to above bottom panel
     m_leftPanel.setBounds(
         sf::Vector2f(0.f, 0.f),
         sf::Vector2f(200.f, Constants::WINDOW_HEIGHT - BOTTOM_HEIGHT));
 
-    // Right panel: flush right, from top to above bottom panel
     m_rightPanel.setBounds(
         sf::Vector2f(Constants::WINDOW_WIDTH - 200.f, 0.f),
         sf::Vector2f(200.f, Constants::WINDOW_HEIGHT - BOTTOM_HEIGHT));
 
-    // Bottom panel stat boxes
     m_bankrollBox = m_bottomPanel.addStatBox("Bankroll");
     m_bankrollBox->initialize(font, "Bankroll");
 
@@ -98,10 +93,8 @@ void HUD::initialize(sf::Font &font)
     const float sliderHeight = 14.f;
     riskSliderBounds = sf::FloatRect({sliderX, sliderY}, {sliderWidth, sliderHeight});
 
-    // Initialize controls text
     updateControls(font);
 
-    // Initialize strategy hint text
     m_strategyHintText = new sf::Text(font, "", 20u);
     m_strategyHintText->setFillColor(sf::Color(255, 215, 0));
     m_strategyHintText->setPosition(sf::Vector2f(Constants::WINDOW_WIDTH / 2.f - 100.f, 20.f));
@@ -144,7 +137,6 @@ void HUD::update(const HUDState &hudState)
             hudState.statusMessage.empty() ? "Playing" : hudState.statusMessage);
     }
 
-    // Counting info from HUDState
     if (m_countBox)
         m_countBox->setValue(std::to_string(hudState.runningCount));
 
@@ -191,7 +183,6 @@ void HUD::update(const HUDState &hudState)
         m_strategyBox->setValue(strategyStr);
     }
 
-    // Sync slider state from HUDState
     sliderValue = hudState.kellyFraction;
     sliderDragging = hudState.riskSliderDragging;
 
@@ -276,7 +267,6 @@ void HUD::drawRiskSlider(sf::RenderWindow &window)
             rorApprox = 0.9f;
     }
 
-    // Build label string
     std::ostringstream labelStr;
     labelStr << "Kelly: " << static_cast<int>(kellyPct) << "%";
     if (kellyPct > 50.f)
@@ -288,7 +278,6 @@ void HUD::drawRiskSlider(sf::RenderWindow &window)
         labelStr << " (~" << static_cast<int>(rorApprox * 100.f) << "% RoR)";
     }
 
-    // Update persistent label
     m_sliderLabel->setString(labelStr.str());
 
     // Color: red when above 50%, white otherwise

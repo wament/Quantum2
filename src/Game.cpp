@@ -28,7 +28,6 @@ Game::Game()
     auto profile = players[0].getProfile();
     replay->loadHistory(profile.getLongHistory());
     replay->setStartingBankroll(players[0].getBankroll());
-#pragma region
     Logger::info(R"(
 
 =========================================================
@@ -61,7 +60,6 @@ Close the window at any time to quit.
 =========================================================
 
 )");
-#pragma endregion
 }
 
 void Game::run()
@@ -70,14 +68,14 @@ void Game::run()
 
     while (window.isOpen())
     {
-        deltaTime = clock.restart().asSeconds(); // time since last frame
+        deltaTime = clock.restart().asSeconds();
         inputHandler.processEvents();
         update(deltaTime);
         renderer.draw(*this);
     }
 }
  
-// ~~~ Setup ~~~ 
+// Setup
 
 void Game::startNewGame()
 {
@@ -87,7 +85,6 @@ void Game::startNewGame()
     // Human player (William) - always first
     players.push_back(Player("William")); 
 
-    // NPCs from config
     for (int i = 0; i < GameConfig::NPC_COUNT && i + 1 < playerCount; i++)
     {
         const auto& cfg = GameConfig::NPC_CONFIGS[i];
@@ -100,13 +97,11 @@ void Game::startNewGame()
 
     auto profile = players[0].getProfile();
 
-    // Create fresh shoe
     deck.create(Constants::NUM_DECKS);
     deck.shuffle();
     currentShoeRecord.initialDeck = deck.getCards();
     currentShoeRecord.rounds.clear();
 
-    // Reset game state
     runningCount = 0;
     shoeCumulativeWinLoss = 0;
     sessionCumulativeWinLoss = 0;
@@ -176,7 +171,7 @@ void Game::nextRound()
     roundState = RoundState::PlaceBets;
     activePlayerIndex = 0;
 }
-// ~~~ Events ~~~ 
+// Events
 void Game::update(float deltaTime)
 {
     if (appMode == AppMode::MainMenu)
@@ -304,13 +299,14 @@ void Game::update(float deltaTime)
 
         auto& p = players[activePlayerIndex];
 
-        // Ensure current hand has at least two cards (for split hands)
+        // Each split hand must reach two cards before it stands; a split ace takes exactly one more card
+        // then auto-finishes unless the rules allow re-splitting aces.
         if (p.hands[p.currentHand].size() == 1)
         {
             dealCardToPlayer(p.hands[p.currentHand]);
             if (p.hands[p.currentHand].isSplitAce())
             {
-                // Check if we can re-split aces
+                // Re-split only when permitted and another split slot is open
                 bool canResplit = Constants::RESPLIT_ACES_ALLOWED &&
                                   p.hands[p.currentHand].canSplit() &&
                                   p.hands.size() < Constants::MAX_SPLIT_HANDS;
@@ -397,7 +393,7 @@ void Game::updateHUDState()
     hudState.currentShoe = &currentShoeRecord;
 }
 
-// ~~~ Player actions ~~~ 
+// Player actions
 
 void Game::hit()
 {
@@ -468,7 +464,6 @@ bool Game::doubleDown()
     hand.setBet(initalbet * 2);
     dealCardToPlayer(hand);
 
-    // Track double stats
     PlayerStats &stats = getStats();
     stats.doubles++;
     stats.betsPlaced++;
@@ -523,7 +518,6 @@ bool Game::split()
     p.hands[handIndex].setSplit(true, p.hands[handIndex].getCard(0).getBlackjackValue());
     newHand.setSplit(true, p.hands[handIndex].getCard(0).getBlackjackValue());
 
-    // Track split stats
     PlayerStats &stats = getStats();
     stats.splits++;
     stats.betsPlaced++;
@@ -632,7 +626,7 @@ size_t Game::incrementGlobalHandIndex(size_t current)
     return current + 1;
 }
 
-//  ~~~ Betting ~~~ 
+// Betting
 
 void Game::increaseBet()
 {
@@ -724,7 +718,7 @@ void Game::confirmBet()
     deal();
 }
  
-// ~~~ Insurance  ~~~ 
+// Insurance
 void Game::offerInsurance()
 {
     auto& p = players[activePlayerIndex];
@@ -758,7 +752,6 @@ void Game::offerInsurance()
             Logger::info() << p.getName() << " declines insurance (TC=" << tc << ")";
         }
 
-        // Advance to next player
         ++activePlayerIndex;
         if (activePlayerIndex >= players.size())
         {
@@ -801,7 +794,6 @@ void Game::confirmInsurance()
         Logger::info() << p.getName() << " places insurance bet of " << insBet << ".";
     }
 
-    // Advance to next player for insurance decision
     ++activePlayerIndex;
     if (activePlayerIndex >= players.size())
     {
@@ -816,7 +808,6 @@ void Game::declineInsurance()
     p.hands[p.currentHand].setInsuranceBet(0);
     Logger::info() << p.getName() << " declines insurance.";
 
-    // Advance to next player for insurance decision
     ++activePlayerIndex;
     if (activePlayerIndex >= players.size())
     {
@@ -831,11 +822,9 @@ const int Game::getMaxInsurance()
     return p.hands[p.currentHand].getBet() / 2;
 }
 
-// ~~~ Deck / Deal ~~~ 
-
+// Deck / Deal
 void Game::deal()
 {
-    // Deal to all players who have a bet
     for (auto& p : players)
     {
         if (p.hands[0].getBet() > 0)
@@ -1012,7 +1001,7 @@ void Game::dealCardToDealer()
     dealer.addCard(card);
 }
  
-// ~~~ Dealer  ~~~ 
+// Dealer
 void Game::dealerTurn()
 {
     bool anyUnresolved = false;

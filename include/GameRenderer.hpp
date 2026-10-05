@@ -4,10 +4,8 @@
 #include <memory>
 #include <vector>
 
-// A single selectable entry on the main menu. This is the one source of truth
-// for what the main menu contains and where each option sits vertically, shared
-// between the renderer (drawing + hover highlighting) and the input handler
-// (click selection), so both always agree.
+// One source of truth for menu contents and row positions, shared by the renderer (drawing + hover)
+// and InputHandler (click selection) so they always agree. Edit here; don't duplicate it elsewhere.
 struct MainMenuItem { MenuOption option; float y; };
 
 inline const std::vector<MainMenuItem> &mainMenuItems()
@@ -21,10 +19,8 @@ inline const std::vector<MainMenuItem> &mainMenuItems()
     return items;
 }
 
-// A single selectable entry on the pause menu, using the SAME shared source of truth as
-// MainMenuItem/mainMenuItems: one table drives drawing + hover highlight (renderer) and
-// click selection (input), so they always agree. Fractional Y keeps each row's centre
-// stable regardless of window height.
+// Same shared table pattern as mainMenuItems(): one table drives both drawing/hover (renderer) and
+// click selection (input). Fractional Y keeps each row's centre stable regardless of window height.
 struct PauseMenuItem { PauseOption option; const char *label; float yFrac; };
 
 inline const std::vector<PauseMenuItem> &pauseMenuItems()
@@ -45,17 +41,14 @@ public:
     void draw(Game &game);
     void resizeView(sf::RenderWindow &window, sf::View &view);
 
-    // Returns the index of the main-menu item currently under the mouse cursor,
-    // or -1 if none. Used by both hover highlighting (drawing) and click
-    // selection (input), so they pick the same option.
+    // Menu-item index under the cursor, or -1; shared source of truth with input selection — see mainMenuItems().
     int getHoveredMenuItemIndex(Game &game) const;
-    // Same as above but for the pause-menu rows so click + hover highlight agree.
+    // Same table pattern as the main menu.
     int getHoveredPauseMenuItemIndex(Game &game) const;
 
 private:
     void drawDealer(Game &game);
-    // Vertical pixel-centre of pause-menu row `index` at the current window height, shared
-    // with drawPauseMenu and getHoveredPauseMenuItemIndex so all three agree on placement.
+    // Vertical pixel-centre of pause-menu row `index`; shared with drawing + hover so placement agrees.
     float pauseRowY(Game &game, int index) const;
     void drawPlayers(Game &game);
     void drawChips(Game &game);
