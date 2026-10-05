@@ -2,6 +2,7 @@
 #include "Game.hpp"
 #include "Constants.hpp"
 #include "BasicStrategy.hpp"
+#include "Replay.hpp"
 #include "FontManager.hpp"
 #include "Logger.hpp"
 

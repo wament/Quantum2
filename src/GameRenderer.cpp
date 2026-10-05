@@ -4,6 +4,7 @@
 #include "Game.hpp"
 #include "Constants.hpp"
 #include "Graphics.hpp"
+#include "Replay.hpp"
 #include "FontManager.hpp"
 
 void GameRenderer::draw(Game &game)

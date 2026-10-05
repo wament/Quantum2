@@ -8,6 +8,11 @@
    
 #include "FontManager.hpp" 
 #include "Logger.hpp"
+#include "Replay.hpp"
+
+// Defined here (Replay.hpp is included in this translation unit) so unique_ptr<Replay>'s member
+// destruction runs with a complete Replay type regardless of who destroys the Game.
+Game::~Game() {}
 
 Game::Game()
     : window(
