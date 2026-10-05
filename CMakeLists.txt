@@ -83,6 +83,7 @@ target_sources(Blackjack2 PRIVATE
     src/Deck.cpp
     src/Game.cpp
     src/BasicStrategy.cpp
+    src/RoundEngine.cpp
     src/Graphics.cpp
     src/Hand.cpp
     src/Player.cpp

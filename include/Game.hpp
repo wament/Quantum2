@@ -68,6 +68,7 @@ public:
     friend class GameRenderer;
     friend class InputHandler;
     friend class HandEvaluator;
+    friend class RoundEngine;
 
 private: 
     AppMode appMode = AppMode::MainMenu;

@@ -1,5 +1,6 @@
 #include "Game.hpp"
 #include "BasicStrategy.hpp"
+#include "RoundEngine.hpp"
 
 #include <sstream>
 #include <stdexcept>
@@ -186,165 +187,10 @@ void Game::update(float deltaTime)
     if (appMode != AppMode::Playing)
         return;
 
-    // Phase R1b: shared timer countdown for the three HUD timers.
-    tickTimer(hudState.summaryTimer, deltaTime);
-    tickTimer(hudState.afterHandTimer, deltaTime);
-    tickTimer(hudState.afterShoeTimer, deltaTime);
 
-    // Auto-play: auto-advance to new shoe after shoe delay
-    if (gameState == GameState::GameOver && gameSpeed == GameSpeed::AutoPlay)
-    {
-        if (hudState.afterShoeTimer <= 0.0f)
-        {
-            Logger::info() << "Auto-play: starting new shoe.";
-            deck.create(Constants::NUM_DECKS);
-            deck.shuffle();
-            currentShoeRecord.initialDeck = deck.getCards();
-            currentShoeRecord.rounds.clear();
-            runningCount = 0;
-            shoeCumulativeWinLoss = 0;
-            gameState = GameState::Started;
-            nextRound();
-        }
-    }
-
-    // Auto-play: auto-bet with Kelly strategy
-    if (roundState == RoundState::PlaceBets && gameSpeed == GameSpeed::AutoPlay)
-    {
-        float tc = BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
-        int optimal = calculateOptimalBet(tc, kellyFraction, players[0].getBankroll(),
-                                          Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
-        players[0].hands[0].setBet(optimal);
-        Logger::info() << "Auto-play betting " << optimal << " (TC=" << tc << ")";
-        confirmBet();
-    }
-
-    if (roundState == RoundState::OfferInsurance)
-    {
-        offerInsurance();
-    }
- 
-    if (roundState == RoundState::PlayerTurn)
-    {
-        // Check if all players are done (check ALL hands, not just current)
-        bool allDone = true;
-        for (auto& p : players)
-        {
-            // Skip players who didn't bet
-            if (p.hands[0].getBet() == 0)
-                continue;
-
-            for (auto& hand : p.hands)
-            {
-                if (!hand.isFinished())
-                {
-                    allDone = false;
-                    break;
-                }
-            }
-            if (!allDone) break;
-        }
-        if (allDone)
-        {
-            roundState = RoundState::DealerTurn;
-            return;
-        }  
-
-        // Advance active player to next unfinished hand or next player
-        while (activePlayerIndex < players.size())
-        {
-            auto& p = players[activePlayerIndex];
-            // Skip players who didn't bet (sitting out)
-            if (p.hands[0].getBet() == 0)
-            {
-                ++activePlayerIndex;
-                continue;
-            }
-            // Skip finished hands
-            while (p.currentHand < p.hands.size() && p.hands[p.currentHand].isFinished())
-            {
-                ++p.currentHand;
-            }
-            // If this player has unfinished hands, process them
-            if (p.currentHand < p.hands.size())
-            {
-                break;
-            }
-            ++activePlayerIndex; //next player
-        }
-
-        if (activePlayerIndex >= players.size())
-        {
-            roundState = RoundState::DealerTurn;
-            return;
-        }
-
-        auto& p = players[activePlayerIndex];
-
-        // Each split hand must reach two cards before it stands; a split ace takes exactly one more card
-        // then auto-finishes unless the rules allow re-splitting aces.
-        if (p.hands[p.currentHand].size() == 1)
-        {
-            dealCardToPlayer(p.hands[p.currentHand]);
-            if (p.hands[p.currentHand].isSplitAce())
-            {
-                // Re-split only when permitted and another split slot is open
-                bool canResplit = Constants::RESPLIT_ACES_ALLOWED &&
-                                  p.hands[p.currentHand].canSplit() &&
-                                  p.hands.size() < Constants::MAX_SPLIT_HANDS;
-                if (!canResplit)
-                {
-                    p.hands[p.currentHand].setFinished(true);
-                }
-            }
-        }
-
-        if (activePlayerIndex > 0 || gameSpeed == GameSpeed::AutoPlay)
-        {
-            // Set delay based on game speed
-            switch (gameSpeed)
-            {
-            case GameSpeed::Fast:
-                npcActionDelay = 0.3f;
-                break;
-            case GameSpeed::AutoPlay:
-                npcActionDelay = 0.15f;
-                break;
-            case GameSpeed::Normal:
-                npcActionDelay = 1.0f;
-                break;
-            case GameSpeed::Slow:
-                npcActionDelay = 2.0f;
-                break;
-            }
-
-            // Use timer to delay NPC actions
-            npcActionTimer -= deltaTime;
-            if (npcActionTimer <= 0.0f)
-            {
-                npcTakeTurn();
-                npcActionTimer = npcActionDelay;
-            }
-        }
-        else
-        {
-            // Human player - no delay
-            npcActionTimer = npcActionDelay;
-        }
-    }
-
-    if (roundState == RoundState::DealerTurn)
-    {
-        dealerTurn();
-    }
-
-    if (roundState == RoundState::Cleanup && gameSpeed == GameSpeed::AutoPlay)
-    {
-        if (gameState != GameState::GameOver && hudState.afterHandTimer <= 0.0f)
-        {
-            nextRound();
-        }
-    }
+    // R2a: delegate the turn/round state machine to RoundEngine.
+    RoundEngine engine;
+    engine.tick(deltaTime, *this);
 }
 
 // Phase R1b: shared HUD timer countdown used by update().
