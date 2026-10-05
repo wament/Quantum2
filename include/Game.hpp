@@ -34,7 +34,6 @@ enum class GameSpeed {
 #include "Player.hpp"
 #include "GameRecord.hpp"
 #include "HUD.hpp"
-#include "HUDState.hpp"
 // Forward-declared: unique_ptr<Replay> needs only an incomplete type here. Game's destructor is
 // defined in Game.cpp (which includes Replay.hpp) where the type is complete.
 class Replay;
