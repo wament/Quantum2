@@ -176,8 +176,6 @@ private:
     // Removed: void draw(); - now in GameRenderer
     // ---------------- Betting ----------------
 
-    void increaseBet();
-    void decreaseBet();
     void confirmBet();
     // Kelly-based optimal bet calculation (uses kellyFraction)
     int calculateOptimalBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet) const;
@@ -193,10 +191,6 @@ private:
     bool split();
 
     bool surrender();
-
-    void increaseInsurance();
-
-    void decreaseInsurance();
 
     void confirmInsurance();
 
@@ -220,8 +214,6 @@ private:
 
     void offerInsurance();
 
-    const int getMaxInsurance();
-
     char giveBasicStrategyAdvice(Hand &playerHand, Hand &dealerHand);
     void logStrategyDeviation(char actionTaken);
 
@@ -231,4 +223,8 @@ private:
     // Compute global hand index for handActions (flat list across all players) 
     size_t getGlobalHandIndexForPlayer(size_t playerIdx, size_t handIdx); 
     size_t incrementGlobalHandIndex(size_t current);
+
+    // Accessors for the seat whose turn it is, so action methods don't re-index every time.
+    Player& activePlayer() { return players[activePlayerIndex]; }
+    Hand& activeHand() { return activePlayer().hands[activePlayer().currentHand]; }
 };

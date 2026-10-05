@@ -4,6 +4,7 @@
 #include "Player.hpp"
 #include "Constants.hpp"
 #include "Logger.hpp"
+#include "BasicStrategy.hpp"
 #include <cstdlib>
 #include <filesystem>
 
@@ -203,5 +204,95 @@ void Player::recordRoundResult(bool won)
     {
         consecutiveWins = 0;
     }
+}
+
+int Player::determineRoundBet(float trueCount)
+{
+    if (bettingStrategy == BettingStrategy::Kelly)
+        return BasicStrategy::calculateKellyBet(trueCount, GameConfig::KELLY_FRACTION, bankroll, Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
+
+    // Progressive strategies size off their own internal state, not the true count.
+    return calculateNextBet(false);
+}
+
+void Player::adjustHandBet(int delta, std::size_t handIndex)
+{
+    if (handIndex >= hands.size())
+        handIndex = 0;
+
+    int next = hands[handIndex].getBet() + delta;
+    if (next < Constants::MINIMUM_BET)
+        next = Constants::MINIMUM_BET;
+    if (next > Constants::MAXIMUM_BET)
+        next = Constants::MAXIMUM_BET;
+    hands[handIndex].setBet(next);
+}
+
+bool Player::shouldTakeInsurance(int bet, float trueCount) const
+{
+    // Take insurance only when the true count is high enough (+3 on Hi-Lo) to be profitable.
+    return trueCount >= 3.0f && bet > 0;
+}
+
+void Player::takeInsurance(int amount)
+{
+    if (amount <= 0)
+        return;
+
+    hands[currentHand].setInsuranceBet(amount);
+    placeBet(amount);
+}
+
+void Player::raiseInsurance()
+{
+    int maxIns = hands[currentHand].getBet() / 2;
+    if (hands[currentHand].getInsuranceBet() < maxIns)
+        hands[currentHand].setInsuranceBet(hands[currentHand].getInsuranceBet() + 1);
+}
+
+void Player::lowerInsurance()
+{
+    int current = hands[currentHand].getInsuranceBet();
+    if (current > 0)
+        hands[currentHand].setInsuranceBet(current - 1);
+}
+
+SettlementResult Player::settle(const Hand& hand, int dealerValue, bool dealerBust, int& payout)
+{
+    // Only a natural (2-card) unsplit blackjack pays 3:2. A split hand that totals 21 is not treated
+    // as one and settles at even money — the !hand.isSplit() guard drives every branch below.
+    bool isNaturalBlackjack = hand.isBlackjack() && !hand.isSplit();
+
+    if (hand.isSurrendered())
+    {
+        loseBet(hand.getBet() / 2);
+        payout = hand.getBet() / 2;
+        return SettlementResult::Surrender;
+    }
+    if (hand.isBust() || (hand.getValue() < dealerValue && !dealerBust))
+    {
+        if (!isNaturalBlackjack)
+            loseBet(hand.getBet());
+        payout = 0;
+        return SettlementResult::Lose;
+    }
+    if (hand.getValue() > dealerValue || dealerBust)
+    {
+        if (isNaturalBlackjack)
+        {
+            winBet(hand.getBet() * Constants::BLACKJACK_PAYOUT);
+            payout = hand.getBet() * (1 + Constants::BLACKJACK_PAYOUT);
+        }
+        else
+        {
+            winBet(hand.getBet());
+            payout = hand.getBet() * 2;
+        }
+        return SettlementResult::Win;
+    }
+
+    // Push: the wager stays on the table and the bankroll is unchanged.
+    payout = hand.getBet();
+    return SettlementResult::Push;
 }
 

@@ -4,6 +4,8 @@
 #include "Deck.hpp"
 #include "PlayerProfile.hpp"
 
+#include <cstddef>
+
 enum class BettingStrategy
 {
     Kelly,
@@ -12,6 +14,9 @@ enum class BettingStrategy
     Paroli,
     Flat
 };
+
+// How a single hand settles against the dealer, reported by Player::settle.
+enum class SettlementResult { Surrender, Lose, Win, Push };
 
 class Player
 {
@@ -34,6 +39,28 @@ public:
     BettingStrategy getBettingStrategy() const { return bettingStrategy; }
     int calculateNextBet(bool lastRoundWon);
     void recordRoundResult(bool won);
+
+    // Per-seat bet sizing for a new round. Kelly sizes off the true count and bankroll; progressive
+    // strategies size off their own internal state (see calculateNextBet) rather than the count.
+    int determineRoundBet(float trueCount);
+
+    // Adjust a hand's standing bet by delta, clamped to table limits. Target defaults to the active hand.
+    void adjustHandBet(int delta, std::size_t handIndex = 0);
+
+    // Insurance — the decision (a Hi-Lo rule) lives here; placement and the seat loop stay with Game.
+    bool shouldTakeInsurance(int bet, float trueCount) const;
+
+    // Take insurance for the active hand: place a wager of `amount` and record it on the hand.
+    void takeInsurance(int amount);
+
+    // Raise/lower the active hand's insurance bet by 1, clamped to [0, half the main bet].
+    void raiseInsurance();
+    void lowerInsurance();
+
+    // Settle one hand against the dealer and apply the result to the bankroll. Reports how it settled;
+    // writes the payout. A natural (2-card) unsplit blackjack pays 3:2 — any other hand totaling 21
+    // settles at even money, so the !hand.isSplit() guard drives every branch below.
+    SettlementResult settle(const Hand& hand, int dealerValue, bool dealerBust, int& payout);
 
     // Bankroll
     void setBankroll(int amount);

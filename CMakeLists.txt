@@ -124,11 +124,14 @@ add_executable(Blackjack2Tests
     src/Deck.cpp
     src/BasicStrategy.cpp
     src/Hand.cpp
+    src/Player.cpp
+    src/PlayerProfile.cpp
     src/Logger.cpp
     tests/test_card.cpp
     tests/test_deck.cpp
     tests/test_hand.cpp
     tests/test_game.cpp
+    tests/test_player.cpp
     tests/test_assets.cpp
 )
 

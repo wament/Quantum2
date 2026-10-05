@@ -381,10 +381,10 @@ void InputHandler::processGameEvents(const sf::Event& event)
             switch (key->code)
             {
             case sf::Keyboard::Key::Up:
-                game.increaseBet();
+                game.players[0].adjustHandBet(5);
                 break;
             case sf::Keyboard::Key::Down:
-                game.decreaseBet();
+                game.players[0].adjustHandBet(-5);
                 break;
             case sf::Keyboard::Key::Left:
             {
@@ -407,10 +407,10 @@ void InputHandler::processGameEvents(const sf::Event& event)
             switch (key->code)
             {
             case sf::Keyboard::Key::Up:
-                game.increaseInsurance();
+                game.players[game.activePlayerIndex].raiseInsurance();
                 break;
             case sf::Keyboard::Key::Down:
-                game.decreaseInsurance();
+                game.players[game.activePlayerIndex].lowerInsurance();
                 break;
             case sf::Keyboard::Key::Right:
                 game.confirmInsurance();

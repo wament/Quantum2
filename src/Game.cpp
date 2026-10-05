@@ -241,8 +241,8 @@ void Game::updateHUDState()
 
 void Game::hit()
 {
-    auto& p = players[activePlayerIndex];
-    Hand &hand = p.hands[p.currentHand];
+    auto& p = activePlayer();
+    Hand &hand = activeHand();
 
     if (hand.isFinished())
         return;
@@ -269,8 +269,8 @@ void Game::hit()
 
 void Game::stand()
 {
-    auto& p = players[activePlayerIndex];
-    Hand &hand = p.hands[p.currentHand];
+    auto& p = activePlayer();
+    Hand &hand = activeHand();
     Logger::info() << p.getName() << " stands on " << hand.getValue() << ".";
     logStrategyDeviation('S');
     hand.setFinished(true);
@@ -281,8 +281,8 @@ void Game::stand()
 
 bool Game::doubleDown()
 {
-    auto& p = players[activePlayerIndex];
-    Hand &hand = p.hands[p.currentHand];
+    auto& p = activePlayer();
+    Hand &hand = activeHand();
     int initalbet = hand.getBet();
 
     if (hand.isFinished())
@@ -324,7 +324,7 @@ bool Game::doubleDown()
 
 bool Game::split()
 {
-    auto& p = players[activePlayerIndex];
+    auto& p = activePlayer();
     int handIndex = p.currentHand;
 
     if (p.hands[handIndex].isFinished())
@@ -371,8 +371,8 @@ bool Game::split()
 
 bool Game::surrender()
 {
-    auto& p = players[activePlayerIndex];
-    Hand &hand = p.hands[p.currentHand];
+    auto& p = activePlayer();
+    Hand &hand = activeHand();
 
     // Cannot surrender a finished hand
     if (hand.isFinished())
@@ -470,26 +470,6 @@ size_t Game::incrementGlobalHandIndex(size_t current)
     return current + 1;
 }
 
-// Betting
-
-void Game::increaseBet()
-{
-    if (players[0].hands[0].getBet() < Constants::MAXIMUM_BET)
-    {
-        players[0].hands[0].setBet(players[0].hands[0].getBet() + 5);
-        Logger::debug() << "Increased bet to " << players[0].hands[players[0].currentHand].getBet() << ".";
-    }
-}
-
-void Game::decreaseBet()
-{
-    if (players[0].hands[0].getBet() >= Constants::MINIMUM_BET)
-    {
-        players[0].hands[0].setBet(players[0].hands[0].getBet() - 5);
-        Logger::debug() << "Decreased bet to " << players[0].hands[players[0].currentHand].getBet() << ".";
-    }
-}
-
 int Game::calculateOptimalBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet) const
 {
     return BasicStrategy::calculateKellyBet(trueCount, kellyFraction, bankroll, minBet, maxBet);
@@ -527,19 +507,7 @@ void Game::confirmBet()
             continue;
         }
 
-        int npcBet;
-        if (players[i].getBettingStrategy() == BettingStrategy::Kelly)
-        {
-            // Kelly bettors use true count-based sizing (1/3 Kelly)
-            float tc = BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
-            npcBet = calculateOptimalBet(tc, 0.33f, players[i].getBankroll(),
-                                        Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
-        }
-        else
-        {
-            // Progressive bettors use their strategy (uses internal lastRoundWon state)
-            npcBet = players[i].calculateNextBet(false);
-        }
+        int npcBet = players[i].determineRoundBet(BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size())));
 
         // Apply table limits, then cap at bankroll
         npcBet = std::max(npcBet, Constants::MINIMUM_BET);
@@ -576,12 +544,11 @@ void Game::advanceToNextInsurancePlayer()
 // Insurance
 void Game::offerInsurance()
 {
-    auto& p = players[activePlayerIndex];
-    Hand& hand = p.hands[p.currentHand];
-    int maxIns = hand.getBet() / 2;
+    auto& p = activePlayer();
+    int bet = p.hands[p.currentHand].getBet();
 
     // Skip players who didn't bet
-    if (hand.getBet() == 0)
+    if (bet == 0)
     {
         advanceToNextInsurancePlayer();
         return;
@@ -591,43 +558,19 @@ void Game::offerInsurance()
     if (activePlayerIndex > 0 || gameSpeed == GameSpeed::AutoPlay)
     {
         float tc = BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
-        if (tc >= 3.0f && maxIns > 0)
-        {
-            hand.setInsuranceBet(maxIns);
-            p.placeBet(maxIns);
-            Logger::info() << p.getName() << " takes insurance of " << maxIns << " (TC=" << tc << ")";
-        }
+        int maxIns = bet / 2;
+
+        if (p.shouldTakeInsurance(bet, tc))
+            p.takeInsurance(maxIns);
         else
-        {
             Logger::info() << p.getName() << " declines insurance (TC=" << tc << ")";
-        }
 
         advanceToNextInsurancePlayer();
     }
     // else: human player in manual mode - wait for input (handled in InputHandler)
 }
 
-void Game::increaseInsurance()
-{
-    auto& p = players[activePlayerIndex];
-    if (p.hands[p.currentHand].getInsuranceBet() < getMaxInsurance())
-    {
-        p.hands[p.currentHand].setInsuranceBet(
-            p.hands[p.currentHand].getInsuranceBet() + 1);
-        Logger::info() << p.getName() << " increases insurance to " << p.hands[p.currentHand].getInsuranceBet() << ".";
-    }
-}
 
-void Game::decreaseInsurance()
-{
-    auto& p = players[activePlayerIndex];
-    if (p.hands[p.currentHand].getInsuranceBet() > 0)
-    {
-        p.hands[p.currentHand].setInsuranceBet(
-            p.hands[p.currentHand].getInsuranceBet() - 1);
-        Logger::info() << p.getName() << " decreases insurance to " << p.hands[p.currentHand].getInsuranceBet() << ".";
-    }
-}
 
 void Game::confirmInsurance()
 {
@@ -649,12 +592,6 @@ void Game::declineInsurance()
     Logger::info() << p.getName() << " declines insurance.";
 
     advanceToNextInsurancePlayer();
-}
-
-const int Game::getMaxInsurance()
-{
-    auto& p = players[activePlayerIndex];
-    return p.hands[p.currentHand].getBet() / 2;
 }
 
 // Deck / Deal
@@ -693,8 +630,8 @@ void Game::deal()
 
 void Game::npcTakeTurn()
 {
-    auto& p = players[activePlayerIndex];
-    Hand& hand = p.hands[p.currentHand];
+    auto& p = activePlayer();
+    Hand& hand = activeHand();
 
     if (hand.isFinished())
         return;

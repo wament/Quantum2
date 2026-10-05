@@ -47,57 +47,33 @@ void HandEvaluator::evaluateHands()
                 outcome.cards.push_back(hand.getCard(c));
 
             stats.handsFinished++;
-            int netProfitOnHand = 0;
-            // Only a natural (2-card) unsplit blackjack pays 3:2. A split hand that totals 21 is not
-            // treated as one, so it settles at even money — the !hand.isSplit() guard drives every branch.
-            bool isNaturalBlackjack = hand.isBlackjack() && !hand.isSplit();
+            int payout = 0;
+            SettlementResult result = p.settle(hand, game.dealer.getValue(), game.dealer.isBust(), payout);
+            outcome.payout = payout;
+            outcome.won = (result == SettlementResult::Win || result == SettlementResult::Push);
 
-            if (hand.isSurrendered())
+            switch (result)
             {
-                p.loseBet(hand.getBet() / 2);
-                outcome.payout = hand.getBet() / 2;
-                outcome.won = false;
+            case SettlementResult::Surrender:
                 stats.losses++;
-                netProfitOnHand = hand.getBet() / 2 - hand.getBet();
                 Logger::info() << p.getName() << " surrendered hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ").";
-            }
-            else if (hand.isBust() || (hand.getValue() < game.dealer.getValue() && !game.dealer.isBust()))
-            {
-                if (!isNaturalBlackjack) p.loseBet(hand.getBet());
-                outcome.payout = 0;
-                outcome.won = false;
+                break;
+            case SettlementResult::Lose:
                 stats.losses++;
-                netProfitOnHand = -hand.getBet();
                 roundLost = true;
                 Logger::info() << p.getName() << " lost hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ").";
-            }
-            else if (hand.getValue() > game.dealer.getValue() || game.dealer.isBust())
-            {
-                if (isNaturalBlackjack)
-                {
-                    p.winBet(hand.getBet() * Constants::BLACKJACK_PAYOUT);
-                    outcome.payout = hand.getBet() * (1 + Constants::BLACKJACK_PAYOUT);
-                }
-                else
-                {
-                    p.winBet(hand.getBet());
-                    outcome.payout = hand.getBet() * 2;
-                }
-                outcome.won = true;
+                break;
+            case SettlementResult::Win:
                 stats.wins++;
-                netProfitOnHand = outcome.payout - hand.getBet();
                 roundWon = true;
-                Logger::info() << p.getName() << " won hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ", payout: " << outcome.payout << ").";
-            }
-            else
-            {
-                if (!isNaturalBlackjack) {}
-                outcome.payout = hand.getBet();
-                outcome.won = true;
+                Logger::info() << p.getName() << " won hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ", payout: " << payout << ").";
+                break;
+            case SettlementResult::Push:
                 stats.pushes++;
-                netProfitOnHand = 0;
-                Logger::info() << p.getName() << " pushed hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ").";
+                break;
             }
+
+            int netProfitOnHand = payout - hand.getBet();
 
             game.currentRoundRecord.playerHands.push_back(outcome);
 
