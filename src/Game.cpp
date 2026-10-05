@@ -185,29 +185,10 @@ void Game::update(float deltaTime)
     if (appMode != AppMode::Playing)
         return;
 
-    // Fade out end-of-round summary overlay
-    if (hudState.summaryTimer > 0.0f)
-    {
-        hudState.summaryTimer -= deltaTime;
-        if (hudState.summaryTimer < 0.0f)
-            hudState.summaryTimer = 0.0f;
-    }
-
-    // Auto-play: countdown after-hand delay
-    if (hudState.afterHandTimer > 0.0f)
-    {
-        hudState.afterHandTimer -= deltaTime;
-        if (hudState.afterHandTimer < 0.0f)
-            hudState.afterHandTimer = 0.0f;
-    }
-
-    // Auto-play: countdown after-shoe delay
-    if (hudState.afterShoeTimer > 0.0f)
-    {
-        hudState.afterShoeTimer -= deltaTime;
-        if (hudState.afterShoeTimer < 0.0f)
-            hudState.afterShoeTimer = 0.0f;
-    }
+    // Phase R1b: shared timer countdown for the three HUD timers.
+    tickTimer(hudState.summaryTimer, deltaTime);
+    tickTimer(hudState.afterHandTimer, deltaTime);
+    tickTimer(hudState.afterShoeTimer, deltaTime);
 
     // Auto-play: auto-advance to new shoe after shoe delay
     if (gameState == GameState::GameOver && gameSpeed == GameSpeed::AutoPlay)
@@ -362,6 +343,17 @@ void Game::update(float deltaTime)
         {
             nextRound();
         }
+    }
+}
+
+// Phase R1b: shared HUD timer countdown used by update().
+void Game::tickTimer(float &timerField, float deltaTime)
+{
+    if (timerField > 0.0f)
+    {
+        timerField -= deltaTime;
+        if (timerField < 0.0f)
+            timerField = 0.0f;
     }
 }
 
@@ -718,6 +710,17 @@ void Game::confirmBet()
     deal();
 }
  
+// Phase R1c: advance + wrap active player index at insurance-loop boundaries.
+void Game::advanceToNextInsurancePlayer()
+{
+    ++activePlayerIndex;
+    if (activePlayerIndex >= players.size())
+    {
+        activePlayerIndex = 0;
+        evaluator.evaluateBlackjack();
+    }
+}
+
 // Insurance
 void Game::offerInsurance()
 {
@@ -728,12 +731,7 @@ void Game::offerInsurance()
     // Skip players who didn't bet
     if (hand.getBet() == 0)
     {
-        ++activePlayerIndex;
-        if (activePlayerIndex >= players.size())
-        {
-            activePlayerIndex = 0;
-            evaluator.evaluateBlackjack();
-        }
+        advanceToNextInsurancePlayer();
         return;
     }
 
@@ -752,12 +750,7 @@ void Game::offerInsurance()
             Logger::info() << p.getName() << " declines insurance (TC=" << tc << ")";
         }
 
-        ++activePlayerIndex;
-        if (activePlayerIndex >= players.size())
-        {
-            activePlayerIndex = 0;
-            evaluator.evaluateBlackjack();
-        }
+        advanceToNextInsurancePlayer();
     }
     // else: human player in manual mode - wait for input (handled in InputHandler)
 }
@@ -794,12 +787,7 @@ void Game::confirmInsurance()
         Logger::info() << p.getName() << " places insurance bet of " << insBet << ".";
     }
 
-    ++activePlayerIndex;
-    if (activePlayerIndex >= players.size())
-    {
-        activePlayerIndex = 0;
-        evaluator.evaluateBlackjack();
-    }
+    advanceToNextInsurancePlayer();
 }
 
 void Game::declineInsurance()
@@ -808,12 +796,7 @@ void Game::declineInsurance()
     p.hands[p.currentHand].setInsuranceBet(0);
     Logger::info() << p.getName() << " declines insurance.";
 
-    ++activePlayerIndex;
-    if (activePlayerIndex >= players.size())
-    {
-        activePlayerIndex = 0;
-        evaluator.evaluateBlackjack();
-    }
+    advanceToNextInsurancePlayer();
 }
 
 const int Game::getMaxInsurance()

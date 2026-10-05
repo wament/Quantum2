@@ -17,9 +17,7 @@ void GameRenderer::draw(Game &game)
         drawMainMenu(game);
         break;
     case AppMode::Playing:
-        drawDealer(game);
-        drawPlayers(game);
-        drawChips(game);
+        drawGameTable(game);
         if (game.roundState == RoundState::OfferInsurance)
             drawInsurance(game);
 
@@ -29,9 +27,7 @@ void GameRenderer::draw(Game &game)
         drawSummaryOverlay(game);
         break;
     case AppMode::Paused:
-        drawDealer(game);
-        drawPlayers(game);
-        drawChips(game);
+        drawGameTable(game);
         game.updateHUDState();
         game.hud.update(game.hudState);
         game.hud.draw(game.window);
@@ -44,6 +40,14 @@ void GameRenderer::draw(Game &game)
     }
 
     game.window.display();
+}
+
+// Phase R1a: shared table-draw for Playing and Paused states (dealer + players + chips).
+void GameRenderer::drawGameTable(Game &game)
+{
+    drawDealer(game);
+    drawPlayers(game);
+    drawChips(game);
 }
 
 void GameRenderer::resizeView(sf::RenderWindow &window, sf::View &view)
