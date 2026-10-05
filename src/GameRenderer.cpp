@@ -43,7 +43,7 @@ void GameRenderer::draw(Game &game)
     game.window.display();
 }
 
-// Phase R1a: shared table-draw for Playing and Paused states (dealer + players + chips).
+// Shared table-draw for Playing and Paused states (dealer + players + chips).
 void GameRenderer::drawGameTable(Game &game)
 {
     drawDealer(game);

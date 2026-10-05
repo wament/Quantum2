@@ -193,12 +193,12 @@ void Game::update(float deltaTime)
         return;
 
 
-    // R2a: delegate the turn/round state machine to RoundEngine.
+    // Delegate the turn/round state machine to RoundEngine.
     RoundEngine engine;
     engine.tick(deltaTime, *this);
 }
 
-// Phase R1b: shared HUD timer countdown used by update().
+// Shared HUD timer countdown used by update().
 void Game::tickTimer(float &timerField, float deltaTime)
 {
     if (timerField > 0.0f)
@@ -562,7 +562,7 @@ void Game::confirmBet()
     deal();
 }
  
-// Phase R1c: advance + wrap active player index at insurance-loop boundaries.
+// Advance + wrap active player index at insurance-loop boundaries.
 void Game::advanceToNextInsurancePlayer()
 {
     ++activePlayerIndex;

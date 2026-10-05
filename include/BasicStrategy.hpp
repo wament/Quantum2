@@ -1,8 +1,7 @@
 #pragma once
 
-// Basic strategy domain logic: decision tables, card counting and Kelly betting.
-// Moved out of Constants.hpp (Phase R2b) so it lives with its own module instead of
-// being bundled alongside unrelated window/betting config constants. The declarations
+// Basic strategy domain logic: decision tables, card counting and Kelly betting, kept in its
+// own module rather than bundled with unrelated window/betting config constants. The declarations
 // below are defined exactly once in src/BasicStrategy.cpp.
 
 namespace BasicStrategy

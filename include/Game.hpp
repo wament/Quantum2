@@ -168,10 +168,9 @@ private:
 
     void updateHUDState();
 
-    // --- Phase R1 helpers ---
-    // R1b: shared HUD timer countdown for summary / after-hand / after-shoe timers.
+    // Shared HUD timer countdown for summary / after-hand / after-shoe timers.
     void tickTimer(float &timerField, float deltaTime);
-    // R1c: advance + wrap activePlayerIndex (and evaluate Blackjack) at insurance-loop boundaries.
+    // Advance + wrap activePlayerIndex (and evaluate Blackjack) at insurance-loop boundaries.
     void advanceToNextInsurancePlayer();
 
     // Removed: void draw(); - now in GameRenderer

@@ -4,13 +4,13 @@
 #include "Logger.hpp"
 #include "BasicStrategy.hpp"
 
-// State-machine step moved verbatim from Game::update() (Phase R2a). Every access below is
-// qualified with the passed-in `game` because those members/methods are private to Game;
-// Game grants RoundEngine friendship so this direct access compiles and behaves identically.
+// State-machine step moved from Game::update(); every access below is qualified with the
+// passed-in `game` because those members/methods are private to Game; Game grants RoundEngine
+// friendship so this direct access compiles and behaves identically.
 
 void RoundEngine::tick(float deltaTime, Game& game)
 {
-    // Phase R1b: shared timer countdown for the three HUD timers.
+    // Shared timer countdown for the three HUD timers.
     game.tickTimer(game.hudState.summaryTimer, deltaTime);
     game.tickTimer(game.hudState.afterHandTimer, deltaTime);
     game.tickTimer(game.hudState.afterShoeTimer, deltaTime);

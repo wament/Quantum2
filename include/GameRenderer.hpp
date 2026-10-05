@@ -52,7 +52,7 @@ private:
     float pauseRowY(Game &game, int index) const;
     void drawPlayers(Game &game);
     void drawChips(Game &game);
-    // Phase R1a: shared table-draw (dealer + players + chips) used by both Playing and Paused.
+    // Shared table-draw (dealer + players + chips) used by both Playing and Paused.
     void drawGameTable(Game &game);
     void drawDeck(Game &game);
     void drawInsurance(Game &game);

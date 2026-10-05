@@ -1,9 +1,8 @@
 // src/ReplayView.cpp
-// View layer for replay playback, extracted from Replay.cpp (Phase R3). The rendering methods
-// below were moved verbatim from the Replay::draw* functions into this class; every access to
-// the owning engine's members is qualified with `replay.` while window/font/cardTexture are
-// this view's own resources. Replay grants friendship so that direct member access compiles and
-// behaves identically to the original single-file implementation.
+// View layer for replay playback. The rendering methods below were moved from the Replay::draw*
+// functions into this class; every access to the owning engine's members is qualified with
+// `replay.` while window/font/cardTexture are this view's own resources. Replay grants friendship
+// so that direct member access compiles and behaves identically to the original single-file impl.
 
 #include "ReplayView.hpp"
 #include "Replay.hpp"
