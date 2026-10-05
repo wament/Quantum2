@@ -11,6 +11,9 @@
 #include "Hand.hpp"
 #include "Card.hpp"
 
+// Forward declaration so the extracted view layer can be granted friendship without a circular include.
+class ReplayView;
+
 namespace ReplayInternals
 {
 
@@ -168,6 +171,9 @@ public:
     void processEvents(sf::Event &event);
     void update(float deltaTime);
     void draw();
+
+    // Allow the extracted view layer to read this class's private step/state data for rendering.
+    friend class ReplayView;
 
 private:
     // Parse ShoeRecord into an ordered sequence of ReplaySteps
