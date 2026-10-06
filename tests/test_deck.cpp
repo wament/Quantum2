@@ -67,13 +67,12 @@ TEST_CASE("Cut card is placed 25 cards from end of shoe", "[Deck][CutCard]")
         cardsDrawnBeforeCut++;
     }
     
-    // Deck draws from the back. Cut card is at index 79 (104 - 25).
-    // We draw 25 cards (indices 104-80), then the cut card at index 79,
-    // which triggers reachedCutCard() and draws one more card (index 78).
-    // Total: 26 draws.
-    CHECK(cardsDrawnBeforeCut == 26);
+    // The cut card is inserted near the front (index 25) while cards are drawn from the back,
+    // so ~79 real cards are dealt before it turns on draw #80. That final draw also pops one
+    // more real card, leaving 104 - 80 = 24 in the shoe.
+    CHECK(cardsDrawnBeforeCut == 80);
     
-    CHECK(deck.size() == 78);
+    CHECK(deck.size() == 24);
 }
 
 TEST_CASE("reshuffleWithRemaining combines deck and table cards", "[Deck][Reshuffle]")
@@ -147,11 +146,11 @@ TEST_CASE("Cut card position for 2-deck shoe", "[Deck][CutCard]")
     }
     CHECK(deck.reachedCutCard());
     
-    // Deck draws from back. Cut card at index 79 (104 - 25).
-    // 25 cards drawn, then cut card triggers one more draw = 26 total
-    CHECK(cardsDrawn == 26);
+    // The cut card sits near the front while drawing from the back, so ~79 real cards are dealt
+    // before it turns on draw #80 (which also pops one more real card), leaving 24 in the shoe.
+    CHECK(cardsDrawn == 80);
     
-    CHECK(deck.size() == 78);
+    CHECK(deck.size() == 24);
 }
 
 TEST_CASE("reshuffleWithRemaining with empty table cards", "[Deck][Reshuffle]")

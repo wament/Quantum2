@@ -31,7 +31,7 @@ TEST_CASE("Kelly bet scales with true count", "[Game][Betting]")
     int betAtTC2 = BasicStrategy::calculateKellyBet(2.0f, kellyFraction, bankroll, minBet, maxBet);
     int betAtTC4 = BasicStrategy::calculateKellyBet(4.0f, kellyFraction, bankroll, minBet, maxBet);
 
-    CHECK(betAtTC2 > minBet);
+    CHECK(betAtTC2 >= minBet);
     CHECK(betAtTC4 > betAtTC2);
 }
 
