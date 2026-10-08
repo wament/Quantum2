@@ -228,8 +228,6 @@ void Game::updateHUDState()
 
     hudState.cardsRemaining = deck.size();
 
-    hudState.kellyFraction = kellyFraction;
-
     hudState.statusMessage = gameMessage;
 
     hudState.playerStats = &getStats();

@@ -103,7 +103,7 @@ private:
     float npcActionTimer = 0.0f;
     float npcActionDelay = 1.0f;
 
-    // ---------------- Kelly / Risk of Ruin Slider ----------------
+    // Kelly betting fraction (fixed at 1/3 Kelly ≈ 3% Risk of Ruin)
 
     float kellyFraction = GameConfig::KELLY_FRACTION; // 1/3 Kelly ≈ 3% RoR
 
@@ -111,14 +111,6 @@ private:
 
     void setPlayerCount(int count);
 
-    struct SliderState
-    {
-        bool dragging = false;
-        sf::FloatRect bounds; // x, y, w, h (w is track width)
-        float value = GameConfig::KELLY_FRACTION;  // 0.0..1.0 = Kelly fraction
-    };
-
-    SliderState riskSlider;
     // ---------------- Blackjack ----------------
 
     Deck deck;

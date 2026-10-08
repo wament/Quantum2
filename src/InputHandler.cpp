@@ -311,39 +311,6 @@ void InputHandler::processMenuEvents(const sf::Event& event)
 
 void InputHandler::processGameEvents(const sf::Event& event)
 {
-    if (auto pressed = event.getIf<sf::Event::MouseButtonPressed>())
-    {
-        if (pressed->button == sf::Mouse::Button::Left)
-        {
-            sf::FloatRect slider = game.hud.getRiskSliderBounds();
-            if (slider.contains(sf::Vector2f(pressed->position.x, pressed->position.y)))
-            {
-                game.hudState.riskSliderDragging = true;
-            }
-        }
-    }
-
-    if (auto released = event.getIf<sf::Event::MouseButtonReleased>())
-    {
-        if (released->button == sf::Mouse::Button::Left && game.hudState.riskSliderDragging)
-        {
-            game.hudState.riskSliderDragging = false;
-            Logger::info() << "Kelly fraction set to " << game.kellyFraction << ".";
-        }
-    }
-
-    if (auto moved = event.getIf<sf::Event::MouseMoved>())
-    {
-        if (game.hudState.riskSliderDragging)
-        {
-            sf::FloatRect slider = game.hud.getRiskSliderBounds();
-            float frac = (moved->position.x - slider.position.x) / slider.size.x;
-            frac = std::max(0.0f, std::min(1.0f, frac));
-            game.hudState.kellyFraction = frac;
-            game.kellyFraction = frac;
-        }
-    }
-
     if (auto key = event.getIf<sf::Event::KeyPressed>())
     {
         if (key->code == sf::Keyboard::Key::R)

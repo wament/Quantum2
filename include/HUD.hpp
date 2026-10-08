@@ -25,9 +25,6 @@ public:
     bool leftVisible() const;
     bool rightVisible() const;
 
-    // Expose slider bounds so Game can handle input
-    const sf::FloatRect &getRiskSliderBounds() const;
-
 private:
     bool m_showLeft = true;
     bool m_showRight = true;
@@ -47,25 +44,12 @@ private:
     StatBox *m_streakBox = nullptr;
     StatBox *m_strategyBox = nullptr;
 
-    // Slider state from HUDState (for rendering)
-    float sliderValue = 0.33f;
-    bool sliderDragging = false;
-
-    // Slider geometry (owned by HUD)
-    sf::FloatRect riskSliderBounds;
-
-    // Persistent slider label (set font once, reuse every frame)
-
-    sf::Text *m_sliderLabel = nullptr;
-
     // Controls display
     sf::Text *m_controlsText = nullptr;
 
     // Basic Strategy Advisor hint
     sf::Text *m_strategyHintText = nullptr;
     std::string m_strategyHint;
-
-    void drawRiskSlider(sf::RenderWindow &window);
 
     void updateControls(sf::Font &font);
 };
