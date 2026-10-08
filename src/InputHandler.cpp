@@ -323,27 +323,6 @@ void InputHandler::processGameEvents(const sf::Event& event)
         }
     }
 
-    if (auto released = event.getIf<sf::Event::MouseButtonReleased>())
-    {
-        if (released->button == sf::Mouse::Button::Left && game.hudState.riskSliderDragging)
-        {
-            game.hudState.riskSliderDragging = false;
-            Logger::info() << "Kelly fraction set to " << game.kellyFraction << ".";
-        }
-    }
-
-    if (auto moved = event.getIf<sf::Event::MouseMoved>())
-    {
-        if (game.hudState.riskSliderDragging)
-        {
-            sf::FloatRect slider = game.hud.getRiskSliderBounds();
-            float frac = (moved->position.x - slider.position.x) / slider.size.x;
-            frac = std::max(0.0f, std::min(1.0f, frac));
-            game.hudState.kellyFraction = frac;
-            game.kellyFraction = frac;
-        }
-    }
-
     if (auto key = event.getIf<sf::Event::KeyPressed>())
     {
         if (key->code == sf::Keyboard::Key::R)
@@ -389,7 +368,7 @@ void InputHandler::processGameEvents(const sf::Event& event)
             case sf::Keyboard::Key::Left:
             {
                 float tc = BasicStrategy::computeTrueCount(game.runningCount, game.deck.size());
-                int optimal = game.calculateOptimalBet(tc, game.kellyFraction, game.players[0].getBankroll() + game.players[0].hands[0].getBet(),
+                int optimal = game.calculateOptimalBet(tc, GameConfig::KELLY_FRACTION, game.players[0].getBankroll() + game.players[0].hands[0].getBet(),
                                                       Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
                 game.players[0].hands[0].setBet(optimal);
                 Logger::info() << "Optimal bet (TC=" << tc << ") set to " << optimal << ".";

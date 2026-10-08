@@ -103,15 +103,8 @@ private:
     float npcActionTimer = 0.0f;
     float npcActionDelay = 1.0f;
 
-    // Dealer turn pacing: a half-second pause before the dealer takes their first card, only when they
-    // will actually draw one. `dealerTurnStarted` marks that the dealer's turn has begun so the delay is
-    // measured from that moment rather than reset every frame.
     float dealerStartDelayTimer = 0.0f;
     bool dealerTurnStarted = false;
-
-    // ---------------- Kelly / Risk of Ruin Slider ----------------
-
-    float kellyFraction = GameConfig::KELLY_FRACTION; // 1/3 Kelly ≈ 3% RoR
 
     int playerCount = GameConfig::DEFAULT_PLAYER_COUNT;
 

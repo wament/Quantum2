@@ -17,8 +17,7 @@ struct HUDState
 
     int runningCount = 0;
     float trueCount = 0.f;
-
-    // Risk-of-Ruin slider (Kelly fraction)
+ 
     float kellyFraction = 0.33f;
     bool riskSliderDragging = false;
 

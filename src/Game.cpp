@@ -226,9 +226,7 @@ void Game::updateHUDState()
 
     hudState.trueCount = BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
 
-    hudState.cardsRemaining = deck.size();
-
-    hudState.kellyFraction = kellyFraction;
+    hudState.cardsRemaining = deck.size(); 
 
     hudState.statusMessage = gameMessage;
 
