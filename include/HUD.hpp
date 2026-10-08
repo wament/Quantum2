@@ -25,6 +25,9 @@ public:
     bool leftVisible() const;
     bool rightVisible() const;
 
+    // World-space bounds of the Count box's title text (e.g. "Count (Hi-Lo)"), used for click hit-testing.
+    sf::FloatRect countTitleBounds() const;
+
 private:
     bool m_showLeft = true;
     bool m_showRight = true;
@@ -35,7 +38,6 @@ private:
 
     StatBox *m_bankrollBox = nullptr;
     StatBox *m_betBox = nullptr;
-    StatBox *m_statusBox = nullptr;
 
     // Counting/stat boxes
     StatBox *m_countBox = nullptr;
@@ -44,12 +46,11 @@ private:
     StatBox *m_streakBox = nullptr;
     StatBox *m_strategyBox = nullptr;
 
+    // Book advisor: advises basic strategy for the current hand
+    StatBox *m_bookBox = nullptr;
+
     // Controls display
     sf::Text *m_controlsText = nullptr;
-
-    // Basic Strategy Advisor hint
-    sf::Text *m_strategyHintText = nullptr;
-    std::string m_strategyHint;
 
     void updateControls(sf::Font &font);
 };

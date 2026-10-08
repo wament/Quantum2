@@ -311,6 +311,20 @@ void InputHandler::processMenuEvents(const sf::Event& event)
 
 void InputHandler::processGameEvents(const sf::Event& event)
 { 
+    if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
+    {
+        // Clicking the count-style label ("Count (Hi-Lo)") toggles which counting system is shown. Both
+        // systems are counted in the background, so this just swaps which buffer drives the active count.
+        if (clicked->button == sf::Mouse::Button::Left)
+        {
+            sf::Vector2f world = game.window.mapPixelToCoords(sf::Mouse::getPosition(game.window));
+            if (game.hud.countTitleBounds().contains(world))
+            {
+                game.toggleCountingStyle();
+            }
+        }
+    }
+
     if (auto key = event.getIf<sf::Event::KeyPressed>())
     {
         if (key->code == sf::Keyboard::Key::R)

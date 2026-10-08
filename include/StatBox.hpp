@@ -15,6 +15,9 @@ public:
 
     std::string getTitle() const;
 
+    // World-space bounds of the title text, used for click hit-testing (e.g. toggling the counting style).
+    sf::FloatRect getTitleBounds() const;
+
     void setValue(const std::string &value);
 
     void setPosition(sf::Vector2f position);

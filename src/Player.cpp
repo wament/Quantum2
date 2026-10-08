@@ -228,10 +228,11 @@ void Player::adjustHandBet(int delta, std::size_t handIndex)
     hands[handIndex].setBet(next);
 }
 
-bool Player::shouldTakeInsurance(int bet, float trueCount) const
+bool Player::shouldTakeInsurance(int bet, float trueCount, BasicStrategy::CountingStyle style) const
 {
-    // Take insurance only when the true count is high enough (+3 on Hi-Lo) to be profitable.
-    return trueCount >= 3.0f && bet > 0;
+    // Deviation thresholds are counting-system specific: Hi-Lo requires +3 to take insurance, Reko requires +2.
+    float threshold = (style == BasicStrategy::CountingStyle::REKO) ? 2.0f : 3.0f;
+    return trueCount >= threshold && bet > 0;
 }
 
 void Player::takeInsurance(int amount)

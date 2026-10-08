@@ -109,7 +109,8 @@ void Game::startNewGame()
     currentShoeRecord.initialDeck = deck.getCards();
     currentShoeRecord.rounds.clear();
 
-    runningCount = 0;
+    // Reko is unbalanced and compensated by starting the count at -4 per deck; Hi-Lo needs no offset.
+    runningCount = (countingStyle == BasicStrategy::CountingStyle::REKO) ? -4 * Constants::NUM_DECKS : 0;
     shoeCumulativeWinLoss = 0;
     sessionCumulativeWinLoss = 0;
     handActions.clear();
@@ -223,12 +224,27 @@ void Game::updateHUDState()
     }
 
     hudState.runningCount = runningCount;
+    hudState.countingStyleName = BasicStrategy::countingStyleName(countingStyle);
 
     hudState.trueCount = BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
 
-    hudState.cardsRemaining = deck.size(); 
+    hudState.cardsRemaining = deck.size();
 
-    hudState.statusMessage = gameMessage;
+    // Turn awareness so the book advisor can hide its action during the dealer's turn.
+    hudState.isDealerTurn = (roundState == RoundState::DealerTurn);
+
+    // Persistently advise basic strategy for the active hand while it is the player's turn.
+    if (!hudState.isDealerTurn && roundState == RoundState::PlayerTurn &&
+        !players.empty() &&
+        activePlayerIndex < static_cast<int>(players.size()) &&
+        !players[static_cast<size_t>(activePlayerIndex)].hands.empty())
+    {
+        hudState.basicStrategyHint = std::string(1, giveBasicStrategyAdvice(activeHand(), dealer));
+    }
+    else
+    {
+        hudState.basicStrategyHint.clear();
+    }
 
     hudState.playerStats = &getStats();
 
@@ -568,7 +584,7 @@ void Game::offerInsurance()
         float tc = BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
         int maxIns = bet / 2;
 
-        if (p.shouldTakeInsurance(bet, tc))
+        if (p.shouldTakeInsurance(bet, tc, countingStyle))
             p.takeInsurance(maxIns);
         else
             Logger::info() << p.getName() << " declines insurance (TC=" << tc << ")";
@@ -684,13 +700,33 @@ void Game::npcTakeTurn()
 }
 void Game::afterDraw(Card card)
 {
-    runningCount = BasicStrategy::updateHiLo(runningCount, card.getBlackjackValue());
+    // Advance BOTH counting systems every draw so toggling between them is instant — neither count is ever
+    // lost or recomputed when the user switches. `runningCount` stays mapped to the active style;
+    // `backgroundRunningCount` tracks the other one. See toggleCountingStyle().
+    runningCount = BasicStrategy::updateCount(runningCount, card.getBlackjackValue(), countingStyle);
+
+    const BasicStrategy::CountingStyle other = (countingStyle == BasicStrategy::CountingStyle::REKO)
+                                                 ? BasicStrategy::CountingStyle::HI_LO : BasicStrategy::CountingStyle::REKO;
+    backgroundRunningCount = BasicStrategy::updateCount(backgroundRunningCount, card.getBlackjackValue(), other);
 
     if (deck.reachedCutCard())
     {
         Logger::info("Cut card reached. Last hand of shoe.");
         gameState = GameState::LastHand;
     }
+}
+
+// Toggle which counting system is shown. Both systems are always counted in the background (see afterDraw);
+// this swaps which buffer feeds the active count so switching between them is instant, and flips the active
+// style that drives display, deviations and betting.
+void Game::toggleCountingStyle()
+{
+    const int tmp = runningCount;
+    runningCount = backgroundRunningCount;
+    backgroundRunningCount = tmp;
+
+    countingStyle = (countingStyle == BasicStrategy::CountingStyle::REKO)
+                        ? BasicStrategy::CountingStyle::HI_LO : BasicStrategy::CountingStyle::REKO;
 }
 
 // Collect all cards currently on the table (dealer + all player hands)
@@ -754,8 +790,8 @@ void Game::handleEmptyDeck()
     currentShoeRecord.initialDeck = deck.getCards();
     currentShoeRecord.isContinuation = true;
 
-    // Reset running count for the new shoe
-    runningCount = 0;
+    // Reset running count for the new shoe. Reko is unbalanced and compensated by starting at -4 per deck.
+    runningCount = (countingStyle == BasicStrategy::CountingStyle::REKO) ? -4 * Constants::NUM_DECKS : 0;
     gameState = GameState::Started;
 
     Logger::info() << "New shoe created with " << deck.size() << " cards.";

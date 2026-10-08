@@ -199,6 +199,40 @@ namespace BasicStrategy
         return currentCount + calculateHiLoValue(bjValue);
     }
 
+    int calculateRekoValue(const int bjValue)
+    {
+        // User's Reko variant (unbalanced, compensated by a -4/deck starting offset):
+        //   2-7 -> +1 ; 8,9 -> 0 ; ten-value cards and Aces -> -1.
+        if (bjValue >= 2 && bjValue <= 7)
+            return 1;
+        else if (bjValue == 8 || bjValue == 9)
+            return 0;
+        else // Ace (1) and ten-value cards (T, J, Q, K all map to a blackjack value of 10)
+            return -1;
+    }
+
+    int updateCount(int currentCount, const int bjValue, CountingStyle style)
+    {
+        switch (style)
+        {
+        case CountingStyle::HI_LO:
+            return updateHiLo(currentCount, bjValue);
+        case CountingStyle::REKO:
+            return currentCount + calculateRekoValue(bjValue);
+        }
+        return currentCount;
+    }
+
+    const char* countingStyleName(CountingStyle style)
+    {
+        switch (style)
+        {
+        case CountingStyle::HI_LO:  return "Hi-Lo";
+        case CountingStyle::REKO:   return "Reko";
+        }
+        return "";
+    }
+
     float computeTrueCount(int runningCount, int cardsRemaining)
     {
         float decksRemaining = cardsRemaining / 52.0f;

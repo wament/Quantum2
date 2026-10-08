@@ -30,6 +30,14 @@ namespace BasicStrategy
         PAIR
     };
 
+    enum class CountingStyle
+    {
+        HI_LO,
+        REKO
+    };
+
+    const char* countingStyleName(CountingStyle style);
+
     char getRecommendedAction(
         int playerValue,
         int dealerUpValue,
@@ -42,6 +50,12 @@ namespace BasicStrategy
     int calculateHiLoValue(const int bjValue);
 
     int updateHiLo(int currentCount, const int bjValue);
+
+    // Reko: a balanced three-level system (Ace +1, 2 +2, 3-9 +1, ten-value/face cards -2)
+    int calculateRekoValue(const int bjValue);
+
+    // Generic per-card updater that dispatches on the active counting style.
+    int updateCount(int currentCount, const int bjValue, CountingStyle style);
 
     float computeTrueCount(int runningCount, int cardsRemaining);
 }

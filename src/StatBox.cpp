@@ -34,6 +34,13 @@ std::string StatBox::getTitle() const
     return m_titleText;
 }
 
+sf::FloatRect StatBox::getTitleBounds() const
+{
+    // getGlobalBounds() already accounts for the title's position, so it can be compared directly with
+    // mouse coordinates converted into world space.
+    return m_title ? m_title->getGlobalBounds() : sf::FloatRect{};
+}
+
 void StatBox::setValue(const std::string &value)
 {
     m_value->setString(value);

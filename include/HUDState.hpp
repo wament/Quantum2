@@ -10,8 +10,6 @@ struct HUDState
     int currentBet = 0;
     std::vector<int> playerBankrolls;
 
-    std::string statusMessage;
-
     int streak = 0;
     bool streakIsWin = false;
 
@@ -33,6 +31,12 @@ struct HUDState
 
     // Basic Strategy Advisor
     std::string basicStrategyHint;
+
+    // Human-readable name of the active counting style (e.g. "Hi-Lo"/"Reko"), used to title the Count box.
+    std::string countingStyleName;
+
+    // True while it's the dealer's turn. The book advisor hides its action during this window.
+    bool isDealerTurn = false;
 
     // End-of-round summary overlay
     std::vector<std::string> playerSummaries;

@@ -29,6 +29,7 @@ enum class GameSpeed {
 };
 
 #include "Constants.hpp"
+#include "BasicStrategy.hpp"
 #include "Deck.hpp"
 #include "Hand.hpp"
 #include "Player.hpp"
@@ -64,6 +65,10 @@ public:
     ~Game();
 
     void run();
+
+    // Click the count-style label ("Count (Hi-Lo)") to toggle between counting systems. Both are always
+    // counted in the background; this swaps which buffer drives the active count and flips the style.
+    void toggleCountingStyle();
     std::string gameMessage;
     float deltaTime;
 
@@ -98,6 +103,7 @@ private:
     MenuOption menuSelection = MenuOption::PlayGame;
     PauseOption pauseSelection = PauseOption::Resume;
     GameSpeed gameSpeed = GameSpeed::Normal;
+    BasicStrategy::CountingStyle countingStyle = BasicStrategy::CountingStyle::REKO;
 
     // NPC action timing
     float npcActionTimer = 0.0f;
@@ -125,6 +131,8 @@ private:
 
     int initalBet = 0;
     int runningCount = 0;
+    // Other counting system's running count, kept current every draw so toggling between systems is instant.
+    int backgroundRunningCount = 0;
     float trueCount = 0;
 
     RoundRecord currentRoundRecord;

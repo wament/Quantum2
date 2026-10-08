@@ -3,6 +3,7 @@
 #include "Hand.hpp"
 #include "Deck.hpp"
 #include "PlayerProfile.hpp"
+#include "BasicStrategy.hpp"
 
 #include <cstddef>
 
@@ -48,7 +49,7 @@ public:
     void adjustHandBet(int delta, std::size_t handIndex = 0);
 
     // Insurance — the decision (a Hi-Lo rule) lives here; placement and the seat loop stay with Game.
-    bool shouldTakeInsurance(int bet, float trueCount) const;
+    bool shouldTakeInsurance(int bet, float trueCount, BasicStrategy::CountingStyle style = BasicStrategy::CountingStyle::HI_LO) const;
 
     // Take insurance for the active hand: place a wager of `amount` and record it on the hand.
     void takeInsurance(int amount);
