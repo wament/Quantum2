@@ -340,3 +340,42 @@ TEST_CASE("NPC split ace rule: split ace hand auto-stands after one card", "[Gam
     CHECK(hand1.isFinished());
     CHECK(hand2.isFinished());
 }
+
+TEST_CASE("Split-ace hand takes exactly one extra card, then can't hit again", "[Game][Split]")
+{
+    // A split-ace hand starts with a single Ace (as created by Game::split()).
+    Hand ace;
+    Card firstAce;
+    firstAce.value = 1;
+    firstAce.suit = Suit::Spades;
+    ace.addCard(firstAce);
+    ace.setSplit(true, 11);
+
+    // Until it receives its single permitted card, a split-ace hand is still eligible for one more.
+    CHECK(ace.splitAceNeedsMoreCards() == true);
+
+    // Deal that one allowed extra card (a 9 -> value 20).
+    Card nine;
+    nine.value = 9;
+    nine.suit = Suit::Hearts;
+    ace.addCard(nine);
+    CHECK(ace.size() == 2);
+    CHECK(ace.getValue() == 20);
+
+    // It now has its one extra card and must stand — it may not be hit again.
+    CHECK(ace.splitAceNeedsMoreCards() == false);
+
+    // The rule is specific to split aces; an ordinary split hand is unaffected by this predicate.
+    Hand pair;
+    Card eightA;
+    eightA.value = 8;
+    eightA.suit = Suit::Diamonds;
+    pair.addCard(eightA);
+    Card eightB;
+    eightB.value = 8;
+    eightB.suit = Suit::Clubs;
+    pair.addCard(eightB);
+    pair.setSplit(true, 8);
+    CHECK(pair.isSplit());
+    CHECK(!pair.isSplitAce());
+}

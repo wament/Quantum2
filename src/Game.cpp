@@ -247,6 +247,16 @@ void Game::hit()
     if (hand.isFinished())
         return;
 
+    // Split aces receive exactly one extra card and then stand — they may not be hit again.
+    if (hand.isSplitAce() && !hand.splitAceNeedsMoreCards())
+    {
+        Logger::info() << p.getName() << " stands on " << hand.getValue() << " after splitting aces.";
+        hand.setFinished(true);
+        handActions[getGlobalHandIndexForPlayer(activePlayerIndex, p.currentHand)].push_back("S");
+        hudState.basicStrategyHint.clear();
+        return;
+    }
+
     logStrategyDeviation('H');
     dealCardToPlayer(hand);
 

@@ -19,6 +19,8 @@ public:
     [[nodiscard]] bool isBust() const;
     [[nodiscard]] bool isSoft() const;
     [[nodiscard]] bool isSplitAce() const;
+    // Split aces receive exactly one additional card and then stand (no further hits).
+    [[nodiscard]] bool splitAceNeedsMoreCards() const;
 
     [[nodiscard]] bool canSplit() const;
     [[nodiscard]] bool canDouble() const;

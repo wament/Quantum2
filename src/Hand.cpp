@@ -91,6 +91,13 @@ bool Hand::isSplitAce() const
     return splitAce;
 }
 
+bool Hand::splitAceNeedsMoreCards() const
+{
+    // A split-ace hand is eligible for its single allowed extra card only until it reaches two
+    // cards; once it has that card it must stand and may not be hit again.
+    return isSplitAce() && size() < 2;
+}
+
 bool Hand::canSplit() const
 {
     if (cards.size() != 2)

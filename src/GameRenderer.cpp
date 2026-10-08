@@ -92,6 +92,23 @@ void GameRenderer::drawDealer(Game &game)
         Graphics::drawCard(game.window, game.cardTexture, game.dealer.getCard(i),
                           Constants::DEALER_X + i * 60, Constants::DEALER_Y);
     }
+    // Draw the dealer's total to the left of their hand, once the hand has finished.
+    if (game.roundState == RoundState::DealerTurn || game.roundState == RoundState::Cleanup)
+    {
+        if (game.dealer.size() > 0)
+            drawTotal(game, game.dealer.getValue(), Constants::DEALER_X - 40.f,
+                      Constants::DEALER_Y + Constants::CARD_HEIGHT / 2.f, true);
+
+        // Draw BUSTED label over the busted dealer hand (same style as a player's).
+        if (game.dealer.isBust())
+        {
+            sf::Text bustedText(FontManager::get(), "BUSTED", 18.f);
+            bustedText.setFillColor(sf::Color(255, 0, 0));
+            bustedText.setStyle(sf::Text::Bold);
+            bustedText.setPosition(sf::Vector2f(Constants::DEALER_X, Constants::DEALER_Y + 5.f));
+            game.window.draw(bustedText);
+        }
+    }
 }
 
 sf::Vector2f GameRenderer::getPlayerPosition(Game &game, size_t playerIndex, size_t totalPlayers) const
@@ -128,6 +145,22 @@ sf::Vector2f GameRenderer::getPlayerPosition(Game &game, size_t playerIndex, siz
 
     sf::Vector2f offset = (playerIndex < 6) ? playerOffsets[playerIndex] : sf::Vector2f(0.f, 0.f);
     return {x - Constants::PLAYER_X + offset.x, y - Constants::PLAYER_Y + offset.y};
+}
+
+// Draws a numeric hand total in white (16pt). With rightAlign the number's right edge sits at x
+// (used for the dealer, flush left of its cards); otherwise it is centered on the anchor (player
+// hands above each card fan).
+void GameRenderer::drawTotal(Game &game, int value, float x, float y, bool rightAlign) const
+{
+    sf::Text text(FontManager::get(), std::to_string(value), 16.f);
+    text.setFillColor(sf::Color::White);
+    sf::FloatRect bounds = text.getLocalBounds();
+    if (rightAlign)
+        text.setOrigin(sf::Vector2f(bounds.size.x, bounds.size.y / 2.f));
+    else
+        text.setOrigin(sf::Vector2f(bounds.size.x / 2.f, bounds.size.y / 2.f));
+    text.setPosition(sf::Vector2f(x, y));
+    game.window.draw(text);
 }
 
 void GameRenderer::drawPlayers(Game &game)
@@ -189,6 +222,17 @@ void GameRenderer::drawPlayers(Game &game)
                 }
             }
             
+            // Draw the hand's total above it, once the hand has finished.
+            if ((game.roundState == RoundState::DealerTurn ||
+                   game.roundState == RoundState::Cleanup) && hand.size() > 0)
+            {
+                const std::size_t n = hand.size();
+                float fanRight = static_cast<float>(n - 1) * 16.f + Constants::CARD_WIDTH; // right edge of the card row
+                float cx = handX + fanRight / 2.f; // center horizontally over this hand's cards
+                float cy = handY - Constants::CARD_HEIGHT / 2.f - 16.f - static_cast<float>(n - 1) * 8.f; // sit above the rising cards
+                drawTotal(game, hand.getValue(), cx, cy, false);
+            }
+
             // Draw BUSTED label on top of busted hands
             if (hand.isBust())
             {

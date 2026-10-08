@@ -48,6 +48,9 @@ public:
 
 private:
     void drawDealer(Game &game);
+    // Draws a numeric hand total in white (16pt). rightAlign anchors the number's right edge at x
+    // (dealer, flush left of its cards) instead of centering on it (player hands above each fan).
+    void drawTotal(Game &game, int value, float x, float y, bool rightAlign) const;
     // Vertical pixel-centre of pause-menu row `index`; shared with drawing + hover so placement agrees.
     float pauseRowY(Game &game, int index) const;
     void drawPlayers(Game &game);

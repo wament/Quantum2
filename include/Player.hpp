@@ -8,11 +8,11 @@
 
 enum class BettingStrategy
 {
-    Kelly,
-    Martingale,
+    Flat,
     Fibonacci,
     Paroli,
-    Flat
+    Martingale,
+    Kelly
 };
 
 // How a single hand settles against the dealer, reported by Player::settle.

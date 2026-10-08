@@ -90,11 +90,11 @@ namespace GameConfig
 
     constexpr int NPC_COUNT = 5;
     constexpr NpcConfig NPC_CONFIGS[] = {
-        {"Alice", 10000, 10, 1},  // Flat
-        {"Bob",   10000, 10, 2},  // Fibonacci
-        {"Carol", 10000, 10, 3},  // Paroli
-        {"Dave",  10000, 50, 4},  // Martingale
-        {"Eve",   10000, 50, 0}   // Kelly
+        {"Alice", 10000, 10, 0},  // Flat
+        {"Bob",   10000, 10, 1},  // Fibonacci
+        {"Carol", 10000, 10, 2},  // Paroli
+        {"Dave",  10000, 50, 3},  // Martingale
+        {"Eve",   10000, 50, 4}   // Kelly
     };
 }
 
