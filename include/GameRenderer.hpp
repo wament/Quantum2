@@ -35,6 +35,14 @@ inline const std::vector<PauseMenuItem> &pauseMenuItems()
 
 class Game;
 
+// Per-player split-hand layout, allocated once per frame so cards, chips and the turn highlight all line up.
+struct PlayerHandLayout {
+    std::vector<float> leftX;   // screen-x left edge of each hand's first card (one entry per split hand)
+    std::vector<float> offsetY; // screen-y drop for each hand relative to its seat (staggered split hands)
+    float cx = 0.f;             // group centre x (used to draw the active-player highlight)
+    float cw = 0.f;             // group width
+};
+
 class GameRenderer
 {
 public:
@@ -51,10 +59,15 @@ private:
     // Draws a numeric hand total in white (16pt). rightAlign anchors the number's right edge at x
     // (dealer, flush left of its cards) instead of centering on it (player hands above each fan).
     void drawTotal(Game &game, int value, float x, float y, bool rightAlign) const;
+    // Draws a status label ("BUSTED"/"BLACKJACK!") centered horizontally AND vertically over a hand's
+    // anchor point (18pt bold), so it sits squarely on the cards. Color is chosen by the caller: red for
+    // busted, green for "Blackjack!". Shared by both labels for consistent placement and style.
+    void drawStatusLabel(Game &game, const std::string &label, float cx, float cy, const sf::Color &color) const;
     // Vertical pixel-centre of pause-menu row `index`; shared with drawing + hover so placement agrees.
     float pauseRowY(Game &game, int index) const;
-    void drawPlayers(Game &game);
-    void drawChips(Game &game);
+    std::vector<PlayerHandLayout> allocatePlayerLanes(Game &game) const;
+    void drawPlayers(Game &game, const std::vector<PlayerHandLayout>& lanes);
+    void drawChips(Game &game, const std::vector<PlayerHandLayout>& lanes);
     // Shared table-draw (dealer + players + chips) used by both Playing and Paused.
     void drawGameTable(Game &game);
     void drawDeck(Game &game);

@@ -103,10 +103,6 @@ private:
     float npcActionTimer = 0.0f;
     float npcActionDelay = 1.0f;
 
-    // Kelly betting fraction (fixed at 1/3 Kelly ≈ 3% Risk of Ruin)
-
-    float kellyFraction = GameConfig::KELLY_FRACTION; // 1/3 Kelly ≈ 3% RoR
-
     int playerCount = GameConfig::DEFAULT_PLAYER_COUNT;
 
     void setPlayerCount(int count);

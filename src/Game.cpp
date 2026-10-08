@@ -799,15 +799,42 @@ void Game::dealerTurn()
 
     bool doNotDraw = !anyUnresolved;
 
-    // Hit soft 17 (H17 rule): dealer must draw when total is 17 and soft.
-    while ((dealer.getValue() < Constants::DEALER_STAND ||
-            (dealer.getValue() == Constants::DEALER_STAND && dealer.isSoft())) &&
-           !doNotDraw)
+    // Should the dealer draw another card right now? Hit below soft-17 / hard-17, but never when every
+    // player hand is already resolved (a standing-only dealer draws no cards).
+    bool shouldHit = ((dealer.getValue() < Constants::DEALER_STAND ||
+                       (dealer.getValue() == Constants::DEALER_STAND && dealer.isSoft())) &&
+                      !doNotDraw);
+
+    if (!dealerTurnStarted)
     {
+        // Turn just began: arm the anticipation beat before the first card.
+        dealerTurnStarted = true;
+        dealerStartDelayTimer = Constants::DEALER_START_DELAY;
+        return;
+    }
+    if (shouldHit)
+    {
+        
+
+        dealerStartDelayTimer -= deltaTime;
+        if (dealerStartDelayTimer > 0.0f)
+        {
+            return; // wait before revealing this card
+        }
+
         Logger::debug() << "Dealer has " << dealer.getValue();
 
         dealCardToDealer();
+
+        // Arm the beat before the next card so cards come out one at a time, not all at once.
+        dealerStartDelayTimer = Constants::DEALER_CARD_DELAY;
+        return;
     }
+
+    // Dealer stands: no more cards will be drawn. Reveal is complete — settle the round now and reset the
+    // pacing flags for the next round.
+    dealerTurnStarted = false;
+    dealerStartDelayTimer = 0.0f;
 
     if (dealer.isBust())
     {
