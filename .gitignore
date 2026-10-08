@@ -21,4 +21,5 @@ Thumbs.db
 .continue-gens
 .junk
 docs/
-.continue
+.continue/
+.summaries/
