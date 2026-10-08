@@ -310,19 +310,7 @@ void InputHandler::processMenuEvents(const sf::Event& event)
 }
 
 void InputHandler::processGameEvents(const sf::Event& event)
-{
-    if (auto pressed = event.getIf<sf::Event::MouseButtonPressed>())
-    {
-        if (pressed->button == sf::Mouse::Button::Left)
-        {
-            sf::FloatRect slider = game.hud.getRiskSliderBounds();
-            if (slider.contains(sf::Vector2f(pressed->position.x, pressed->position.y)))
-            {
-                game.hudState.riskSliderDragging = true;
-            }
-        }
-    }
-
+{ 
     if (auto key = event.getIf<sf::Event::KeyPressed>())
     {
         if (key->code == sf::Keyboard::Key::R)
