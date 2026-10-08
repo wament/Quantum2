@@ -53,6 +53,27 @@ namespace Constants
     constexpr float CHIP_RADIUS = 18.f;
     constexpr float CHIP_SPACING = 6.f;
 
+    // Horizontal offset (world px) from a seat's first-card x to its chip stack, so the bet sits centered in
+    // the felt betting ring. This is the +24 anchor the chips historically used before cards were moved onto
+    // the circle; it must stay fixed (not "center under the fan") or stacks slide off the ring as hands grow.
+    constexpr float CHIP_BET_X_OFFSET = 24.f;
+
+    // Player split-hand usable horizontal band (world coordinates). Each player's split hands are laid out
+    // adaptively across this band so a player with several split hands never overlaps the seat next to them.
+    // The first/last players may expand their groups all the way to these margins for extra room.
+    constexpr float HANDS_LEFT_MARGIN = 120.f;
+    constexpr float HANDS_RIGHT_MARGIN = WINDOW_WIDTH - 160.f;
+
+    // Extra breathing room: padding added between a player's own split hands, plus padding on each side of a
+    // player's hand group so neighbouring players' groups never touch. Keep these small; they only tune feel.
+    constexpr float HAND_GAP_PADDING = 10.f;
+    constexpr float BOX_PAD = 16.f;
+
+    // Step (world pixels) applied to each successive split hand of a seat: rightward in x and downward in y,
+    // producing a staggered "staircase" so multiple hands never pile on top of one another or onto neighbours.
+    constexpr float SPLIT_SPREAD_X = 80.f;
+    constexpr float SPLIT_SPREAD_Y = 80.f;
+
     // Persistence (fallback path if HOME is not set)
     constexpr const char *PLAYER_FILE_FALLBACK = "saves/player_profile.json";
 
@@ -64,6 +85,14 @@ namespace Constants
     // Auto-play timing (seconds)
     constexpr float AUTOPLAY_AFTER_HAND_DELAY = 1.0f;
     constexpr float AUTOPLAY_AFTER_SHOE_DELAY = 3.0f;
+
+    // Half-second pause before the dealer takes their first hit when their turn begins (only applied
+    // if they will actually draw a card; a dealer that stands immediately gets no delay).
+    constexpr float DEALER_START_DELAY = 0.5f;
+
+    // Beat between each subsequent dealer card, revealed one at a time regardless of game speed so the
+    // dealer keeps a steady rhythm while players can still act instantly on autoplay.
+    constexpr float DEALER_CARD_DELAY = 0.5f;
 }
 
 // Gameplay configuration

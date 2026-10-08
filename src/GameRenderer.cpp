@@ -7,6 +7,8 @@
 #include "Replay.hpp"
 #include "FontManager.hpp"
 
+#include <algorithm>
+
 void GameRenderer::draw(Game &game)
 {
     game.window.clear();
@@ -43,12 +45,104 @@ void GameRenderer::draw(Game &game)
     game.window.display();
 }
 
+
 // Shared table-draw for Playing and Paused states (dealer + players + chips).
 void GameRenderer::drawGameTable(Game &game)
 {
+    // Lay out split hands once so cards, chips and the active-player highlight all line up.
+    std::vector<PlayerHandLayout> lanes = allocatePlayerLanes(game);
+
     drawDealer(game);
-    drawPlayers(game);
-    drawChips(game);
+    drawPlayers(game, lanes);
+    drawChips(game, lanes);
+}
+
+// Split hands fan up-and-to-the-right from each seat's betting circle; the vertical step keeps them from piling on
+// one another or onto a neighbour, whose group is nudged outward when their footprints collide (below).
+std::vector<PlayerHandLayout> GameRenderer::allocatePlayerLanes(Game &game) const
+{
+    const std::size_t n = game.players.size();
+    if (n == 0)
+        return {};
+
+    const float spreadX = Constants::SPLIT_SPREAD_X;
+    const float spreadY = Constants::SPLIT_SPREAD_Y;
+    const float leftBound = Constants::HANDS_LEFT_MARGIN;
+    const float rightBound = Constants::HANDS_RIGHT_MARGIN;
+
+    // Cascade step per split hand (0 for a single hand; else j-(hands-2)): newest takes the up-right slot, earlier ones
+    // shift one step down-left; <=2 hands reproduce the original staircase exactly.
+    auto stepAt = [](int j, int hands) -> float {
+        if (hands <= 1) return 0.f;
+        return static_cast<float>(j - (hands - 2));
+    };
+
+    // Track each seat's horizontal footprint (card left..right edge + padding) for neighbour collisions; for 3-4 hands
+    // it extends left of the anchor because earlier split hands step down-left.
+    std::vector<float> cx(n), leftEdge(n), rightEdge(n);
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        cx[i] = Constants::PLAYER_X + getPlayerPosition(game, i, n).x;
+
+        const int hands = static_cast<int>(game.players[i].hands.size());
+        float minX = cx[i], maxX = cx[i];
+        for (int j = 0; j < hands; ++j)
+        {
+            const float xj = cx[i] + stepAt(j, hands) * spreadX;
+            minX = std::min(minX, xj);
+            maxX = std::max(maxX, xj + Constants::CARD_WIDTH);
+        }
+        leftEdge[i] = minX;
+        rightEdge[i] = maxX + Constants::BOX_PAD;
+    }
+
+    // Split each seat overlap and cascade the push outward so a wide splitter nudges its neighbours (and any further
+    // colliders); repeated passes settle it within MAX_SPLIT_HANDS+1 seats, leaving uncollided ones exactly put.
+    for (std::size_t pass = 0; pass < n; ++pass)
+    {
+        bool changed = false;
+        for (std::size_t i = 0; i + 1 < n; ++i)
+        {
+            const float overlap = rightEdge[i] - leftEdge[i + 1];
+            if (overlap > 0.0f)
+            {
+                const float half = overlap * 0.5f;
+                cx[i] -= half;                 leftEdge[i] -= half;      rightEdge[i] -= half;
+                cx[i + 1] += half; leftEdge[i + 1] += half; rightEdge[i + 1] += half;
+                changed = true;
+            }
+        }
+        if (!changed) break;
+    }
+
+    // Clamp the row into the usable band: a no-op when seats fit, else nudge the whole row to clear an overflowing
+    // margin (right on left-edge overflow, left on right). We only move on actual overflow -- shifting whenever there
+    // is room on one side would drag hands and chips off their rings in normal play.
+    float shift = 0.0f;
+    if (leftEdge[0] < leftBound)
+        shift = leftBound - leftEdge[0];                 // too far left: nudge right
+    else if (rightEdge[n - 1] > rightBound)
+        shift = rightBound - rightEdge[n - 1];           // too far right: nudge left
+    for (std::size_t i = 0; i < n; ++i) { cx[i] += shift; leftEdge[i] += shift; rightEdge[i] += shift; }
+
+    // Convert seats to per-hand x/y. drawChips reads the same leftX/offsetY, so bet stacks stay anchored to each hand's
+    // own slot (e.g. the 3rd of 4 hands sits at step 0 = its original betting circle).
+    std::vector<PlayerHandLayout> lanes(n);
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const int hands = static_cast<int>(game.players[i].hands.size());
+        PlayerHandLayout &lane = lanes[i];
+        lane.cx = cx[i];
+        lane.cw = Constants::CARD_WIDTH + static_cast<float>((hands > 0 ? hands : 1) - 1) * spreadX + Constants::BOX_PAD;
+        for (int j = 0; j < hands; ++j)
+        {
+            const float step = stepAt(j, hands);
+            lane.leftX.push_back(cx[i] + step * spreadX);
+            lane.offsetY.push_back(-step * spreadY);
+        }
+    }
+
+    return lanes;
 }
 
 void GameRenderer::resizeView(sf::RenderWindow &window, sf::View &view)
@@ -99,24 +193,36 @@ void GameRenderer::drawDealer(Game &game)
             drawTotal(game, game.dealer.getValue(), Constants::DEALER_X - 40.f,
                       Constants::DEALER_Y + Constants::CARD_HEIGHT / 2.f, true);
 
-        // Draw BUSTED label over the busted dealer hand (same style as a player's).
+        // Center the label horizontally over the dealer's card row and vertically on the cards' midline.
+        int n = static_cast<int>(game.dealer.size());
+        float cx = Constants::DEALER_X + static_cast<float>(n - 1) * 30.f + Constants::CARD_WIDTH / 2.f;
+        float cy = Constants::DEALER_Y + Constants::CARD_HEIGHT / 2.f;
+
+        // Draw BUSTED label centered over the busted dealer hand.
         if (game.dealer.isBust())
-        {
-            sf::Text bustedText(FontManager::get(), "BUSTED", 18.f);
-            bustedText.setFillColor(sf::Color(255, 0, 0));
-            bustedText.setStyle(sf::Text::Bold);
-            bustedText.setPosition(sf::Vector2f(Constants::DEALER_X, Constants::DEALER_Y + 5.f));
-            game.window.draw(bustedText);
-        }
+            drawStatusLabel(game, "BUSTED", cx, cy, sf::Color(255, 0, 0));
+
+        // Draw BLACKJACK! callout centered over a blackjack dealer hand.
+        if (game.dealer.isBlackjack())
+            drawStatusLabel(game, "BLACKJACK!", cx, cy, sf::Color(0, 180, 0));
     }
 }
 
 sf::Vector2f GameRenderer::getPlayerPosition(Game &game, size_t playerIndex, size_t totalPlayers) const
 {
-    if (totalPlayers <= 2)
-    {
-        return {playerIndex * 200.f, 0.f};
-    }
+    // Seats map onto fixed betting-circle rings (0-indexed); the six-row layout below is that projection and smaller
+    // seat counts reuse a subset, so every hand stays on a ring.
+    static const int slotMap[7][6] = {
+        {},
+        {2},                         // 1 player -> circle 3 (centre)
+        {2, 4},                      // 2 players -> circles 2 and 4
+        {1, 2, 3},                   // 3 players -> circles 1, 3, 5
+        {1, 2, 3, 4},                // 4 players -> circles 1, 3, 4, 6
+        {0, 1, 2, 3, 4},             // 5 players -> every ring except circle 6
+        {0, 1, 2, 3, 4, 5}           // 6 players -> all rings (unchanged)
+    };
+
+    const size_t slot = slotMap[totalPlayers][playerIndex];
 
      // Manual per-player offsets for fine-tuning placement
     static const sf::Vector2f playerOffsets[6] = {
@@ -132,18 +238,19 @@ sf::Vector2f GameRenderer::getPlayerPosition(Game &game, size_t playerIndex, siz
     float centerY = 700.f;
     float radius = 400.f;
 
-    // Arc span increases with player count: 75° for 3 players, 120° for 6 players
-    float arcSpan = 60.f + (totalPlayers - 2) * 15.f;
+    // Fixed six-ring projection: reuse the 6-player ring centers so every seat count lands inside a ring.
+    const size_t n = 6;
+    float arcSpan = 60.f + (n - 2) * 15.f;
     float startAngle = -arcSpan / 2.f;
-    float angleStep = arcSpan / (totalPlayers - 1);
+    float angleStep = arcSpan / (n - 1);
 
-    float angle = startAngle + playerIndex * angleStep;
+    float angle = startAngle + static_cast<float>(slot) * angleStep;
     float angleRad = angle * 3.14159f / 180.f;
 
     float x = centerX + radius * sin(angleRad);
     float y = centerY - radius * cosh(0.78*angleRad);
 
-    sf::Vector2f offset = (playerIndex < 6) ? playerOffsets[playerIndex] : sf::Vector2f(0.f, 0.f);
+    sf::Vector2f offset = (slot < 6) ? playerOffsets[slot] : sf::Vector2f(0.f, 0.f);
     return {x - Constants::PLAYER_X + offset.x, y - Constants::PLAYER_Y + offset.y};
 }
 
@@ -163,7 +270,21 @@ void GameRenderer::drawTotal(Game &game, int value, float x, float y, bool right
     game.window.draw(text);
 }
 
-void GameRenderer::drawPlayers(Game &game)
+// Draw a status label ("BUSTED"/"BLACKJACK!") centered horizontally and vertically over a hand's anchor
+// point so it sits squarely on the cards instead of flush to one corner. 18pt bold text; color is chosen
+// by the caller (red for busted, green for "Blackjack!").
+void GameRenderer::drawStatusLabel(Game &game, const std::string &label, float cx, float cy, const sf::Color &color) const
+{
+    sf::Text text(FontManager::get(), label, 18.f);
+    text.setStyle(sf::Text::Bold);
+    text.setFillColor(color);
+    sf::FloatRect bounds = text.getLocalBounds();
+    text.setOrigin(sf::Vector2f(bounds.size.x / 2.f, bounds.size.y / 2.f));
+    text.setPosition(sf::Vector2f(cx, cy));
+    game.window.draw(text);
+}
+
+void GameRenderer::drawPlayers(Game &game, const std::vector<PlayerHandLayout>& lanes)
 {
     for (size_t playerIndex = 0; playerIndex < game.players.size(); playerIndex++)
     {
@@ -181,29 +302,41 @@ void GameRenderer::drawPlayers(Game &game)
 
         if (playerIndex == game.activePlayerIndex && game.roundState == RoundState::PlayerTurn)
         {
-            sf::RectangleShape highlight(sf::Vector2f(120.f, 260.f));
+            const PlayerHandLayout &lane = lanes[playerIndex];
+            sf::RectangleShape highlight(sf::Vector2f(lane.cw + 40.f, 260.f));
             highlight.setFillColor(sf::Color(255, 255, 0, 30));
             highlight.setOutlineColor(sf::Color(255, 255, 0, 150));
             highlight.setOutlineThickness(2.f);
-            highlight.setPosition(sf::Vector2f(Constants::PLAYER_X + xOffset - 30.f, Constants::PLAYER_Y + yOffset - 40.f));
+            highlight.setPosition(sf::Vector2f(lane.cx - (lane.cw + 40.f) * 0.5f, Constants::PLAYER_Y + yOffset - 40.f));
             game.window.draw(highlight);
 
             sf::Text turnLabel(FontManager::get(), "YOUR TURN", 14.f);
             turnLabel.setFillColor(sf::Color(255, 255, 0));
-            turnLabel.setPosition(sf::Vector2f(Constants::PLAYER_X + xOffset - 10, Constants::PLAYER_Y + yOffset + 180.f));
+            turnLabel.setPosition(sf::Vector2f(lane.cx, Constants::PLAYER_Y + yOffset + 180.f));
             game.window.draw(turnLabel);
         }
 
         for (std::size_t handIndex = 0; handIndex < p.hands.size(); handIndex++)
         {
             const Hand &hand = p.hands[handIndex];
-            float handX = Constants::PLAYER_X + xOffset + handIndex * 70;
-            float handY = Constants::PLAYER_Y + yOffset;
+            float handX = lanes[playerIndex].leftX[handIndex];
+            float handY = Constants::PLAYER_Y + yOffset + lanes[playerIndex].offsetY[handIndex];
+
+            // Rebalance so the bet stays centered on the hand instead of fanning right into the neighbour. This applies to
+            // any long fan (>=4 cards, even or odd) and to doubled-down hands; -8*N centers the whole row on the chips (the
+            // two middle cards for even counts, the single middle card for odd). A single card, the initial 2-card deal and
+            // non-doubled 3-card hands stay put. Note: odd long hands rebalance too -- only dropping it when <4 is what made
+            // them snap back to the original position before.
+            const int nCards = static_cast<int>(hand.size());
+            float cardShift = 0.f;
+            if (nCards > 2 && (nCards >= 4 || hand.isDoubledDown()))
+                cardShift = -8.f * static_cast<float>(nCards);
+            float fanLeftX = handX + cardShift; // where card 0 actually sits after rebalancing
 
             // Draw cards for this hand
             for (std::size_t i = 0; i < hand.size(); i++)
             {
-                float cardX = handX + i * 16;
+                float cardX = fanLeftX + i * 16;
                 float cardY = handY - i * 16;
 
                 // Only rotate the third card (double down card) 90 degrees
@@ -228,7 +361,7 @@ void GameRenderer::drawPlayers(Game &game)
             {
                 const std::size_t n = hand.size();
                 float fanRight = static_cast<float>(n - 1) * 16.f + Constants::CARD_WIDTH; // right edge of the card row
-                float cx = handX + fanRight / 2.f; // center horizontally over this hand's cards
+                float cx = fanLeftX + fanRight / 2.f; // center horizontally over this hand's rebalanced cards
                 float cy = handY - Constants::CARD_HEIGHT / 2.f - 16.f - static_cast<float>(n - 1) * 8.f; // sit above the rising cards
                 drawTotal(game, hand.getValue(), cx, cy, false);
             }
@@ -239,8 +372,18 @@ void GameRenderer::drawPlayers(Game &game)
                 sf::Text bustedText(FontManager::get(), "BUSTED", 18.f);
                 bustedText.setFillColor(sf::Color(255, 0, 0));
                 bustedText.setStyle(sf::Text::Bold);
-                bustedText.setPosition(sf::Vector2f(handX, handY + 5.f));
+                bustedText.setPosition(sf::Vector2f(fanLeftX, handY + 5.f));
                 game.window.draw(bustedText);
+            }
+
+            // Draw BLACKJACK! callout centered over a blackjack hand (green).
+            if (hand.isBlackjack() && hand.size() > 0)
+            {
+                int pn = static_cast<int>(hand.size());
+                float fanRight = static_cast<float>(pn - 1) * 16.f + Constants::CARD_WIDTH;
+                float pcx = fanLeftX + fanRight / 2.f; // center horizontally over the rebalanced card row
+                float pcy = handY - static_cast<float>(pn - 1) * 8.f + Constants::CARD_HEIGHT / 2.f; // vertical center of the rising cards
+                drawStatusLabel(game, "BLACKJACK!", pcx, pcy, sf::Color(0, 180, 0));
             }
 
             // Draw white flag for surrendered hands
@@ -248,13 +391,13 @@ void GameRenderer::drawPlayers(Game &game)
             {
                 sf::RectangleShape pole(sf::Vector2f(3.f, 30.f));
                 pole.setFillColor(sf::Color(128, 128, 128));
-                pole.setPosition(sf::Vector2f(handX + 10, handY - 40));
+                pole.setPosition(sf::Vector2f(fanLeftX + 10, handY - 40));
 
                 sf::RectangleShape flag(sf::Vector2f(20.f, 12.f));
                 flag.setFillColor(sf::Color::White);
                 flag.setOutlineColor(sf::Color::Black);
                 flag.setOutlineThickness(1.f);
-                flag.setPosition(sf::Vector2f(handX + 13, handY - 40));
+                flag.setPosition(sf::Vector2f(fanLeftX + 13, handY - 40));
 
                 game.window.draw(pole);
                 game.window.draw(flag);
@@ -263,7 +406,7 @@ void GameRenderer::drawPlayers(Game &game)
     }
 }
 
-void GameRenderer::drawChips(Game &game)
+void GameRenderer::drawChips(Game &game, const std::vector<PlayerHandLayout>& lanes)
 {
     struct Chip
     {
@@ -300,8 +443,8 @@ void GameRenderer::drawChips(Game &game)
                 continue;
             }
  
-            float chipX = Constants::PLAYER_X + xOffset + handIndex * 80 + 24;
-            float chipY = Constants::PLAYER_Y + yOffset + Constants::CARD_HEIGHT + 45.f;
+            float chipX = lanes[playerIndex].leftX[handIndex] + Constants::CHIP_BET_X_OFFSET; // sit centered in the felt betting ring, ahead of each hand's first card
+            float chipY = Constants::PLAYER_Y + yOffset + lanes[playerIndex].offsetY[handIndex] + Constants::CARD_HEIGHT + 45.f;
 
             int remaining = stackBet * 100;
             std::vector<Chip> stack;
