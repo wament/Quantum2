@@ -311,6 +311,18 @@ void InputHandler::processMenuEvents(const sf::Event& event)
 
 void InputHandler::processGameEvents(const sf::Event& event)
 {
+    if (auto pressed = event.getIf<sf::Event::MouseButtonPressed>())
+    {
+        if (pressed->button == sf::Mouse::Button::Left)
+        {
+            sf::FloatRect slider = game.hud.getRiskSliderBounds();
+            if (slider.contains(sf::Vector2f(pressed->position.x, pressed->position.y)))
+            {
+                game.hudState.riskSliderDragging = true;
+            }
+        }
+    }
+
     if (auto key = event.getIf<sf::Event::KeyPressed>())
     {
         if (key->code == sf::Keyboard::Key::R)
@@ -356,7 +368,7 @@ void InputHandler::processGameEvents(const sf::Event& event)
             case sf::Keyboard::Key::Left:
             {
                 float tc = BasicStrategy::computeTrueCount(game.runningCount, game.deck.size());
-                int optimal = game.calculateOptimalBet(tc, game.kellyFraction, game.players[0].getBankroll() + game.players[0].hands[0].getBet(),
+                int optimal = game.calculateOptimalBet(tc, GameConfig::KELLY_FRACTION, game.players[0].getBankroll() + game.players[0].hands[0].getBet(),
                                                       Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
                 game.players[0].hands[0].setBet(optimal);
                 Logger::info() << "Optimal bet (TC=" << tc << ") set to " << optimal << ".";

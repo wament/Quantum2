@@ -17,6 +17,9 @@ struct HUDState
 
     int runningCount = 0;
     float trueCount = 0.f;
+ 
+    float kellyFraction = 0.33f;
+    bool riskSliderDragging = false;
 
     // Left Panel
     const PlayerStats* playerStats = nullptr;

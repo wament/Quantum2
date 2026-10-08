@@ -103,6 +103,9 @@ private:
     float npcActionTimer = 0.0f;
     float npcActionDelay = 1.0f;
 
+    float dealerStartDelayTimer = 0.0f;
+    bool dealerTurnStarted = false;
+
     int playerCount = GameConfig::DEFAULT_PLAYER_COUNT;
 
     void setPlayerCount(int count);

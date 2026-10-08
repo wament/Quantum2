@@ -36,7 +36,7 @@ void RoundEngine::tick(float deltaTime, Game& game)
     if (game.roundState == RoundState::PlaceBets && game.gameSpeed == GameSpeed::AutoPlay)
     {
         float tc = BasicStrategy::computeTrueCount(game.runningCount, static_cast<int>(game.deck.size()));
-        int optimal = game.calculateOptimalBet(tc, game.kellyFraction, game.players[0].getBankroll(),
+        int optimal = game.calculateOptimalBet(tc, GameConfig::KELLY_FRACTION, game.players[0].getBankroll(),
                                                Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
         game.players[0].hands[0].setBet(optimal);
         Logger::info() << "Auto-play betting " << optimal << " (TC=" << tc << ")";
