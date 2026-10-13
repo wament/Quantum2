@@ -11,11 +11,11 @@ namespace BasicStrategy
 {
     const char HARD[10][10] =
         {
-            /*       2   3   4   5   6   7   8   9   T   A */
+            /*       2    3    4    5    6    7    8    9    T    A */
 
-            /*8*/ {'H', 'H', 'H', 'H', 'H', 'H', 'H', 'H', 'H', 'H'},
+            /*8*/  {'H', 'H', 'H', 'H', 'H', 'H', 'H', 'H', 'H', 'H'},
 
-            /*9*/ {'H', 'D', 'D', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
+            /*9*/  {'H', 'D', 'D', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
 
             /*10*/ {'D', 'D', 'D', 'D', 'D', 'D', 'D', 'D', 'H', 'H'},
 
@@ -37,7 +37,7 @@ namespace BasicStrategy
 
     const char SOFT[8][10] =
         {
-            /*       2   3   4   5   6   7   8   9   T   A */
+            /*       2    3    4    5    6    7    8    9    T    A */
 
             /*A2*/ {'H', 'H', 'H', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
 
@@ -60,11 +60,11 @@ namespace BasicStrategy
     // if DAS is not allowed, M = Hit. Otherwise M = Y (split)
     const char PAIRS[10][10] =
         {
-            /*       2   3   4   5   6   7   8   9   T   A */
+            /*        2    3    4    5    6    7    8    9    T    A */
 
             /*A,A*/ {'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y'},
 
-            /*10*/ {'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'},
+            /*10*/  {'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'},
 
             /*9,9*/ {'Y', 'Y', 'Y', 'Y', 'Y', 'N', 'Y', 'Y', 'N', 'N'},
 

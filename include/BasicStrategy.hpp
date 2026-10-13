@@ -1,35 +1,7 @@
 #pragma once
 
-// Basic strategy domain logic: decision tables, card counting and Kelly betting, kept in its
-// own module rather than bundled with unrelated window/betting config constants. The declarations
-// below are defined exactly once in src/BasicStrategy.cpp.
-
 namespace BasicStrategy
 {
-    enum class Action
-    {
-        HIT,
-        STAND,
-        DOUBLE,
-        DOUBLE_STAND,
-        SPLIT,
-        SURRENDER
-    };
-
-    enum class PairAction
-    {
-        SPLIT,
-        NO_SPLIT,
-        SPLIT_IF_DAS
-    };
-
-    enum class HandType
-    {
-        HARD,
-        SOFT,
-        PAIR
-    };
-
     enum class CountingStyle
     {
         HI_LO,
@@ -58,5 +30,5 @@ namespace BasicStrategy
     // Generic per-card updater that dispatches on the active counting style.
     int updateCount(int currentCount, const int bjValue, CountingStyle style);
 
-    float computeTrueCount(int runningCount, int cardsRemaining);
+    float computeTrueCount(int runningCount, int cardsRemaining); //hi-lo
 }
