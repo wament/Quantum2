@@ -13,6 +13,8 @@ public:
 
     void create(int numberOfDecks);
     void shuffle();
+    // Replace the entire shoe with an exact card order. Used by unit tests to deal a deterministic hand.
+    void setCards(const std::vector<Card>& cards);
 
     [[nodiscard]] Card draw();
     const Card& getCard(std::size_t index) const;

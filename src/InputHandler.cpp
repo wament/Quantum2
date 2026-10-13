@@ -102,6 +102,39 @@ void InputHandler::navigateMenu(bool forward)
     }
 }
 
+// Single source of truth for cycling the main menu's Speed row (Fast -> Normal -> Slow -> AutoPlay -> Fast).
+// Shared by arrow keys, the mouse wheel, and Left/Right so every input wraps around identically instead of
+// stopping at either end. `direction` is +1 to advance or -1 to step back; +4 keeps the index positive
+// before modulo so wraparound works in both directions.
+void InputHandler::cycleGameSpeed(Game &game, int direction)
+{
+    constexpr const GameSpeed order[4] = {
+        GameSpeed::Fast, GameSpeed::Normal, GameSpeed::Slow, GameSpeed::AutoPlay};
+
+    int idx = 0;
+    for (int i = 0; i < 4; ++i)
+        if (order[i] == game.gameSpeed)
+        {
+            idx = i;
+            break;
+        }
+
+    idx = (idx + direction + 4) % 4;
+
+    GameSpeed next = order[idx];
+    if (game.gameSpeed != next)
+    {
+        game.gameSpeed = next;
+        switch (next)
+        {
+        case GameSpeed::Fast:      Logger::info() << "Game speed set to Fast."; break;
+        case GameSpeed::Normal:    Logger::info() << "Game speed set to Normal."; break;
+        case GameSpeed::Slow:      Logger::info() << "Game speed set to Slow."; break;
+        case GameSpeed::AutoPlay:  Logger::info() << "Game speed set to AutoPlay."; break;
+        }
+    }
+}
+
 // Advances a value option (player count or game speed) in the given direction, matching the
 // Left/Right handling so mouse-wheel scrolling changes values exactly like the arrow keys do.
 // `option` is whichever row is under the cursor when called from scroll handling, so scrolling
@@ -117,44 +150,9 @@ void InputHandler::adjustValue(bool forward, MenuOption option)
             game.setPlayerCount(game.playerCount - 1);
         break;
     case MenuOption::GameSpeed:
-    {
-        constexpr const GameSpeed order[4] = {
-            GameSpeed::Fast, GameSpeed::Normal, GameSpeed::Slow, GameSpeed::AutoPlay};
-        int idx = 0;
-        for (int i = 0; i < 4; ++i)
-            if (order[i] == game.gameSpeed)
-            {
-                idx = i;
-                break;
-            }
-
-        if (forward && idx < 3)
-            idx++;
-        else if (!forward && idx > 0)
-            idx--;
-
-        GameSpeed next = order[idx];
-        if (game.gameSpeed != next)
-        {
-            game.gameSpeed = next;
-            switch (next)
-            {
-            case GameSpeed::Normal:
-                Logger::info() << "Game speed set to Normal.";
-                break;
-            case GameSpeed::Fast:
-                Logger::info() << "Game speed set to Fast.";
-                break;
-            case GameSpeed::Slow:
-                Logger::info() << "Game speed set to Slow.";
-                break;
-            case GameSpeed::AutoPlay:
-                Logger::info() << "Game speed set to AutoPlay.";
-                break;
-            }
-        }
+        // Cycle Fast -> Normal -> Slow -> AutoPlay -> Fast (and reverse) with wraparound — see cycleGameSpeed().
+        cycleGameSpeed(game, forward ? 1 : -1);
         break;
-    }
     }
 }
 
@@ -260,45 +258,13 @@ void InputHandler::processMenuEvents(const sf::Event& event)
         if (game.menuSelection == MenuOption::PlayerCount && game.playerCount > 1)
             game.setPlayerCount(game.playerCount - 1);
         else if (game.menuSelection == MenuOption::GameSpeed)
-        {
-            if (game.gameSpeed == GameSpeed::Normal)
-            {
-                game.gameSpeed = GameSpeed::Fast;
-                Logger::info() << "Game speed set to Fast.";
-            }
-            else if (game.gameSpeed == GameSpeed::Slow)
-            {
-                game.gameSpeed = GameSpeed::Normal;
-                Logger::info() << "Game speed set to Normal.";
-            }
-            else if (game.gameSpeed == GameSpeed::AutoPlay)
-            {
-                game.gameSpeed = GameSpeed::Slow;
-                Logger::info() << "Game speed set to Slow.";
-            }
-        }
+            cycleGameSpeed(game, -1);  // Left steps back around the Speed cycle
         break;
     case sf::Keyboard::Key::Right:
         if (game.menuSelection == MenuOption::PlayerCount && game.playerCount < 6)
             game.setPlayerCount(game.playerCount + 1);
         else if (game.menuSelection == MenuOption::GameSpeed)
-        {
-            if (game.gameSpeed == GameSpeed::Fast)
-            {
-                game.gameSpeed = GameSpeed::Normal;
-                Logger::info() << "Game speed set to Normal.";
-            }
-            else if (game.gameSpeed == GameSpeed::Normal)
-            {
-                game.gameSpeed = GameSpeed::Slow;
-                Logger::info() << "Game speed set to Slow.";
-            }
-            else if (game.gameSpeed == GameSpeed::Slow)
-            {
-                game.gameSpeed = GameSpeed::AutoPlay;
-                Logger::info() << "Game speed set to AutoPlay.";
-            }
-        }
+            cycleGameSpeed(game, 1);  // Right advances around the Speed cycle
         break;
     case sf::Keyboard::Key::Enter:
         activateMainMenuOption(game, game.menuSelection);

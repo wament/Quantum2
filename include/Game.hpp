@@ -58,7 +58,31 @@ class Game
 {
 public:
     Game();
+    explicit Game(bool headless);  // test-only: no SFML window/assets/replay/HUD, pure game state only
     ~Game();
+
+    // ---- Test support: headless construction + deterministic deck injection ----
+    // Replace the shoe with an exact card order so tests can deal a fully determined sequence.
+    void setDeck(const std::vector<Card>& cards);
+    // Set up a single in-memory player with a minimum bet and begin the round (deals the initial two
+    // cards plus the dealer up-card from the injected shoe), leaving roundState at PlayerTurn when the
+    // dealer's up-card is not an ace. Used to exercise split/hit/stand end-to-end without SFML.
+    void startTestRound();
+
+    const Hand& testHand(size_t playerIndex, size_t handIndex) const;   // read a player hand back
+    Player& testPlayer(int index = 0) { return players[index]; }        // mutate/read a player (bankroll etc.)
+    const Hand& testDealer() const { return dealer; }
+    RoundState roundStateForTest() const { return roundState; }
+    GameState gameStateForTest() const { return gameState; }
+    size_t activePlayerIndexForTest() const { return activePlayerIndex; }
+
+    // ---------------- Player Actions (public so the round-state machine and tests can drive them) ----
+
+    void hit();
+    void stand();
+    bool doubleDown();
+    bool split();
+    bool surrender();
 
     void run();
 
@@ -174,18 +198,6 @@ private:
     void confirmBet();
     // Kelly-based optimal bet calculation (uses kellyFraction)
     int calculateOptimalBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet) const;
-
-    // ---------------- Player Actions ----------------
-
-    void hit();
-
-    void stand();
-
-    bool doubleDown();
-
-    bool split();
-
-    bool surrender();
 
     void confirmInsurance();
 

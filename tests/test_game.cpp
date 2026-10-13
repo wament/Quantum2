@@ -3,6 +3,7 @@
 #include <BasicStrategy.hpp>
 #include <Hand.hpp>
 #include <Deck.hpp>
+#include <Player.hpp>
 #include <vector>
 
 using namespace Constants;
@@ -82,6 +83,78 @@ TEST_CASE("True count computation", "[Game][Counting]")
     // Edge case: very few cards remaining (clamped to 0.5 decks)
     tc = BasicStrategy::computeTrueCount(10, 20);
     CHECK(tc == Approx(20.0f).margin(0.01f));
+}
+
+// Reko is the user's two-level variant (BasicStrategy::calculateRekoValue): 2-7 -> +1, 8/9 -> 0, Aces and
+// ten-value cards -> -1. Every value below comes from Card::getBlackjackValue(), exactly what Game::afterDraw
+// feeds into the updater, so these exercise production's real counting path rather than an abstract one.
+TEST_CASE("Reko counting values are correct", "[Game][Counting]")
+{
+    // Ace -> blackjack value 11 -> -1
+    Card ace;   ace.value = 1;   ace.suit = Suit::Spades;
+    CHECK(BasicStrategy::calculateRekoValue(ace.getBlackjackValue()) == -1);
+
+    // 2 through 7 -> +1 (checked at both ends)
+    Card two;   two.value = 2;   two.suit = Suit::Hearts;
+    Card seven; seven.value = 7; seven.suit = Suit::Diamonds;
+    CHECK(BasicStrategy::calculateRekoValue(two.getBlackjackValue()) == 1);
+    CHECK(BasicStrategy::calculateRekoValue(seven.getBlackjackValue()) == 1);
+
+    // 8 and 9 -> 0
+    Card eight; eight.value = 8; eight.suit = Suit::Clubs;
+    Card nine;  nine.value = 9;  nine.suit = Suit::Hearts;
+    CHECK(BasicStrategy::calculateRekoValue(eight.getBlackjackValue()) == 0);
+    CHECK(BasicStrategy::calculateRekoValue(nine.getBlackjackValue()) == 0);
+
+    // Ten-value cards and faces (J/Q/K) -> -1
+    Card ten;   ten.value = 10;  ten.suit = Suit::Spades;
+    Card jack;  jack.value = 11; jack.suit = Suit::Hearts;
+    Card queen; queen.value = 12; queen.suit = Suit::Diamonds;
+    Card king;  king.value = 13; king.suit = Suit::Clubs;
+    CHECK(BasicStrategy::calculateRekoValue(ten.getBlackjackValue()) == -1);
+    CHECK(BasicStrategy::calculateRekoValue(jack.getBlackjackValue()) == -1);
+    CHECK(BasicStrategy::calculateRekoValue(queen.getBlackjackValue()) == -1);
+    CHECK(BasicStrategy::calculateRekoValue(king.getBlackjackValue()) == -1);
+}
+
+TEST_CASE("Reko running count updates correctly through updateCount", "[Game][Counting]")
+{
+    // Same shoe drawn through the generic updater in Reko mode (mirrors Game::afterDraw). Card is a
+    // {value, suit} aggregate, so brace-init fills value then suit.
+    std::vector<Card> cards = {
+        {1,  Suit::Spades},  {5,  Suit::Hearts},  {7,  Suit::Diamonds},
+        {8,  Suit::Clubs},   {13, Suit::Hearts},  {2,  Suit::Spades}
+    };
+
+    int reko = 0;
+    for (const Card& c : cards)
+        reko = BasicStrategy::updateCount(reko, c.getBlackjackValue(), BasicStrategy::CountingStyle::REKO);
+
+    // Ace(-1) + 5(+1) + 7(+1) + 8(0) + King(-1) + 2(+1) = 1
+    CHECK(reko == 1);
+}
+
+TEST_CASE("updateCount dispatches per style; Hi-Lo and Reko diverge on a 7", "[Game][Counting]")
+{
+    Card seven; seven.value = 7; seven.suit = Suit::Diamonds;
+    int bjValue = seven.getBlackjackValue();
+
+    // A 7 is neutral under Hi-Lo but +1 under Reko, so this divergent card proves the style branch is real
+    // and not just one system always running in the background.
+    CHECK(BasicStrategy::updateCount(0, bjValue, BasicStrategy::CountingStyle::HI_LO) == 0);
+    CHECK(BasicStrategy::updateCount(0, bjValue, BasicStrategy::CountingStyle::REKO) == 1);
+
+    // Both systems still advance on every card.
+    Card ace;   ace.value = 1;   ace.suit = Suit::Spades;
+    Card five;  five.value = 5;  five.suit = Suit::Hearts;
+    CHECK(BasicStrategy::updateCount(0, ace.getBlackjackValue(), BasicStrategy::CountingStyle::HI_LO) == -1);
+    CHECK(BasicStrategy::updateCount(0, five.getBlackjackValue(), BasicStrategy::CountingStyle::REKO) == 1);
+}
+
+TEST_CASE("countingStyleName reports Reko and Hi-Lo", "[Game][Counting]")
+{
+    CHECK(std::string(BasicStrategy::countingStyleName(BasicStrategy::CountingStyle::REKO)) == "Reko");
+    CHECK(std::string(BasicStrategy::countingStyleName(BasicStrategy::CountingStyle::HI_LO)) == "Hi-Lo");
 }
 
 TEST_CASE("Basic strategy: hard 12 vs 6 should stand", "[Game][Strategy]")
@@ -378,4 +451,64 @@ TEST_CASE("Split-ace hand takes exactly one extra card, then can't hit again", "
     pair.setSplit(true, 8);
     CHECK(pair.isSplit());
     CHECK(!pair.isSplitAce());
+}
+
+// A split hand that reaches 21 (even via Ace + ten-value card) pays even money, never the 3:2
+// "blackjack" premium — only an unsplit natural on the original deal pays 3:2. See Player::settle().
+TEST_CASE("Split ace + ten-value card reaching 21 pays even money, not 3:2", "[Game][Split][Payout]")
+{
+    Player splitPlayer("William", 1000);
+
+    Hand splitHand;
+    Card ace;   ace.value = 1;   ace.suit = Suit::Spades;  splitHand.addCard(ace);
+    Card face;  face.value = 13; face.suit = Suit::Hearts; splitHand.addCard(face); // ten-value -> total 21
+    splitHand.setBet(100);
+    splitHand.setSplit(true, 11);   // created by splitting aces
+
+    CHECK(splitHand.getValue() == 21);
+    CHECK(!splitHand.isBlackjack());
+
+    int payout = 0;
+    SettlementResult result = splitPlayer.settle(splitHand, /*dealerValue=*/20, /*dealerBust=*/false, payout);
+    CHECK(result == SettlementResult::Win);
+    CHECK(payout == 200);   // even money (bet * 2), NOT 3:2 (which would be bet * 2.5 = 250)
+}
+
+// Splitting a pair of ten-value cards and reaching 21 on a split hand also pays even money, not 3:2.
+TEST_CASE("Split face pair reaching 21 pays even money, not 3:2", "[Game][Split][Payout]")
+{
+    Player splitPlayer("William", 1000);
+
+    Hand splitHand;
+    Card faceA; faceA.value = 13; faceA.suit = Suit::Hearts; splitHand.addCard(faceA); // ten-value card (J/Q/K)
+    Card aceB;  aceB.value = 1;  aceB.suit = Suit::Spades;  splitHand.addCard(aceB);   // aces count as 11 -> total 21
+    splitHand.setBet(100);
+    splitHand.setSplit(true, 10);   // created by splitting a pair of ten-value cards
+
+    CHECK(splitHand.getValue() == 21);
+    CHECK(!splitHand.isBlackjack());
+
+    int payout = 0;
+    SettlementResult result = splitPlayer.settle(splitHand, /*dealerValue=*/20, /*dealerBust=*/false, payout);
+    CHECK(result == SettlementResult::Win);
+    CHECK(payout == 200);   // even money, NOT 3:2
+}
+
+// The only thing that pays 3:2 is a natural Ace + ten-value card on the original (unsplit) deal.
+TEST_CASE("Natural Ace + face pays 3:2", "[Game][Blackjack][Payout]")
+{
+    Player human("William", 1000);
+
+    Hand bj;
+    Card ace;  ace.value = 1;  ace.suit = Suit::Spades; bj.addCard(ace);
+    Card king; king.value = 13; king.suit = Suit::Hearts; bj.addCard(king);   // natural A + K
+
+    bj.setBet(100);
+
+    CHECK(bj.isBlackjack());
+
+    int payout = 0;
+    SettlementResult result = human.settle(bj, /*dealerValue=*/20, /*dealerBust=*/false, payout);
+    CHECK(result == SettlementResult::Win);
+    CHECK(payout == 250);   // 3:2 (bet * 2.5)
 }

@@ -51,7 +51,8 @@ namespace BasicStrategy
 
     int updateHiLo(int currentCount, const int bjValue);
 
-    // Reko: a balanced three-level system (Ace +1, 2 +2, 3-9 +1, ten-value/face cards -2)
+    // Reko: the user's two-level variant (unbalanced, compensated by a -4/deck starting offset). Card
+    // values -> +1 for 2-7, 0 for 8/9, and -1 for Aces and ten-value cards.
     int calculateRekoValue(const int bjValue);
 
     // Generic per-card updater that dispatches on the active counting style.

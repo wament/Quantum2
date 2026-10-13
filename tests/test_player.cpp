@@ -141,6 +141,21 @@ TEST_CASE("shouldTakeInsurance follows the Hi-Lo +3 rule", "[Player][Insurance]"
     CHECK(p.shouldTakeInsurance(0, 5.0f) == false);
 }
 
+TEST_CASE("shouldTakeInsurance follows the Reko +2 rule", "[Player][Insurance]")
+{
+    // Reko's deviation threshold is +2 (lower than Hi-Lo's +3), so a true count between 2 and 3 that would
+    // not trigger insurance under Hi-Lo does here.
+    Player p("Test");
+
+    CHECK(p.shouldTakeInsurance(20, 2.0f, BasicStrategy::CountingStyle::REKO) == true);
+    CHECK(p.shouldTakeInsurance(20, 2.5f, BasicStrategy::CountingStyle::REKO) == true);
+    CHECK(p.shouldTakeInsurance(20, 1.9f, BasicStrategy::CountingStyle::REKO) == false);
+    CHECK(p.shouldTakeInsurance(0, 5.0f, BasicStrategy::CountingStyle::REKO) == false);
+
+    // Sanity: the same counts under Hi-Lo would still decline (threshold +3).
+    CHECK(p.shouldTakeInsurance(20, 2.0f, BasicStrategy::CountingStyle::HI_LO) == false);
+}
+
 TEST_CASE("takeInsurance places the wager and records it on the hand", "[Player][Insurance]")
 {
     Player p("Test");

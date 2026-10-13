@@ -122,10 +122,22 @@ FetchContent_MakeAvailable(Catch2)
 add_executable(Blackjack2Tests
     src/Card.cpp
     src/Deck.cpp
+    src/Game.cpp
     src/BasicStrategy.cpp
+    src/RoundEngine.cpp
+    src/Graphics.cpp
     src/Hand.cpp
     src/Player.cpp
     src/PlayerProfile.cpp
+    src/HUD.cpp
+    src/Panel.cpp
+    src/StatBox.cpp
+    src/FontManager.cpp
+    src/Replay.cpp
+    src/ReplayView.cpp
+    src/GameRenderer.cpp
+    src/InputHandler.cpp
+    src/HandEvaluator.cpp
     src/Logger.cpp
     tests/test_card.cpp
     tests/test_deck.cpp
@@ -133,6 +145,7 @@ add_executable(Blackjack2Tests
     tests/test_game.cpp
     tests/test_player.cpp
     tests/test_assets.cpp
+    tests/test_split_aces.cpp
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)

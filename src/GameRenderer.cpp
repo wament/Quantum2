@@ -303,11 +303,11 @@ void GameRenderer::drawPlayers(Game &game, const std::vector<PlayerHandLayout>& 
         if (playerIndex == game.activePlayerIndex && game.roundState == RoundState::PlayerTurn)
         {
             const PlayerHandLayout &lane = lanes[playerIndex];
-            sf::RectangleShape highlight(sf::Vector2f(lane.cw + 40.f, 260.f));
+            sf::RectangleShape highlight(sf::Vector2f(lane.cw + 80.f, 260.f));
             highlight.setFillColor(sf::Color(255, 255, 0, 30));
             highlight.setOutlineColor(sf::Color(255, 255, 0, 150));
             highlight.setOutlineThickness(2.f);
-            highlight.setPosition(sf::Vector2f(lane.cx - (lane.cw + 40.f) * 0.5f, Constants::PLAYER_Y + yOffset - 40.f));
+            highlight.setPosition(sf::Vector2f(lane.cx - (lane.cw) * 0.5f, Constants::PLAYER_Y + yOffset - 40.f));
             game.window.draw(highlight);
 
             sf::Text turnLabel(FontManager::get(), "YOUR TURN", 14.f);

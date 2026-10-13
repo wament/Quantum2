@@ -28,6 +28,11 @@ private:
     // value without that row having to be keyboard-selected first (game.menuSelection).
     void adjustValue(bool forward, MenuOption option);
 
+    // Cycles the Speed row (Fast -> Normal -> Slow -> AutoPlay -> Fast) with wraparound — shared by arrow
+    // keys, the mouse wheel, and Left/Right so every input advances/steps back identically instead of
+    // stopping at either end. A static member so it inherits InputHandler's friendship access to Game.
+    static void cycleGameSpeed(Game &game, int direction);
+
     void processGameEvents(const sf::Event& event);
     void processPauseEvents(const sf::Event& event);
 };

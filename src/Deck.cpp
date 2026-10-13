@@ -58,6 +58,15 @@ void Deck::shuffle()
     Logger::debug() << "Shoe shuffled. Cards: " << cards.size() << ".";
 }
 
+void Deck::setCards(const std::vector<Card>& newCards)
+{
+    cards = newCards;
+    cutCardReached = false;
+    activeShoeRecord.clear();
+    previousShoeRecord.clear();
+    hasPreviousRecord = false;
+}
+
 Card Deck::draw()
 {
     Card card = cards.back();

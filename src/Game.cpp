@@ -95,8 +95,8 @@ void Game::startNewGame()
     for (int i = 0; i < GameConfig::NPC_COUNT && i + 1 < playerCount; i++)
     {
         const auto& cfg = GameConfig::NPC_CONFIGS[i];
-        players.push_back(Player(cfg.name));
-        players[i + 1].setBankroll(cfg.bankroll);
+        // Fresh in-memory NPC: no disk read, no JSON parse, no persistence. The human player above loads the real profile.
+        players.push_back(Player(cfg.name, cfg.bankroll));
         players[i + 1].setBettingStrategy(static_cast<BettingStrategy>(cfg.strategy), cfg.baseBet);
         Logger::info() << players[i + 1].getName() << " starts with $" << cfg.bankroll
                        << " using " << cfg.strategy << " strategy";
@@ -257,6 +257,72 @@ void Game::updateHUDState()
     hudState.currentShoe = &currentShoeRecord;
 }
 
+// Test support: headless construction + deterministic deck injection.
+
+Game::Game(bool headless)
+    : window(),
+      gameView(),
+      inputHandler(*this),
+      evaluator(*this)
+{
+    // Headless mode (unit tests): no SFML window, no asset loading, no replay, no HUD. Only the pure
+    // round/state machine is initialized so a full game can be driven deterministically from tests.
+    if (!headless)
+        return;
+
+    npcActionTimer = 0.0f;
+    npcActionDelay = 1.0f;
+    runningCount = 0;
+    backgroundRunningCount = 0;
+    trueCount = 0.f;
+    gameState = GameState::Started;
+    roundState = RoundState::PlayerTurn;
+    activePlayerIndex = 0;
+    initalBet = 0;
+    shoeCumulativeWinLoss = 0;
+    sessionCumulativeWinLoss = 0;
+}
+
+// Replace the shoe with an exact card order so tests can deal a fully determined sequence. `cards` is in
+// natural DEAL order (first drawn first); Deck::draw() pops from the back, so we reverse before storing.
+void Game::setDeck(const std::vector<Card>& cards)
+{
+    deck.setCards(std::vector<Card>(cards.rbegin(), cards.rend()));
+}
+
+const Hand& Game::testHand(size_t playerIndex, size_t handIndex) const
+{
+    return players[playerIndex].hands[handIndex];
+}
+
+// Set up a single in-memory player with a minimum bet and begin the round (deals the initial two cards
+// plus the dealer up-card from the injected shoe). Leaves roundState at PlayerTurn when the dealer's
+// up-card is not an ace, so split/hit/stand can be exercised end-to-end without SFML or disk profiles.
+void Game::startTestRound()
+{
+    // In-memory single seat (NPC constructor: no disk read/write), so tests stay hermetic.
+    players.clear();
+    players.emplace_back("William", GameConfig::STARTING_BANKROLL);
+
+    npcActionTimer = 0.0f;
+    npcActionDelay = 1.0f;
+
+    dealer.clear();
+    runningCount = 0;
+    backgroundRunningCount = 0;
+    trueCount = 0.f;
+    gameState = GameState::Started;
+    roundState = RoundState::PlaceBets;
+    activePlayerIndex = 0;
+    initalBet = Constants::MINIMUM_BET;
+
+    handActions.clear();
+    handActions.resize(1);
+
+    players[0].resetRound(Constants::MINIMUM_BET); // one hand, minimum bet (>0) so it gets dealt
+    deal();                                         // initial two cards + dealer up card from the injected shoe
+}
+
 // Player actions
 
 void Game::hit()
@@ -321,6 +387,14 @@ bool Game::doubleDown()
         return false;
     }
 
+    // A split ace receives exactly one card and then stands, so it may never be doubled. This guard makes
+    // double-down consistent with the forced-stand behavior of hit()/stand() on split aces.
+    if (hand.isSplitAce())
+    {
+        Logger::warn() << p.getName() << " tried to double down but cannot double a split ace.";
+        return false;
+    }
+
     if (!hand.canDouble())
     {
         Logger::warn() << p.getName() << " tried to double down but hand cannot double (not 2 cards).";
@@ -378,19 +452,27 @@ bool Game::split()
     logStrategyDeviation('P');
     Hand newHand;
     Card splitCard = p.hands[handIndex].takeLastCard();
+    // Value of the card left in the first hand (the remaining ace for a pair of aces -> 11). Computed once
+    // so both hands are flagged identically.
+    const int splitValue = p.hands[handIndex].getCard(0).getBlackjackValue();
     Logger::info() << p.getName() << " splits " << splitCard.getBlackjackValueToString() << "s.";
-    newHand.addCard(splitCard); 
+    newHand.addCard(splitCard);
     newHand.setBet(p.hands[handIndex].getBet());
+    // Flag BEFORE pushing: push_back copies newHand into the vector, so setting flags on the local copy
+    // afterwards would leave the stored hand unflagged. That exact ordering bug meant the second split
+    // hand never became a split-ace, so RoundEngine could not auto-finish it and the round stalled.
+    newHand.setSplit(true, splitValue);
 
     handActions[getGlobalHandIndexForPlayer(activePlayerIndex, p.currentHand)].push_back("P");
     hudState.basicStrategyHint.clear();
 
-    dealCardToPlayer(p.hands[handIndex]);
-
+    // Each split hand is left with exactly one card here. RoundEngine then deals the single permitted
+    // card to every split hand uniformly (auto-finish / re-split for aces; first card then act otherwise).
+    // Pre-dealing into only this hand broke that symmetry: the first split-ace hand ended up size 2 but
+    // unfinished, so it was left for the player to hit and even double down.
     p.hands.push_back(newHand);
     handActions.push_back({}); // new action vector for the split hand
-    p.hands[handIndex].setSplit(true, p.hands[handIndex].getCard(0).getBlackjackValue());
-    newHand.setSplit(true, p.hands[handIndex].getCard(0).getBlackjackValue());
+    p.hands[handIndex].setSplit(true, splitValue);
 
     PlayerStats &stats = getStats();
     stats.splits++;

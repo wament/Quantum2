@@ -44,6 +44,16 @@ Player::Player(const std::string& playerName)
     bankroll = profile.getBankroll();
 }
 
+// NPC seat: fresh in-memory profile only. NPCs are ephemeral — they keep no profile on disk, track no
+// shoe/round records, and don't persist a bankroll between sessions. The human player persists via the
+// load/save path above; an NPC just plays this game with a given starting bankroll.
+Player::Player(const std::string& playerName, int startingBankroll)
+    : name(playerName), bankroll(startingBankroll)
+{
+    profile = PlayerProfile(playerName);
+    profile.setBankroll(startingBankroll);
+}
+
 PlayerProfile Player::getProfile()
 {
     return profile;

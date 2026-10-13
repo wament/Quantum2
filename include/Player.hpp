@@ -24,6 +24,11 @@ class Player
 public: 
     Player(const std::string& playerName);
 
+    // NPC seat: starts fresh in memory with a given bankroll and never persists — no disk read/write, no
+    // shoe/round records kept. The human player uses the persistent-profile constructor above; NPCs are
+    // ephemeral and just play this game with a fixed starting bankroll.
+    Player(const std::string& playerName, int startingBankroll);
+
     void resetRound(int previousBet);  
 
     int currentHand = 0; 
