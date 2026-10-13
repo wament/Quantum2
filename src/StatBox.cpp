@@ -1,5 +1,6 @@
 #include "StatBox.hpp"
 #include "Constants.hpp"
+#include <algorithm>
 
 
 StatBox::StatBox()
@@ -41,9 +42,41 @@ sf::FloatRect StatBox::getTitleBounds() const
     return m_title ? m_title->getGlobalBounds() : sf::FloatRect{};
 }
 
+sf::FloatRect StatBox::getTitleValueBounds() const
+{
+    // Union of the title and value bounds so a click anywhere on a clickable box (e.g. the counting-style
+    // toggle) registers, not just on its label line. getGlobalBounds() is in world space. This SFML build's
+    // sf::FloatRect exposes position/size rather than left/top/right/bottom.
+    sf::Vector2f minPos(1e9f, 1e9f);
+    sf::Vector2f maxPos(-1e9f, -1e9f);
+    bool has = false;
+
+    auto includeRect = [&](const sf::FloatRect &r) {
+        const sf::Vector2f p = r.position;
+        const sf::Vector2f s = r.size;
+        minPos.x = std::min(minPos.x, p.x);
+        minPos.y = std::min(minPos.y, p.y);
+        maxPos.x = std::max(maxPos.x, p.x + s.x);
+        maxPos.y = std::max(maxPos.y, p.y + s.y);
+        has = true;
+    };
+
+    if (m_title) includeRect(m_title->getGlobalBounds());
+    if (m_value) includeRect(m_value->getGlobalBounds());
+
+    if (!has) return sf::FloatRect{};
+
+    return sf::FloatRect(minPos, maxPos - minPos);
+}
+
 void StatBox::setValue(const std::string &value)
 {
     m_value->setString(value);
+}
+
+void StatBox::setValueColor(sf::Color color)
+{
+    m_value->setFillColor(color);
 }
 
 void StatBox::setPosition(sf::Vector2f position)

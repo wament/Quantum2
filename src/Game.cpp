@@ -226,7 +226,13 @@ void Game::updateHUDState()
     hudState.runningCount = runningCount;
     hudState.countingStyleName = BasicStrategy::countingStyleName(countingStyle);
 
-    hudState.trueCount = BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
+    // The True Count box always shows the HI_LO true count, even when Reko is active (surfaced in yellow as a
+    // cross-check). Derive it from the HI_LO running count rather than the active system's count.
+    const int hiLoRunningCount =
+        (countingStyle == BasicStrategy::CountingStyle::HI_LO) ? runningCount : backgroundRunningCount;
+    hudState.trueCount =
+        BasicStrategy::computeTrueCount(hiLoRunningCount, static_cast<int>(deck.size()));
+    hudState.trueCountHighlighted = (countingStyle == BasicStrategy::CountingStyle::REKO);
 
     hudState.cardsRemaining = deck.size();
 
@@ -845,7 +851,7 @@ void Game::dealerTurn()
     {
         // Turn just began: arm the anticipation beat before the first card.
         dealerTurnStarted = true;
-        dealerStartDelayTimer = Constants::DEALER_START_DELAY;
+        dealerStartDelayTimer = GameTiming::DEALER_START_DELAY;
         return;
     }
     if (shouldHit)
@@ -863,7 +869,7 @@ void Game::dealerTurn()
         dealCardToDealer();
 
         // Arm the beat before the next card so cards come out one at a time, not all at once.
-        dealerStartDelayTimer = Constants::DEALER_CARD_DELAY;
+        dealerStartDelayTimer = GameTiming::DEALER_CARD_DELAY;
         return;
     }
 
@@ -927,7 +933,7 @@ void Game::dealerTurn()
         if (gameSpeed == GameSpeed::AutoPlay)
         { 
             Logger::info() << "Auto-play: Starting a new shoe.";
-            hudState.afterShoeTimer = Constants::AUTOPLAY_AFTER_SHOE_DELAY;
+            hudState.afterShoeTimer = GameTiming::afterShoeWait(gameSpeed);
         }
         else
         {

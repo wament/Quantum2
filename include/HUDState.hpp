@@ -14,7 +14,11 @@ struct HUDState
     bool streakIsWin = false;
 
     int runningCount = 0;
+    // True count of the HI_LO system regardless of which style is currently active (see Game::updateHUDState).
     float trueCount = 0.f;
+
+    // Yellow when Reko is active and we surface the Hi-Lo true count as a cross-check; white otherwise.
+    bool trueCountHighlighted = false;
  
     float kellyFraction = 0.33f;
     bool riskSliderDragging = false;

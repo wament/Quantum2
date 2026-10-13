@@ -148,19 +148,10 @@ void HandEvaluator::evaluateHands()
             oss << "Push";
         game.hudState.playerSummaries.push_back(oss.str());
     }
-    if (game.gameSpeed == GameSpeed::Fast || game.gameSpeed == GameSpeed::AutoPlay)
-    {
-        game.hudState.summaryTimer = SummaryTiming::FAST_AUTOPLAY;
-    }
-    else
-    {
-        game.hudState.summaryTimer = SummaryTiming::NORMAL_SLOW;
-    }
-
-    if (game.gameSpeed == GameSpeed::AutoPlay)
-    {
-        game.hudState.afterHandTimer = Constants::AUTOPLAY_AFTER_HAND_DELAY;
-    }
+    // End-of-round summary display time and AutoPlay inter-hand hold both come from the single timing table
+    // (GameTiming), keyed by speed. Non-AutoPlay speeds wait 0s between hands, so there is no artificial delay.
+    game.hudState.summaryTimer = GameTiming::summaryDisplayTime(game.gameSpeed);
+    game.hudState.afterHandTimer = GameTiming::afterHandWait(game.gameSpeed);
 
     int roundNet = 0;
     for (const auto& outcome : game.currentRoundRecord.playerHands)

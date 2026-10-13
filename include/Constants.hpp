@@ -1,5 +1,46 @@
 #pragma once
 
+// Feedback/pacing timing lives in one place (the GameTiming namespace below) and is scaled by the speed chosen
+// in the menu through its accessors — RoundEngine/HandEvaluator/Game draw from this single table instead of
+// repeating these switches. Presentation (alpha fades, text placement) stays in GameRenderer/HUD; this namespace
+// only answers "how long feedback waits".
+enum class GameSpeed {
+    Fast,
+    Normal,
+    Slow,
+    AutoPlay
+};
+
+namespace GameTiming
+{
+    // NPC reaction delay (seconds): how long each NPC waits before taking its next action.
+    constexpr float NPC_FAST     = 0.3f;
+    constexpr float NPC_NORMAL   = 1.0f;
+    constexpr float NPC_SLOW     = 2.0f;
+    constexpr float NPC_AUTOPLAY = 0.15f;
+
+    // Dealer reveal pacing (seconds), fixed regardless of speed so the dealer keeps one steady beat while
+    // players can still act instantly on autoplay. DEALER_START_DELAY is the anticipation beat before the
+    // first card and only fires when the dealer actually draws; DEALER_CARD_DELAY spaces subsequent cards.
+    constexpr float DEALER_START_DELAY = 0.5f;
+    constexpr float DEALER_CARD_DELAY  = 0.5f;
+
+    // End-of-round feedback / overlay durations (seconds): how long per-hand results stay on screen.
+    constexpr float SUMMARY_FAST_AUTOPLAY = 2.0f;   // Fast + AutoPlay: quick flash of results
+    constexpr float SUMMARY_NORMAL_SLOW   = 5.0f;   // Normal + Slow: readable, shown longer
+
+    // Auto-play inter-round waits (seconds); a value of 0 means "no wait".
+    constexpr float AUTOPLAY_AFTER_HAND_DELAY = 1.0f; // hold between hands in AutoPlay
+    constexpr float AUTOPLAY_AFTER_SHOE_DELAY = 3.0f; // hold before dealing the next shoe
+
+    // Speed -> pacing lookups so every call site draws timing from this one table and the relationship
+    // between a selected speed and how fast feedback moves can't drift apart.
+    inline float npcActionDelay(GameSpeed speed) { switch (speed) { case GameSpeed::Fast:      return NPC_FAST;     case GameSpeed::AutoPlay:  return NPC_AUTOPLAY;   case GameSpeed::Normal:    return NPC_NORMAL;   case GameSpeed::Slow:      return NPC_SLOW; } return NPC_NORMAL; }
+    inline float summaryDisplayTime(GameSpeed speed) { switch (speed) { case GameSpeed::Fast: case GameSpeed::AutoPlay: return SUMMARY_FAST_AUTOPLAY; default: return SUMMARY_NORMAL_SLOW; } }
+    inline float afterHandWait(GameSpeed speed) { return (speed == GameSpeed::AutoPlay) ? AUTOPLAY_AFTER_HAND_DELAY : 0.0f; }
+    inline float afterShoeWait(GameSpeed speed) { return (speed == GameSpeed::AutoPlay) ? AUTOPLAY_AFTER_SHOE_DELAY : 0.0f; }
+}
+
 namespace Constants
 {
     // Window
@@ -81,18 +122,6 @@ namespace Constants
 
     constexpr bool DOUBLE_AFTER_SPLIT_ALLOWED = true;
     constexpr bool RESPLIT_ACES_ALLOWED = true;
-
-    // Auto-play timing (seconds)
-    constexpr float AUTOPLAY_AFTER_HAND_DELAY = 1.0f;
-    constexpr float AUTOPLAY_AFTER_SHOE_DELAY = 3.0f;
-
-    // Half-second pause before the dealer takes their first hit when their turn begins (only applied
-    // if they will actually draw a card; a dealer that stands immediately gets no delay).
-    constexpr float DEALER_START_DELAY = 0.5f;
-
-    // Beat between each subsequent dealer card, revealed one at a time regardless of game speed so the
-    // dealer keeps a steady rhythm while players can still act instantly on autoplay.
-    constexpr float DEALER_CARD_DELAY = 0.5f;
 }
 
 // Gameplay configuration
@@ -125,11 +154,4 @@ namespace GameConfig
         {"Dave",  10000, 50, 3},  // Martingale
         {"Eve",   10000, 50, 4}   // Kelly
     };
-}
-
-// Summary overlay display time (seconds)
-namespace SummaryTiming
-{
-    constexpr float FAST_AUTOPLAY = 2.0f;
-    constexpr float NORMAL_SLOW = 5.0f;
 }

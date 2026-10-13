@@ -21,13 +21,9 @@ enum class PauseOption {
     Restart,
     QuitToMenu
 };
-enum class GameSpeed {
-    Fast,
-    Normal,
-    Slow,
-    AutoPlay
-};
-
+// GameSpeed lives in Constants.hpp (near the top) so the GameTiming accessors can reference it; the include
+// below pulls in the rest of the constants. Keeping it here means every header that includes Game.hpp still
+// sees both, in order.
 #include "Constants.hpp"
 #include "BasicStrategy.hpp"
 #include "Deck.hpp"

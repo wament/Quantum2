@@ -59,6 +59,10 @@ void HUD::initialize(sf::Font &font)
     m_bookBox->initialize(font, "Book");
 
     // --- Right panel boxes stacked vertically at the top of the panel ---
+    // Counting Style is first so it sits at the very top; clicking it toggles between Hi-Lo and Reko.
+    m_countingStyleBox = m_rightPanel.addStatBox("Counting Style");
+    m_countingStyleBox->initialize(font, "Counting Style");
+
     m_countBox = m_rightPanel.addStatBox("Count");
     m_countBox->initialize(font, "Count");
 
@@ -86,9 +90,10 @@ void HUD::initialize(sf::Font &font)
     const float rightPanelX = Constants::WINDOW_WIDTH - 200.f + Constants::PANEL_MARGIN;
     const float rightPanelY = Constants::PANEL_MARGIN;
 
-    m_countBox->setPosition(sf::Vector2f(rightPanelX, rightPanelY));
-    m_trueCountBox->setPosition(sf::Vector2f(rightPanelX, rightPanelY + boxHeight));
-    m_cardsRemainingBox->setPosition(sf::Vector2f(rightPanelX, rightPanelY + 2.f * boxHeight));
+    m_countingStyleBox->setPosition(sf::Vector2f(rightPanelX, rightPanelY));
+    m_countBox->setPosition(sf::Vector2f(rightPanelX, rightPanelY + boxHeight));
+    m_trueCountBox->setPosition(sf::Vector2f(rightPanelX, rightPanelY + 2.f * boxHeight));
+    m_cardsRemainingBox->setPosition(sf::Vector2f(rightPanelX, rightPanelY + 3.f * boxHeight));
 
     updateControls(font);
 }
@@ -122,9 +127,12 @@ void HUD::update(const HUDState &hudState)
     if (m_betBox)
         m_betBox->setValue(std::to_string(hudState.currentBet));
 
+    if (m_countingStyleBox)
+        m_countingStyleBox->setValue(hudState.countingStyleName);
+
     if (m_countBox)
     {
-        m_countBox->setTitle(std::string(m_countBox->getTitle() + " " + hudState.countingStyleName));
+        m_countBox->setTitle("Count");
         m_countBox->setValue(std::to_string(hudState.runningCount));
     }
 
@@ -133,6 +141,11 @@ void HUD::update(const HUDState &hudState)
         std::ostringstream oss;
         oss << std::fixed << std::setprecision(1) << hudState.trueCount;
         m_trueCountBox->setValue(oss.str());
+
+        // White when Hi-Lo is active (running + true count are the same system); yellow when Reko is active so
+        // the surfaced Hi-Lo true count stands out as a cross-check. sf::Color(255, 215, 0) matches the game's
+        // gold/yellow accent used for the strategy hint.
+        m_trueCountBox->setValueColor(hudState.trueCountHighlighted ? sf::Color(255, 215, 0) : sf::Color::White);
     }
 
     if (m_cardsRemainingBox)
@@ -217,6 +230,7 @@ bool HUD::rightVisible() const
 
 sf::FloatRect HUD::countTitleBounds() const
 {
-    // The Count title (e.g. "Count (Hi-Lo)") is clickable — see InputHandler toggling the counting style.
-    return m_countBox ? m_countBox->getTitleBounds() : sf::FloatRect{};
+    // The Counting Style box (e.g. "Counting Style" / "Hi-Lo") is clickable — see InputHandler toggling the
+    // counting style. Bounds span both its label and value lines so clicks anywhere on it register.
+    return m_countingStyleBox ? m_countingStyleBox->getTitleValueBounds() : sf::FloatRect{};
 }

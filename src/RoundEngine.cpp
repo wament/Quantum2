@@ -125,22 +125,9 @@ void RoundEngine::tick(float deltaTime, Game& game)
 
         if (game.activePlayerIndex > 0 || game.gameSpeed == GameSpeed::AutoPlay)
         {
-            // Set delay based on game speed
-            switch (game.gameSpeed)
-            {
-            case GameSpeed::Fast:
-                game.npcActionDelay = 0.3f;
-                break;
-            case GameSpeed::AutoPlay:
-                game.npcActionDelay = 0.15f;
-                break;
-            case GameSpeed::Normal:
-                game.npcActionDelay = 1.0f;
-                break;
-            case GameSpeed::Slow:
-                game.npcActionDelay = 2.0f;
-                break;
-            }
+            // NPC pacing is taken from the single timing table (GameTiming), keyed by the selected speed, so
+            // it can't drift apart from the dealer/feedback timings tuned in the same place.
+            game.npcActionDelay = GameTiming::npcActionDelay(game.gameSpeed);
 
             // Use timer to delay NPC actions
             game.npcActionTimer -= deltaTime;

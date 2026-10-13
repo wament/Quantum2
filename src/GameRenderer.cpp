@@ -533,8 +533,10 @@ void GameRenderer::drawSummaryOverlay(Game &game)
     if (game.hudState.playerSummaries.empty() || game.hudState.summaryTimer <= 0.0f)
         return;
 
-    // Calculate alpha based on timer (fade out over 6 seconds)
-    float alpha = static_cast<float>(std::min(255.0f, game.hudState.summaryTimer * 42.5f));
+    // Presentation-only pacing: ramp opacity across a ~6s window so the summary fades out with the overlay.
+    // The display duration itself is decided in GameTiming (game logic); this is purely how it renders.
+    constexpr float summaryFadeFactorPerSecond = 255.0f / 6.0f; // == 42.5, full opacity over ~6s of remaining time
+    float alpha = static_cast<float>(std::min(255.0f, game.hudState.summaryTimer * summaryFadeFactorPerSecond));
     sf::Color textColor(255, 255, 255, static_cast<unsigned char>(alpha));
 
     for (size_t i = 0; i < game.hudState.playerSummaries.size(); i++)

@@ -25,7 +25,7 @@ public:
     bool leftVisible() const;
     bool rightVisible() const;
 
-    // World-space bounds of the Count box's title text (e.g. "Count (Hi-Lo)"), used for click hit-testing.
+    // World-space bounds of the Counting Style toggle box (label + value), used for click hit-testing.
     sf::FloatRect countTitleBounds() const;
 
 private:
@@ -39,7 +39,8 @@ private:
     StatBox *m_bankrollBox = nullptr;
     StatBox *m_betBox = nullptr;
 
-    // Counting/stat boxes
+    // Counting/stat boxes — Counting Style sits at the top of the right panel and is clickable to toggle.
+    StatBox *m_countingStyleBox = nullptr;
     StatBox *m_countBox = nullptr;
     StatBox *m_trueCountBox = nullptr;
     StatBox *m_cardsRemainingBox = nullptr;
