@@ -3,6 +3,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <filesystem>
+#include <algorithm>
    
 #include "FontManager.hpp" 
 #include "Logger.hpp"
@@ -107,8 +108,12 @@ void Game::startNewGame()
     currentShoeRecord.initialDeck = deck.getCards();
     currentShoeRecord.rounds.clear();
 
-    // Reset game state
-    runningCount = 0;
+    // Reset game state. For Reko the running count starts at a per-deck offset so this unbalanced count
+    // drifts through zero across the shoe instead of carrying over a stale total (Feature 5).
+    if (countingStyle == BasicStrategy::CountingStyle::REKO)
+        runningCount = BasicStrategy::rekoStartingOffset(Constants::NUM_DECKS);
+    else
+        runningCount = 0;
     shoeCumulativeWinLoss = 0;
     sessionCumulativeWinLoss = 0;
     handActions.clear();
@@ -225,7 +230,10 @@ void Game::update(float deltaTime)
             deck.shuffle();
             currentShoeRecord.initialDeck = deck.getCards();
             currentShoeRecord.rounds.clear();
-            runningCount = 0;
+            if (countingStyle == BasicStrategy::CountingStyle::REKO)
+                runningCount = BasicStrategy::rekoStartingOffset(Constants::NUM_DECKS);
+            else
+                runningCount = 0;
             shoeCumulativeWinLoss = 0;
             gameState = GameState::Started;
             nextRound();
@@ -385,7 +393,13 @@ void Game::updateHUDState()
 
     hudState.runningCount = runningCount;
 
-    hudState.trueCount = BasicStrategy::computeTrueCount(runningCount, deck.size());
+    // Feature 5: effective true count depends on the active system. ReKO treats the running count as the
+    // true count (no decks-remaining division); Hi-Lo still divides by decks remaining.
+    if (countingStyle == BasicStrategy::CountingStyle::REKO)
+        hudState.trueCount = BasicStrategy::rekoTrueCount(runningCount);
+    else
+        hudState.trueCount = BasicStrategy::computeTrueCount(runningCount, deck.size());
+    hudState.countingStyleNameStr = BasicStrategy::countingStyleName(countingStyle);
 
     hudState.cardsRemaining = deck.size();
 
@@ -395,7 +409,28 @@ void Game::updateHUDState()
 
     hudState.playerStats = &getStats();
 
+    // Feature 3: per-hand net-profit standard deviation, ready for the analytics dashboard.
+    hudState.handStandardDeviation = computeHandStandardDeviation(getStats());
+
     hudState.currentShoe = &currentShoeRecord;
+
+    // Fade the green/red strategy feedback each frame and drop it once its window expires.
+    if (hudState.advisorFeedbackTtl > 0)
+    {
+        hudState.advisorFeedbackTtl -= deltaTime;
+        if (hudState.advisorFeedbackTtl <= 0)
+            hudState.advisorFeedbackText.clear();
+    }
+
+    // Feature 1: show the live strategy recommendation during the player's own turn, unless a manual peek
+    // is displayed. Outside our turn the standing advice clears so it does not linger on the table.
+    bool onOwnTurn = (roundState == RoundState::PlayerTurn &&
+                      activePlayerIndex == 0 && !players[0].hands.empty() &&
+                      players[0].currentHand < players[0].hands.size());
+    if (!onOwnTurn)
+        hudState.basicStrategyHint.clear();
+    else if (!hudState.advisorPeekActive)
+        hudState.basicStrategyHint = giveBasicStrategyAdvice(players[0].hands[players[0].currentHand], dealer);
 }
 
 // ~~~ Player actions ~~~ 
@@ -583,25 +618,34 @@ void Game::logStrategyDeviation(char actionTaken)
     if (actionTaken == correct)
     {
         stats.strategyHits++;
+        hudState.advisorResult = 'C'; // matched basic strategy
     }
     else
     {
         stats.strategyDeviations++;
         Logger::info() << "Strategy deviation: took " << actionTaken << " but book says " << correct << ".";
-        DeviationRecord record;
-        record.playerValue = playerValue;
-        record.dealerUpValue = dealerUpValue;
-        record.wasSoft = hasAce;
-        record.wasPair = isPair;
-        record.pairValue = pairValue;
-        record.actionTaken = actionTaken;
-        record.correctAction = correct;
-        record.bet = hand.getBet();
-        record.won = false; // filled in later at evaluation time
-        stats.recentDeviations.push_back(record);
-        if (stats.recentDeviations.size() > 10)
-            stats.recentDeviations.erase(stats.recentDeviations.begin());
+        // Feature 1: mark this hand as deviating so a win on it is credited to strategyDeviationWins.
+        hand.setDeviated(true);
+        hudState.advisorResult = 'D'; // deviated from basic strategy
     }
+
+    // Brief green/red feedback (✓/✗) about how the player just played; HUD::update tints it accordingly.
+    hudState.advisorFeedbackText = hudState.advisorResult == 'C' ? "\u2713" : "\u2717";
+    hudState.advisorFeedbackTtl = Constants::ADVISOR_FEEDBACK_SECONDS;
+
+    DeviationRecord record;
+    record.playerValue = playerValue;
+    record.dealerUpValue = dealerUpValue;
+    record.wasSoft = hasAce;
+    record.wasPair = isPair;
+    record.pairValue = pairValue;
+    record.actionTaken = actionTaken;
+    record.correctAction = correct;
+    record.bet = hand.getBet();
+    record.won = false; // filled in later at evaluation time
+    stats.recentDeviations.push_back(record);
+    if (stats.recentDeviations.size() > 10)
+        stats.recentDeviations.erase(stats.recentDeviations.begin());
 }
 
 char Game::giveBasicStrategyAdvice(Hand &playerHand, Hand &dealerHand)
@@ -655,7 +699,33 @@ void Game::decreaseBet()
 
 int Game::calculateOptimalBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet) const
 {
+    // Feature 5: when Reko is active the effective true count IS the running count and betting follows the
+    // Reko scale (1 unit at TC<=0, 2 units for 0<TC<2, then (1+TC) units); Hi-Lo keeps Kelly sizing.
+    if (countingStyle == BasicStrategy::CountingStyle::REKO)
+    {
+        float rekoTC = BasicStrategy::rekoTrueCount(runningCount);
+        return BasicStrategy::calculateRekoBet(rekoTC, Constants::MINIMUM_BET, minBet, maxBet);
+    }
     return BasicStrategy::calculateKellyBet(trueCount, kellyFraction, bankroll, minBet, maxBet);
+}
+
+BasicStrategy::CountingStyle Game::toggleCountingStyle()
+{
+    // Feature 5: cycle between Hi-Lo and Reko. The running count is preserved across the switch; each fresh
+    // shoe (startNewGame / reshuffle) later re-applies the correct starting offset for the active system.
+    countingStyle = (countingStyle == BasicStrategy::CountingStyle::HI_LO)
+                        ? BasicStrategy::CountingStyle::REKO
+                        : BasicStrategy::CountingStyle::HI_LO;
+    Logger::info() << "Counting system: " << BasicStrategy::countingStyleName(countingStyle);
+    return countingStyle;
+}
+
+float Game::effectiveTrueCount() const
+{
+    // Feature 5: Hi-Lo converts the running count to a true count; ReKO uses the running count directly.
+    if (countingStyle == BasicStrategy::CountingStyle::REKO)
+        return BasicStrategy::rekoTrueCount(runningCount);
+    return BasicStrategy::computeTrueCount(runningCount, deck.size());
 }
 
 void Game::confirmBet()
@@ -676,6 +746,15 @@ void Game::confirmBet()
     PlayerStats &stats = getStats();
     stats.betsPlaced++;
     stats.betSum += currentBet;
+
+    // Feature 3: bucket this bet into the session bet-size distribution histogram (sized lazily on first use)
+    if (stats.betBuckets.empty())
+        stats.betBuckets.assign(Constants::BET_BUCKET_COUNT, 0);
+    int bucketIndex = static_cast<int>(
+        (currentBet - Constants::MINIMUM_BET) * Constants::BET_BUCKET_COUNT /
+        std::max(1, Constants::MAXIMUM_BET - Constants::MINIMUM_BET));
+    bucketIndex = std::min(Constants::BET_BUCKET_COUNT - 1, std::max(0, bucketIndex));
+    stats.betBuckets[bucketIndex]++;
 
     Logger::info() << players[0].getName() << " bets " << players[0].hands[players[0].currentHand].getBet() << ". Remaining bankroll: " << players[0].getBankroll() << ". Running count: " << runningCount << ".";
 
@@ -916,7 +995,9 @@ void Game::npcTakeTurn()
 }
 void Game::afterDraw(Card card)
 {
-    runningCount = BasicStrategy::updateHiLo(runningCount, card.getBlackjackValue());
+    // Feature 5: count by the active system. ReKO uses its own +1 (2-7)/-1 (tens, aces)/0 (8,9) scheme and
+    // treats the running count as the true count; Hi-Lo keeps the standard +/-1/0 scheme converted to TC.
+    runningCount = BasicStrategy::updateCount(runningCount, card.getBlackjackValue(), countingStyle);
 
     if (deck.reachedCutCard())
     {
@@ -986,8 +1067,11 @@ void Game::handleEmptyDeck()
     currentShoeRecord.initialDeck = deck.getCards();
     currentShoeRecord.isContinuation = true;
 
-    // Reset running count for the new shoe
-    runningCount = 0;
+    // Reset running count for the new shoe (Feature 5: Reko starts at a per-deck offset)
+    if (countingStyle == BasicStrategy::CountingStyle::REKO)
+        runningCount = BasicStrategy::rekoStartingOffset(Constants::NUM_DECKS);
+    else
+        runningCount = 0;
     gameState = GameState::Started;
 
     Logger::info() << "New shoe created with " << deck.size() << " cards.";

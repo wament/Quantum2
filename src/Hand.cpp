@@ -199,3 +199,13 @@ bool Hand::isSplit() const
 {
     return split;
 }
+
+void Hand::setDeviated(bool value)
+{
+    deviated = value;
+}
+
+bool Hand::isDeviated() const
+{
+    return deviated;
+}

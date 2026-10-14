@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+
 namespace Constants
 {
     // Window
@@ -64,6 +66,17 @@ namespace Constants
     // Auto-play timing (seconds)
     constexpr float AUTOPLAY_AFTER_HAND_DELAY = 1.0f;
     constexpr float AUTOPLAY_AFTER_SHOE_DELAY = 3.0f;
+
+    // Upper bound on how many analytics samples (bankroll curve / edge history) we keep per session so
+    // the persisted profile cannot grow without limit across very long sessions.
+    constexpr std::size_t ANALYTICS_POINT_CAP = 20000;
+
+    // How long (seconds) the green/red strategy feedback stays visible after the player acts (Feature 1).
+    constexpr float ADVISOR_FEEDBACK_SECONDS = 1.5f;
+
+    // Number of bet-size buckets for the session bet-distribution histogram (Feature 3). Bets are mapped
+    // linearly across [MINIMUM_BET, MAXIMUM_BET] so the bars span the full betting range.
+    constexpr int BET_BUCKET_COUNT = 20;
 }
 
 // Gameplay configuration
@@ -130,6 +143,14 @@ namespace BasicStrategy
         HARD,
         SOFT,
         PAIR
+    };
+
+    // Counting system selection. HI_LO uses a true count (running count divided by decks remaining);
+    // REKO is unbalanced so the running count itself doubles as the effective true count.
+    enum class CountingStyle
+    {
+        HI_LO,
+        REKO
     };
 
     const char HARD[10][10] =
@@ -358,3 +379,69 @@ inline float BasicStrategy::computeTrueCount(int runningCount, int cardsRemainin
         decksRemaining = 0.5f;
     return static_cast<float>(runningCount) / decksRemaining;
 }
+
+// ---------------- Reko counting system (Feature 5) ----------------
+// Unbalanced, compensated by a negative starting running count. Card values mirror Hi-Lo except that
+// there is no true-count conversion - the running count itself is the effective true count.
+
+namespace BasicStrategy {
+inline int calculateRekoValue(int bjValue)
+{
+    // 2-7 -> +1 ; 8,9 -> 0 ; Aces and ten-value cards -> -1.
+    if (bjValue >= 2 && bjValue <= 7)
+        return 1;
+    else if (bjValue == 8 || bjValue == 9)
+        return 0;
+    else
+        return -1; // Ace (1) and ten-value cards map to a blackjack value of 10
+}
+
+inline int updateCount(int currentCount, int bjValue, CountingStyle style)
+{
+    if (style == CountingStyle::REKO)
+        return currentCount + calculateRekoValue(bjValue);
+    return currentCount + calculateHiLoValue(bjValue);
+}
+
+// For Reko the effective true count is simply the running count.
+inline float rekoTrueCount(int runningCount)
+{
+    return static_cast<float>(runningCount);
+}
+
+// Starting running-count offset for a fresh shoe of the given number of decks (unbalanced system).
+// Roadmap values: -1 single, -5 two, -12 four, -20 six, -27 eight deck; interpolated in between.
+inline int rekoStartingOffset(int numDecks)
+{
+    static const int offsets[] = {-1, -1, -5, -8, -12, -16, -20, -23, -27}; // index 0..8 decks
+    if (numDecks < 0 || numDecks > 8)
+        return -20; // sensible default for an unrecognised shoe size
+    return offsets[numDecks];
+}
+
+inline const char* countingStyleName(CountingStyle style)
+{
+    return style == CountingStyle::REKO ? "Reko" : "Hi-Lo";
+}
+
+// Reko bet sizing from the effective true count. Unit is MINIMUM_BET; results clamp to [minBet, maxBet].
+inline int calculateRekoUnits(int trueCount)
+{
+    if (trueCount <= 0)
+        return 1;                 // TC <= 0            -> 1 unit
+    if (trueCount < 2)
+        return 2;                 // 0 < TC < 2         -> 2 units
+    int whole = static_cast<int>(trueCount); // TC > 2             -> (1 + TC) units
+    return 1 + whole;
+}
+
+inline int calculateRekoBet(int trueCount, int baseUnit, int minBet, int maxBet)
+{
+    int bet = calculateRekoUnits(trueCount) * baseUnit;
+    if (bet < minBet)
+        return minBet;
+    if (bet > maxBet)
+        return maxBet;
+    return bet;
+}
+}  // namespace BasicStrategy

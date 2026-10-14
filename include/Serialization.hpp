@@ -36,6 +36,9 @@ inline void from_json(const json& j, Suit& s)
     s = static_cast<Suit>(j.get<int>());
 }
 
+// AnalyticsEdgeSample serialization (Feature 3)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(AnalyticsEdgeSample, roundIndex, trueCount, cumulativeProfit)
+
 // PlayerStats serialization
 inline void to_json(json& j, const PlayerStats& s)
 {
@@ -54,7 +57,16 @@ inline void to_json(json& j, const PlayerStats& s)
         {"greatestWin", s.greatestWin},
         {"greatestLoss", s.greatestLoss},
         {"greatestSessionWin", s.greatestSessionWin},
-        {"greatestSessionLoss", s.greatestSessionLoss}
+        {"greatestSessionLoss", s.greatestSessionLoss},
+        {"strategyDeviationWins", s.strategyDeviationWins},
+        {"greatestSingleHandLoss", s.greatestSingleHandLoss},
+        {"longestWinningStreak", s.longestWinningStreak},
+        {"longestLosingStreak", s.longestLosingStreak},
+        {"handProfitSum", s.handProfitSum},
+        {"handProfitSqSum", s.handProfitSqSum},
+        {"bankrollCurve", s.bankrollCurve},
+        {"edgeHistory", s.edgeHistory},
+        {"betBuckets", s.betBuckets}
     };
 }
 
@@ -75,6 +87,16 @@ inline void from_json(const json& j, PlayerStats& s)
     j.at("greatestLoss").get_to(s.greatestLoss);
     j.at("greatestSessionWin").get_to(s.greatestSessionWin);
     j.at("greatestSessionLoss").get_to(s.greatestSessionLoss);
+    // Feature 1 & 3 analytics (may be absent in older saves -> keep defaults)
+    s.strategyDeviationWins = j.value("strategyDeviationWins", s.strategyDeviationWins);
+    s.greatestSingleHandLoss = j.value("greatestSingleHandLoss", s.greatestSingleHandLoss);
+    s.longestWinningStreak = j.value("longestWinningStreak", s.longestWinningStreak);
+    s.longestLosingStreak = j.value("longestLosingStreak", s.longestLosingStreak);
+    s.handProfitSum = j.value("handProfitSum", s.handProfitSum);
+    s.handProfitSqSum = j.value("handProfitSqSum", s.handProfitSqSum);
+    s.bankrollCurve = j.value("bankrollCurve", s.bankrollCurve);
+    s.edgeHistory = j.value("edgeHistory", s.edgeHistory);
+    s.betBuckets = j.value("betBuckets", s.betBuckets);
 }
 
 // HandOutcome serialization

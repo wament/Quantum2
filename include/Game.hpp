@@ -146,6 +146,13 @@ private:
     int shoeCumulativeWinLoss = 0;    // running win/loss for current shoe
     int sessionCumulativeWinLoss = 0; // running win/loss for entire session
 
+    // Feature 5: active card-counting system (HI_LO uses a true count, REKO uses the running count)
+    BasicStrategy::CountingStyle countingStyle = BasicStrategy::CountingStyle::HI_LO;
+
+    // Feature 3: edge tracking accumulators — human-only cumulative profit and round index over time
+    int sessionHumanProfit = 0;
+    int analyticsRoundIndex = 0;
+
     PlayerStats &getStats()
     {
         return players[0].getStats();
@@ -175,6 +182,12 @@ private:
     void confirmBet();
     // Kelly-based optimal bet calculation (uses kellyFraction)
     int calculateOptimalBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet) const;
+
+    // Feature 5: switch between Hi-Lo and Reko counting systems (true count == running count for Reko)
+    BasicStrategy::CountingStyle toggleCountingStyle();
+
+    // Effective true count for the active system: Hi-Lo divides by decks remaining, ReKO uses RC as-is
+    float effectiveTrueCount() const;
 
     // ---------------- Player Actions ----------------
 

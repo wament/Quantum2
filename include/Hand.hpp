@@ -49,6 +49,11 @@ public:
     void setSplit(bool value, int cardValue);
     [[nodiscard]] bool isSplit() const;
 
+    // Whether any decision on this hand deviated from basic strategy (Feature 1). Set during a round,
+    // read once at evaluation to credit "wins after deviation", and cleared by resetRound each new round.
+    void setDeviated(bool value);
+    [[nodiscard]] bool isDeviated() const;
+
 private:
     std::vector<Card> cards;
 
@@ -57,6 +62,7 @@ private:
     bool surrendered = false;
     bool split = false;
     bool splitAce = false;
+    bool deviated = false;
 
     int currentBet = 0;
     int insuranceBet = 0;

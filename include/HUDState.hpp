@@ -25,6 +25,10 @@ struct HUDState
     // Left Panel
     const PlayerStats* playerStats = nullptr;
 
+    // Feature 3: per-hand net-profit standard deviation, precomputed in Game::updateHUDState so the HUD can
+    // show it without recomputing from running sums each frame.
+    double handStandardDeviation = 0.0;
+
     // Right Panel
     const ShoeRecord* currentShoe = nullptr;
 
@@ -32,8 +36,20 @@ struct HUDState
     int cardsRemaining = 0;
     int decksRemaining = 0;
 
-    // Basic Strategy Advisor
-    std::string basicStrategyHint;
+    // Feature 1: Green/red feedback shown after the player acts. advisorFeedbackText is the transient
+    // symbol (✓/✗) tinted by color; basicStrategyHint holds the standing recommendation during the turn.
+    std::string basicStrategyHint;   // standing recommendation letter(s) or manual peek text
+    std::string advisorFeedbackText; // transient result shown briefly after an action ('✓' / '✗')
+
+    // Green/red feedback shown after the player acts: 'C' matched strategy, 'D' deviated. While
+    // advisorFeedbackTtl > 0 the HUD renders this tinted; advisorPeekActive keeps a manual peek ('I')
+    // visible instead of the live advice during the player's turn.
+    int advisorFeedbackTtl = 0;
+    char advisorResult = 0;          // 'C' correct match, 'D' deviation (active while ttl > 0)
+    bool advisorPeekActive = false;
+
+    // Feature 5: which counting system the true-count box describes ("Hi-Lo" / "Reko")
+    std::string countingStyleNameStr = "Hi-Lo";
 
     // End-of-round summary overlay
     std::vector<std::string> playerSummaries;

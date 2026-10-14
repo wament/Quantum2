@@ -312,9 +312,14 @@ void InputHandler::processGameEvents(const sf::Event& event)
             {
                 char choice = game.giveBasicStrategyAdvice(game.players[game.activePlayerIndex].hands[game.players[game.activePlayerIndex].currentHand], game.dealer);
                 game.hudState.basicStrategyHint = "Book says: " + std::string(1, choice);
+                game.hudState.advisorPeekActive = true; // keep live advice from overwriting the manual peek
                 Logger::info() << "Basic strategy advice: " << choice;
                 break;
             }
+            case sf::Keyboard::Key::C:
+                // Feature 5: cycle the counting system on demand (Hi-Lo <-> Reko) during the player's turn
+                game.toggleCountingStyle();
+                break;
             }
         }
 

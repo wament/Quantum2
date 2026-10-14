@@ -4,6 +4,7 @@
 #include <deque>
 #include <string>
 #include <chrono>
+#include <cmath>
 
 #include "Card.hpp"
 #include "Deck.hpp"
@@ -19,6 +20,15 @@ struct DeviationRecord
     char correctAction = 0;
     int bet = 0;
     bool won = false;
+};
+
+// One sample of the player-edge trajectory over a round: the effective true count together with the
+// running cumulative profit at that point, used to estimate edge over time (Feature 3).
+struct AnalyticsEdgeSample
+{
+    int roundIndex = 0;
+    double trueCount = 0.0;
+    double cumulativeProfit = 0.0;
 };
 
 struct PlayerStats
@@ -48,7 +58,38 @@ struct PlayerStats
     int strategyDeviations = 0; // plays not matching basic strategy
     int strategyTotal = 0;      // total plays evaluated
     std::vector<DeviationRecord> recentDeviations; // last 10 deviations
+
+    // --- Feature 1: win-after-deviation tracking ---
+    int strategyDeviationWins = 0; // hands that deviated from basic strategy yet still won
+
+    // --- Feature 3: advanced analytics ---
+    int greatestSingleHandLoss = 0;   // most negative per-hand net profit (<= 0)
+    int longestWinningStreak = 0;     // longest consecutive win streak across the whole session
+    int longestLosingStreak = 0;      // longest consecutive loss streak across the whole session
+    double handProfitSum = 0.0;       // running sum of per-hand net profit (for variance / stddev)
+    double handProfitSqSum = 0.0;     // running sum of squared per-hand net profit
+
+    std::vector<int> bankrollCurve;        // human bankroll sampled once per finished round
+    std::vector<AnalyticsEdgeSample> edgeHistory; // true count vs cumulative profit over rounds
+
+    // Feature 3: distribution of bet sizes placed this session (one count per bucket, sized at runtime)
+    std::vector<int> betBuckets;
 };
+
+// Standard deviation of per-hand net profit for a session (Feature 3 - advanced analytics). Uses the running
+// sums stored in PlayerStats so no history buffer is needed: variance = E[x^2] - E[x]^2. Guarded against
+// empty sessions and tiny negative round-off so callers get a stable, always-non-negative result.
+inline double computeHandStandardDeviation(const PlayerStats& s)
+{
+    long n = static_cast<long>(s.handsFinished);
+    if (n <= 1)
+        return 0.0; // zero or one sample -> nothing to vary
+    double mean = s.handProfitSum / static_cast<double>(n);
+    double variance = s.handProfitSqSum / static_cast<double>(n) - mean * mean;
+    if (variance < 0.0)
+        variance = 0.0; // guard against floating-point round-off near zero
+    return std::sqrt(variance);
+}
 
 struct HandOutcome
 {

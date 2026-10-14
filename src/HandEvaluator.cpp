@@ -97,6 +97,10 @@ void HandEvaluator::evaluateHands()
 
             game.currentRoundRecord.playerHands.push_back(outcome);
 
+            // Feature 1: credit a "win after deviation" when a hand that deviated from basic strategy still won.
+            if (hand.isDeviated() && outcome.won)
+                stats.strategyDeviationWins++;
+
             // Record result for NPC progressive betting strategies
             if (pIdx > 0)
             {
@@ -105,6 +109,17 @@ void HandEvaluator::evaluateHands()
 
             if (netProfitOnHand > stats.greatestHand)
                 stats.greatestHand = netProfitOnHand;
+
+            // Feature 3: per-hand variance / standard-deviation tracking and worst single-hand loss.
+            double np = static_cast<double>(netProfitOnHand);
+            stats.handProfitSum += np;
+            stats.handProfitSqSum += np * np;
+            if (np < static_cast<double>(stats.greatestSingleHandLoss))
+                stats.greatestSingleHandLoss = netProfitOnHand;
+
+            // Feature 3: human-only cumulative profit, used to estimate edge over time.
+            if (pIdx == 0)
+                game.sessionHumanProfit += netProfitOnHand;
 
             game.shoeCumulativeWinLoss += netProfitOnHand;
             game.sessionCumulativeWinLoss += netProfitOnHand;
@@ -147,6 +162,24 @@ void HandEvaluator::evaluateHands()
     {
         game.hudState.streak = 0;
     }
+
+    // Feature 3: record the longest consecutive win/loss streak seen so far, driven by this round's streak.
+    if (game.hudState.streak > stats.longestWinningStreak && game.hudState.streakIsWin)
+        stats.longestWinningStreak = game.hudState.streak;
+    else if (game.hudState.streak > stats.longestLosingStreak && !game.hudState.streakIsWin)
+        stats.longestLosingStreak = game.hudState.streak;
+
+    // Feature 3: sample the human bankroll once per finished round and an edge-tracking point (true count vs
+    // cumulative human profit). Both are capped so a very long session cannot bloat the saved profile.
+    if (stats.bankrollCurve.size() < Constants::ANALYTICS_POINT_CAP)
+        stats.bankrollCurve.push_back(game.players[0].getBankroll());
+
+    AnalyticsEdgeSample edgeSample;
+    edgeSample.roundIndex = static_cast<int>(game.analyticsRoundIndex++);
+    edgeSample.trueCount = game.currentRoundRecord.trueCount;
+    edgeSample.cumulativeProfit = static_cast<double>(game.sessionHumanProfit);
+    if (stats.edgeHistory.size() < Constants::ANALYTICS_POINT_CAP)
+        stats.edgeHistory.push_back(edgeSample);
 
     game.hudState.playerSummaries.clear();
     for (size_t i = 0; i < game.players.size(); i++)

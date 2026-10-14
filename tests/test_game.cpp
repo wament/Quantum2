@@ -2,6 +2,7 @@
 #include <Constants.hpp>
 #include <Hand.hpp>
 #include <Deck.hpp>
+#include <GameRecord.hpp>
 #include <vector>
 
 using namespace Constants;
@@ -338,4 +339,115 @@ TEST_CASE("NPC split ace rule: split ace hand auto-stands after one card", "[Gam
     hand2.setFinished(true);
     CHECK(hand1.isFinished());
     CHECK(hand2.isFinished());
+}
+
+// ---------------- Feature 5: Reko counting system (unbalanced, running count == true count) ----------------
+
+TEST_CASE("Reko card values: 2-7 = +1, 8/9 = 0, Aces and tens = -1", "[Game][Counting][Reko]")
+{
+    // 2 through 7 are all +1 (hi-lo agrees on 2-6; Reko additionally counts the 7 as +1)
+    for (int v = 2; v <= 7; ++v)
+        CHECK(BasicStrategy::calculateRekoValue(v) == 1);
+
+    // 8 and 9 are neutral in both systems
+    CHECK(BasicStrategy::calculateRekoValue(8) == 0);
+    CHECK(BasicStrategy::calculateRekoValue(9) == 0);
+
+    // Aces (1) and ten-value cards (J/Q/K -> bj value 10) reduce the count
+    CHECK(BasicStrategy::calculateRekoValue(1) == -1);
+    CHECK(BasicStrategy::calculateRekoValue(10) == -1);
+}
+
+TEST_CASE("Reko updateCount dispatches on the active counting style", "[Game][Counting][Reko]")
+{
+    // Hi-Lo path stays identical to updateHiLo (a 7 is neutral in hi-lo)
+    CHECK(BasicStrategy::updateCount(5, 4, BasicStrategy::CountingStyle::HI_LO) == 6);
+    CHECK(BasicStrategy::updateCount(5, 7, BasicStrategy::CountingStyle::HI_LO) == 5);
+
+    // Reko path counts the 7 as +1 even though hi-lo would treat it as neutral; 8 stays neutral in both
+    CHECK(BasicStrategy::updateCount(5, 4, BasicStrategy::CountingStyle::REKO) == 6);
+    CHECK(BasicStrategy::updateCount(5, 7, BasicStrategy::CountingStyle::REKO) == 6);
+    CHECK(BasicStrategy::updateCount(5, 8, BasicStrategy::CountingStyle::REKO) == 5);
+}
+
+TEST_CASE("Reko true count equals the running count", "[Game][Counting][Reko]")
+{
+    CHECK(BasicStrategy::rekoTrueCount(-20) == Approx(-20.0f));
+    CHECK(BasicStrategy::rekoTrueCount(3) == Approx(3.0f));
+}
+
+TEST_CASE("Reko starting offset matches roadmap per deck count", "[Game][Counting][Reko]")
+{
+    // Exact roadmap values for the standard shoe sizes
+    CHECK(BasicStrategy::rekoStartingOffset(1) == -1);
+    CHECK(BasicStrategy::rekoStartingOffset(2) == -5);
+    CHECK(BasicStrategy::rekoStartingOffset(4) == -12);
+    CHECK(BasicStrategy::rekoStartingOffset(6) == -20);
+    CHECK(BasicStrategy::rekoStartingOffset(8) == -27);
+
+    // Interpolated values fill the gaps between the documented sizes
+    CHECK(BasicStrategy::rekoStartingOffset(3) == -8);
+    CHECK(BasicStrategy::rekoStartingOffset(5) == -16);
+    CHECK(BasicStrategy::rekoStartingOffset(7) == -23);
+
+    // Out-of-range / unrecognised shoe sizes fall back to a sensible default (six-deck value)
+    CHECK(BasicStrategy::rekoStartingOffset(-1) == -20);
+    CHECK(BasicStrategy::rekoStartingOffset(9) == -20);
+}
+
+TEST_CASE("counting style name reflects the active system", "[Game][Counting][Reko]")
+{
+    CHECK(BasicStrategy::countingStyleName(BasicStrategy::CountingStyle::HI_LO) == "Hi-Lo");
+    CHECK(BasicStrategy::countingStyleName(BasicStrategy::CountingStyle::REKO) == "Reko");
+}
+
+TEST_CASE("Reko bet sizing follows the tiered unit scale", "[Game][Betting][Reko]")
+{
+    int minBet = 10;
+    int maxBet = 1000;
+
+    // Unit count per true-count tier
+    CHECK(BasicStrategy::calculateRekoUnits(0) == 1);   // TC <= 0            -> 1 unit
+    CHECK(BasicStrategy::calculateRekoUnits(-5) == 1);
+    CHECK(BasicStrategy::calculateRekoUnits(1) == 2);    // 0 < TC < 2         -> 2 units
+    CHECK(BasicStrategy::calculateRekoUnits(3) == 4);    // TC > 2             -> (1 + TC) units
+    CHECK(BasicStrategy::calculateRekoUnits(5) == 6);
+
+    // Actual chip amount uses MINIMUM_BET as the unit, clamped to [minBet, maxBet]
+    CHECK(BasicStrategy::calculateRekoBet(0, minBet, minBet, maxBet) == minBet);        // 1 unit
+    CHECK(BasicStrategy::calculateRekoBet(1, minBet, minBet, maxBet) == 2 * minBet);    // 2 units
+    CHECK(BasicStrategy::calculateRekoBet(3, minBet, minBet, maxBet) == 4 * minBet);    // 4 units
+
+    // Clamp at the maximum cap regardless of how large the running count grows
+    CHECK(BasicStrategy::calculateRekoBet(100, minBet, minBet, 60) == 60);
+}
+
+TEST_CASE("Per-hand profit standard deviation is computed from running sums", "[Game][Analytics]")
+{
+    PlayerStats s;
+
+    // Zero or one hand -> no variance to speak of.
+    CHECK(computeHandStandardDeviation(s) == Approx(0.0));
+    s.handsFinished = 1;
+    s.handProfitSum = 50.0;
+    s.handProfitSqSum = 2500.0; // 50^2
+    CHECK(computeHandStandardDeviation(s) == Approx(0.0));
+
+    // Two hands: +100 and -100 -> mean 0, variance 10000, standard deviation 100.
+    s.handsFinished = 2;
+    s.handProfitSum = 0.0;
+    s.handProfitSqSum = 20000.0; // 100^2 + 100^2
+    CHECK(computeHandStandardDeviation(s) == Approx(100.0));
+
+    // Three identical hands -> zero variance even though the mean is non-zero (guards E[x^2]-E[x]^2).
+    s.handsFinished = 3;
+    s.handProfitSum = 30.0;    // +10 each
+    s.handProfitSqSum = 300.0; // 3 * 10^2
+    CHECK(computeHandStandardDeviation(s) == Approx(0.0));
+
+    // Slightly negative round-off variance is clamped to zero rather than crashing via sqrt(-x).
+    s.handsFinished = 2;
+    s.handProfitSum = 10.0;
+    s.handProfitSqSum = 50.0; // less than (sum^2)/n = 50 exactly -> ~0, guard keeps it >= 0
+    CHECK(computeHandStandardDeviation(s) >= 0.0);
 }

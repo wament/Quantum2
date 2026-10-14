@@ -24,6 +24,7 @@ void GameRenderer::draw(Game &game)
         game.updateHUDState();
         game.hud.update(game.hudState);
         game.hud.draw(game.window);
+        game.hud.drawAnalyticsCharts(game.window);
         drawSummaryOverlay(game);
         break;
     case AppMode::Paused:
@@ -33,6 +34,7 @@ void GameRenderer::draw(Game &game)
         game.updateHUDState();
         game.hud.update(game.hudState);
         game.hud.draw(game.window);
+        game.hud.drawAnalyticsCharts(game.window);
         drawPauseMenu(game);
         break;
     case AppMode::ReplayHistory:
