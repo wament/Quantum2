@@ -2,7 +2,6 @@
 #include "BasicStrategy.hpp"
 #include "Game.hpp"
 #include "Logger.hpp"
-#include "BasicStrategy.hpp"
 
 // State-machine step moved from Game::update(); every access below is qualified with the
 // passed-in `game` because those members/methods are private to Game; Game grants RoundEngine
@@ -66,7 +65,8 @@ void RoundEngine::tick(float deltaTime, Game& game)
                     break;
                 }
             }
-            if (!allDone) break;
+            if (!allDone)
+                break;
         }
         if (allDone)
         {

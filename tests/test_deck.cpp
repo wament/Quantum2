@@ -1,10 +1,11 @@
 #include <catch2/catch_all.hpp>
 #include <Deck.hpp>
+#include "Constants.hpp"
 
 TEST_CASE("Deck is empty when created", "[Deck]")
 {
     Deck deck;
-    
+
     CHECK(deck.empty() == true);
     CHECK(deck.size() == 0);
 }
@@ -12,11 +13,11 @@ TEST_CASE("Deck is empty when created", "[Deck]")
 TEST_CASE("Deck creates correct number of cards", "[Deck]")
 {
     Deck deck;
-    
+
     deck.create(1);
     CHECK(deck.size() == 52);
     CHECK(deck.empty() == false);
-    
+
     Deck deck2;
     deck2.create(2);
     CHECK(deck2.size() == 104);
@@ -26,12 +27,12 @@ TEST_CASE("Drawing from deck works", "[Deck]")
 {
     Deck deck;
     deck.create(1);
-    
+
     Card card = deck.draw();
-    
+
     REQUIRE(card.value >= 1);
     REQUIRE(card.value <= 13);
-    
+
     CHECK(deck.size() == 51);
 }
 
@@ -39,12 +40,12 @@ TEST_CASE("Deck becomes empty after drawing all cards", "[Deck]")
 {
     Deck deck;
     deck.create(1);
-    
+
     for (int i = 0; i < 52; ++i)
     {
         Card c = deck.draw();
     }
-    
+
     CHECK(deck.empty() == true);
     CHECK(deck.size() == 0);
 }
@@ -54,24 +55,24 @@ TEST_CASE("Cut card is placed 25 cards from end of shoe", "[Deck][CutCard]")
     Deck deck;
     deck.create(2); // 104 cards
     CHECK(deck.size() == 104);
-    
+
     deck.shuffle();
-    
+
     // After shuffle: 104 cards + 1 cut card = 105 total
     CHECK(deck.size() == 105);
-    
+
     int cardsDrawnBeforeCut = 0;
     while (!deck.reachedCutCard())
     {
         Card c = deck.draw();
         cardsDrawnBeforeCut++;
     }
-    
+
     // The cut card is inserted near the front (index 25) while cards are drawn from the back,
     // so ~79 real cards are dealt before it turns on draw #80. That final draw also pops one
     // more real card, leaving 104 - 80 = 24 in the shoe.
     CHECK(cardsDrawnBeforeCut == 80);
-    
+
     CHECK(deck.size() == 24);
 }
 
@@ -80,23 +81,20 @@ TEST_CASE("reshuffleWithRemaining combines deck and table cards", "[Deck][Reshuf
     Deck deck;
     deck.create(1);
     deck.shuffle();
-    
+
     // Draw some cards to simulate dealing
     std::vector<Card> tableCards;
     for (int i = 0; i < 6; ++i)
     {
         tableCards.push_back(deck.draw());
     }
-    
-    size_t remainingBefore = deck.size();
-    
-    // Reshuffle with table cards added back
+
+    // Rebuild a full NUM_DECKS shoe minus the dealt cards.
     deck.reshuffleWithRemaining(tableCards);
-    
-    // Plus 1 cut card
-    size_t expectedSize = remainingBefore + tableCards.size() + 1;
+
+    size_t expectedSize = Constants::NUM_DECKS * 52 - tableCards.size() + 1;
     CHECK(deck.size() == expectedSize);
-    
+
     int cardsDrawn = 0;
     while (!deck.reachedCutCard() && !deck.empty())
     {
@@ -111,20 +109,20 @@ TEST_CASE("reshuffleWithRemaining saves previous shoe record", "[Deck][Reshuffle
     Deck deck;
     deck.create(1);
     deck.shuffle();
-    
+
     // Draw a few cards
     std::vector<Card> tableCards;
     for (int i = 0; i < 4; ++i)
     {
         tableCards.push_back(deck.draw());
     }
-    
+
     // Reshuffle - this should move the current shoe to "previous"
     deck.reshuffleWithRemaining(tableCards);
-    
+
     const std::vector<Card>* prev = deck.getPreviousShoeRecord();
     CHECK(prev != nullptr);
-    
+
     CHECK(prev->size() == 53); // 52 cards + 1 cut card
 }
 
@@ -133,10 +131,10 @@ TEST_CASE("Cut card position for 2-deck shoe", "[Deck][CutCard]")
     Deck deck;
     deck.create(2); // 104 cards
     deck.shuffle();
-    
+
     // Total should be 105 (104 + 1 cut card)
     CHECK(deck.size() == 105);
-    
+
     // Draw until cut card is reached
     int cardsDrawn = 0;
     while (!deck.reachedCutCard())
@@ -145,11 +143,11 @@ TEST_CASE("Cut card position for 2-deck shoe", "[Deck][CutCard]")
         cardsDrawn++;
     }
     CHECK(deck.reachedCutCard());
-    
+
     // The cut card sits near the front while drawing from the back, so ~79 real cards are dealt
     // before it turns on draw #80 (which also pops one more real card), leaving 24 in the shoe.
     CHECK(cardsDrawn == 80);
-    
+
     CHECK(deck.size() == 24);
 }
 
@@ -158,20 +156,18 @@ TEST_CASE("reshuffleWithRemaining with empty table cards", "[Deck][Reshuffle]")
     Deck deck;
     deck.create(1);
     deck.shuffle();
-    
+
     // Draw all cards except the last few
     for (int i = 0; i < 50; ++i)
     {
         Card c = deck.draw();
         (void)c;
     }
-    
-    size_t remainingBefore = deck.size();
-    
-    // Reshuffle with no table cards
+
+    // Rebuild a full NUM_DECKS shoe with no played cards.
     std::vector<Card> emptyTable;
     deck.reshuffleWithRemaining(emptyTable);
-    
-    // Should have remaining cards + 1 cut card
-    CHECK(deck.size() == remainingBefore + 1);
+
+    size_t expectedSize = Constants::NUM_DECKS * 52 - emptyTable.size() + 1;
+    CHECK(deck.size() == expectedSize);
 }

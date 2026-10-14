@@ -1,15 +1,15 @@
 #pragma once
 
-#include <vector> 
+#include <vector>
 #include <cstddef>
 #include "Card.hpp"
 
 class Hand
 {
-public:
-    Hand();
-    explicit Hand(const std::vector<Card>& cards);  // construct from existing cards
-    
+  public:
+    Hand() = default;
+    explicit Hand(const std::vector<Card>& cards); // construct from existing cards
+
     void addCard(const Card& card);
     void clear();
 
@@ -51,7 +51,7 @@ public:
     void setSplit(bool value, int cardValue);
     [[nodiscard]] bool isSplit() const;
 
-private:
+  private:
     std::vector<Card> cards;
 
     bool finished = false;

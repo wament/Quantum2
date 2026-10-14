@@ -2,11 +2,6 @@
 #include "Constants.hpp"
 #include <algorithm>
 
-// Decision tables indexed [playerValue - base][dealerUpValue - 2]. These are the same
-// tables that previously lived inside Constants.hpp; defining them once here (with the
-// default internal linkage of a namespace-scope const) keeps every translation unit's
-// copy independent while exposing only the functions declared in BasicStrategy.hpp.
-
 namespace BasicStrategy
 {
     const char HARD[10][10] =
@@ -91,8 +86,7 @@ namespace BasicStrategy
             /*16*/
             {' ', ' ', ' ', ' ', ' ', ' ', ' ', 'R', 'R', 'R'}};
 
-    char getRecommendedAction(
-        int playerValue, int dealerUpValue, bool hasAce, bool isPair, int pairValue)
+    char getRecommendedAction(int playerValue, int dealerUpValue, bool hasAce, bool isPair, int pairValue)
     {
         if (dealerUpValue < 2 || dealerUpValue > 11)
             return playerValue >= 17 ? 'S' : 'H';

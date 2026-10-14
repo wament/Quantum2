@@ -98,8 +98,6 @@ void HandEvaluator::evaluateHands()
                 stats.greatestSessionWin = game.sessionCumulativeWinLoss;
             if (game.sessionCumulativeWinLoss < stats.greatestSessionLoss)
                 stats.greatestSessionLoss = game.sessionCumulativeWinLoss;
-
-            game.incrementGlobalHandIndex(game.getGlobalHandIndexForPlayer(pIdx, handIndex));
         }
     }
 

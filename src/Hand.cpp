@@ -1,36 +1,19 @@
 #include "Hand.hpp"
 
-Hand::Hand()
-{
-}
+Hand::Hand(const std::vector<Card>& cards) : cards(cards) {}
 
-Hand::Hand(const std::vector<Card>& cards)
-{
-    this->cards = cards;
-}
-
-void Hand::addCard(const Card& card)
-{
-    cards.push_back(card);
-}
+void Hand::addCard(const Card& card) { cards.push_back(card); }
 
 void Hand::clear()
 {
     cards.clear();
-
-    finished = false;
-    doubledDown = false;
-    surrendered = false;
-    split = false;
-
-    currentBet = 0;
-    insuranceBet = 0;
+    finished = doubledDown = surrendered = split = splitAce = false;
+    currentBet = insuranceBet = 0;
 }
 
 int Hand::getValue() const
 {
-    int total = 0;
-    int aces = 0;
+    int total = 0, aces = 0;
 
     for (const Card& card : cards)
     {
@@ -49,20 +32,11 @@ int Hand::getValue() const
     return total;
 }
 
-bool Hand::isBlackjack() const
-{
-    return cards.size() == 2 &&
-           getValue() == 21 &&
-           !split;
-}
+bool Hand::isBlackjack() const { return cards.size() == 2 && getValue() == 21 && !split; }
 
 bool Hand::isSoft() const
 {
-    // A hand is "soft" if it contains an Ace counting as 11.
-    // After calculating value, if any Aces remain unconverted,
-    // the hand is soft.
-    int total = 0;
-    int aces = 0;
+    int total = 0, aces = 0;
 
     for (const Card& card : cards)
     {
@@ -81,61 +55,35 @@ bool Hand::isSoft() const
     return aces > 0;
 }
 
-bool Hand::isBust() const
-{
-    return getValue() > 21;
-}
+bool Hand::isBust() const { return getValue() > 21; }
 
-bool Hand::isSplitAce() const
-{
-    return splitAce;
-}
+bool Hand::isSplitAce() const { return splitAce; }
 
-bool Hand::splitAceNeedsMoreCards() const
-{
-    // A split-ace hand is eligible for its single allowed extra card only until it reaches two
-    // cards; once it has that card it must stand and may not be hit again.
-    return isSplitAce() && size() < 2;
-}
+bool Hand::splitAceNeedsMoreCards() const { return isSplitAce() && size() < 2; }
 
 bool Hand::canSplit() const
 {
-    if (cards.size() != 2)
-        return false;
-
-    return cards[0].getBlackjackValue() ==
-           cards[1].getBlackjackValue();
+    return cards.size() == 2 && cards[0].getBlackjackValue() == cards[1].getBlackjackValue();
 }
 
-bool Hand::canDouble() const
-{
-    return cards.size() == 2 &&
-           !doubledDown;
-}
+bool Hand::canDouble() const { return cards.size() == 2 && !doubledDown; }
 
-std::size_t Hand::size() const
-{
-    return cards.size();
-}
+std::size_t Hand::size() const { return cards.size(); }
 
-const Card& Hand::getCard(std::size_t index) const
-{
-    return cards.at(index);
-}
+const Card& Hand::getCard(std::size_t index) const { return cards.at(index); }
 
-const Card& Hand::getDealerUpCard() const
-{
-    return cards.at(0);
-}
+const Card& Hand::getDealerUpCard() const { return cards.at(0); }
 
 const std::string Hand::getDealerUpCardToString() const
 {
     Card upCard = cards.at(0);
-    if ( upCard.getBlackjackValue() == 11){
+
+    if (upCard.getBlackjackValue() == 11)
         return "Ace";
-    }else if ( upCard.getBlackjackValue() == 10){
+
+    else if (upCard.getBlackjackValue() == 10)
         return "Face card";
-    }
+
     return std::to_string(upCard.value);
 }
 
@@ -146,63 +94,32 @@ Card Hand::takeLastCard()
     return card;
 }
 
-void Hand::setBet(int amount){
-    currentBet = amount;
-}
+void Hand::setBet(int amount) { currentBet = amount; }
 
-int Hand::getBet() const {
-    return currentBet;
-}
+int Hand::getBet() const { return currentBet; }
 
-void Hand::setInsuranceBet(int amount)
-{
-    insuranceBet = amount;
-}
+void Hand::setInsuranceBet(int amount) { insuranceBet = amount; }
 
-int Hand::getInsuranceBet() const
-{
-    return insuranceBet;
-}
+int Hand::getInsuranceBet() const { return insuranceBet; }
 
-void Hand::setFinished(bool value)
-{
-    finished = value;
-}
+void Hand::setFinished(bool value) { finished = value; }
 
-bool Hand::isFinished() const
-{
-    return finished;
-}
+bool Hand::isFinished() const { return finished; }
 
-void Hand::setDoubledDown(bool value)
-{
-    doubledDown = value;
-}
+void Hand::setDoubledDown(bool value) { doubledDown = value; }
 
-bool Hand::isDoubledDown() const
-{
-    return doubledDown;
-}
+bool Hand::isDoubledDown() const { return doubledDown; }
 
-void Hand::setSurrendered(bool value)
-{
-    surrendered = value;
-}
+void Hand::setSurrendered(bool value) { surrendered = value; }
 
-bool Hand::isSurrendered() const
-{
-    return surrendered;
-}
+bool Hand::isSurrendered() const { return surrendered; }
 
 void Hand::setSplit(bool value, int cardValue)
 {
     split = value;
-    if(cardValue == 11){
+
+    if (cardValue == 11)
         splitAce = true;
-    }
 }
 
-bool Hand::isSplit() const
-{
-    return split;
-}
+bool Hand::isSplit() const { return split; }

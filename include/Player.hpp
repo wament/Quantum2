@@ -17,28 +17,31 @@ enum class BettingStrategy
 };
 
 // How a single hand settles against the dealer, reported by Player::settle.
-enum class SettlementResult { Surrender, Lose, Win, Push };
+enum class SettlementResult
+{
+    Surrender,
+    Lose,
+    Win,
+    Push
+};
 
 class Player
 {
-public: 
+  public:
     Player(const std::string& playerName);
 
-    // NPC seat: starts fresh in memory with a given bankroll and never persists — no disk read/write, no
-    // shoe/round records kept. The human player uses the persistent-profile constructor above; NPCs are
-    // ephemeral and just play this game with a fixed starting bankroll.
+    // NPC seat
     Player(const std::string& playerName, int startingBankroll);
 
-    void resetRound(int previousBet);  
+    void resetRound(int previousBet);
 
-    int currentHand = 0; 
+    int currentHand = 0;
     std::vector<Hand> hands;
 
     // Betting
     bool placeBet(int amount);
     void winBet(int amount);
     void loseBet(int amount);
-    void pushBet(int amount);
 
     // Betting strategy
     void setBettingStrategy(BettingStrategy strategy, int baseBet = 10);
@@ -46,17 +49,12 @@ public:
     int calculateNextBet(bool lastRoundWon);
     void recordRoundResult(bool won);
 
-    // Per-seat bet sizing for a new round. Kelly sizes off the true count and bankroll; progressive
-    // strategies size off their own internal state (see calculateNextBet) rather than the count.
     int determineRoundBet(float trueCount);
 
-    // Adjust a hand's standing bet by delta, clamped to table limits. Target defaults to the active hand.
     void adjustHandBet(int delta, std::size_t handIndex = 0);
 
-    // Insurance — the decision (a Hi-Lo rule) lives here; placement and the seat loop stay with Game.
     bool shouldTakeInsurance(int bet, float trueCount, BasicStrategy::CountingStyle style = BasicStrategy::CountingStyle::HI_LO) const;
 
-    // Take insurance for the active hand: place a wager of `amount` and record it on the hand.
     void takeInsurance(int amount);
 
     // Raise/lower the active hand's insurance bet by 1, clamped to [0, half the main bet].
@@ -78,13 +76,13 @@ public:
     PlayerStats& getStats();
     PlayerProfile updateProfile(PlayerProfile profile);
     void saveProfile();
-private:
+
+  private:
     std::string name;
 
     PlayerProfile profile;
     int bankroll = 1000;
- 
-    // Progressive betting state
+
     BettingStrategy bettingStrategy = BettingStrategy::Flat;
     int baseBet = 10;
     int currentProgressiveBet = 0;

@@ -18,7 +18,7 @@ HUD::~HUD()
         delete m_controlsText;
 }
 
-void HUD::initialize(sf::Font &font)
+void HUD::initialize(sf::Font& font)
 {
     m_leftPanel.initialize(font);
     m_rightPanel.initialize(font);
@@ -98,7 +98,7 @@ void HUD::initialize(sf::Font &font)
     updateControls(font);
 }
 
-void HUD::updateControls(sf::Font &font)
+void HUD::updateControls(sf::Font& font)
 {
 
     m_controlsText = new sf::Text(font, "", 13u);
@@ -119,7 +119,7 @@ void HUD::updateControls(sf::Font &font)
     m_controlsText->setPosition(sf::Vector2f(Constants::WINDOW_WIDTH / 2.f, Constants::WINDOW_HEIGHT - 80.f - 20.f));
 }
 
-void HUD::update(const HUDState &hudState)
+void HUD::update(const HUDState& hudState)
 {
     if (m_bankrollBox)
         m_bankrollBox->setValue(std::to_string(hudState.bankroll));
@@ -160,7 +160,7 @@ void HUD::update(const HUDState &hudState)
         }
         else
         {
-            streakStr = std::to_string(hudState.streak); 
+            streakStr = std::to_string(hudState.streak);
             streakStr += hudState.streakIsWin ? "W" : "L";
         }
         m_streakBox->setValue(streakStr);
@@ -190,10 +190,9 @@ void HUD::update(const HUDState &hudState)
         else
             m_bookBox->setValue(hudState.basicStrategyHint);
     }
-
 }
 
-void HUD::draw(sf::RenderWindow &window)
+void HUD::draw(sf::RenderWindow& window)
 {
     if (m_showLeft)
         m_leftPanel.draw(window);
@@ -208,29 +207,9 @@ void HUD::draw(sf::RenderWindow &window)
     window.draw(*m_controlsText);
 }
 
-void HUD::toggleLeftPanel()
-{
-    m_showLeft = !m_showLeft;
-}
-
-void HUD::toggleRightPanel()
-{
-    m_showRight = !m_showRight;
-}
-
-bool HUD::leftVisible() const
-{
-    return m_showLeft;
-}
-
-bool HUD::rightVisible() const
-{
-    return m_showRight;
-}
-
 sf::FloatRect HUD::countTitleBounds() const
 {
     // The Counting Style box (e.g. "Counting Style" / "Hi-Lo") is clickable — see InputHandler toggling the
     // counting style. Bounds span both its label and value lines so clicks anywhere on it register.
-    return m_countingStyleBox ? m_countingStyleBox->getTitleValueBounds() : sf::FloatRect{};
+    return m_countingStyleBox ? m_countingStyleBox->getTitleBounds() : sf::FloatRect{};
 }

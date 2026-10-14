@@ -1,0 +1,27 @@
+# Blackjack2 formatting — tuned to preserve the project's existing conventions:
+# Allman braces, 4-space indents, and short one-line functions stay compact.
+Language:        Cpp
+BasedOnStyle:    LLVM
+
+IndentWidth:     4
+TabWidth:        4
+UseTab:          Never
+ContinuationIndentWidth: 4
+
+# Keep opening braces on their own line (functions + control flow).
+BreakBeforeBraces: Allman
+
+# Do not wrap lines to fit a width — the codebase has long single-line statements.
+ColumnLimit:     0
+
+# Preserve short functions/definitions on one line so compact forms stick.
+AllowShortFunctionsOnASingleLine: all
+AllowShortIfStatementsOnASingleLine: false
+AllowShortBlocksOnASingleLine: false
+ShortAllLines:   false
+
+# Leave include ordering as-is (project uses intentional grouping) instead of reordering/sorting them.
+IncludeBlocks:   Preserve
+SortIncludes:    false
+
+Standard:        c++17

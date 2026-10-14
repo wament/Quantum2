@@ -14,15 +14,14 @@ struct Card
     int value{};
     Suit suit{Suit::Spades};
 
-    [[nodiscard]] int getBlackjackValue() const;
+    int getBlackjackValue() const;
 
-    [[nodiscard]] std::string getBlackjackValueToString() const;
+    std::string getBlackjackValueToString() const;
 
-    [[nodiscard]] bool isAce() const;
+    bool isAce() const;
 
-    [[nodiscard]] bool isFaceCard() const;
+    bool isFaceCard() const;
 
-    [[nodiscard]] bool isCutCard() const;
-    [[nodiscard]] int getHiLoValue() const;  // Hi-Lo counting value (-1, 0, +1)
-    [[nodiscard]] char getSuitSymbol() const;  // Unicode suit symbol
+    bool isCutCard() const;
+    char getSuitSymbol() const; // Unicode suit symbol
 };

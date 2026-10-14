@@ -19,7 +19,7 @@ static std::string getSavePath()
         // Fallback to relative path if HOME is not set
         return std::string(Constants::PLAYER_FILE_FALLBACK);
     }
-    
+
     fs::path saveDir = fs::path(home) / ".local" / "share" / "blackjack" / "saves";
     fs::create_directories(saveDir);
     return (saveDir / "player_profile.json").string();
@@ -29,7 +29,7 @@ Player::Player(const std::string& playerName)
     : name(playerName)
 {
     std::string savePath = getSavePath();
-    
+
     // Try to load existing profile; otherwise create new
     profile = PlayerProfile::load(savePath);
     if (profile.getBankroll() == 0)
@@ -44,9 +44,8 @@ Player::Player(const std::string& playerName)
     bankroll = profile.getBankroll();
 }
 
-// NPC seat: fresh in-memory profile only. NPCs are ephemeral — they keep no profile on disk, track no
-// shoe/round records, and don't persist a bankroll between sessions. The human player persists via the
-// load/save path above; an NPC just plays this game with a given starting bankroll.
+// NPC seat: fresh in-memory profile only. NPCs are ephemeral — they keep no profile on disk.
+// The human player persists via the load/save path above
 Player::Player(const std::string& playerName, int startingBankroll)
     : name(playerName), bankroll(startingBankroll)
 {
@@ -54,15 +53,9 @@ Player::Player(const std::string& playerName, int startingBankroll)
     profile.setBankroll(startingBankroll);
 }
 
-PlayerProfile Player::getProfile()
-{
-    return profile;
-}
+PlayerProfile Player::getProfile() { return profile; }
 
-PlayerStats& Player::getStats()
-{
-    return profile.stats;
-}
+PlayerStats& Player::getStats() { return profile.stats; }
 
 PlayerProfile Player::updateProfile(PlayerProfile p)
 {
@@ -85,45 +78,19 @@ void Player::resetRound(int previousBet)
     hands.resize(1);
     hands[0].setBet(previousBet);
     currentHand = 0;
-} 
-
-int Player::getBankroll() const
-{
-    return bankroll;
 }
 
-void Player::setBankroll(int amount)
-{
-    bankroll = amount;
-}
+int Player::getBankroll() const { return bankroll; }
 
-const std::string& Player::getName() const
-{
-    return name;
-}
-bool Player::placeBet(int amount)
-{
-    if (amount <= bankroll)
-    {
-        return true;
-    }
-    return false;
-}
+void Player::setBankroll(int amount) { bankroll = amount; }
 
-void Player::winBet(int amount)
-{
-    bankroll += amount;
-}
+const std::string& Player::getName() const { return name; }
 
-void Player::loseBet(int amount)
-{
-   bankroll -= amount;
-}
+bool Player::placeBet(int amount) { return amount <= bankroll; }
 
-void Player::pushBet(int amount)
-{
-    bankroll += amount;
-}
+void Player::winBet(int amount) { bankroll += amount; }
+
+void Player::loseBet(int amount) { bankroll -= amount; }
 
 // --- Betting Strategy Implementation ---
 
@@ -143,11 +110,13 @@ int Player::calculateNextBet(bool lastRoundWon)
 
     switch (bettingStrategy)
     {
-    case BettingStrategy::Kelly: {
+    case BettingStrategy::Kelly:
+    {
         // Kelly is calculated by Game using true count, not here
         return baseBet;
     }
-    case BettingStrategy::Martingale: {
+    case BettingStrategy::Martingale:
+    {
         // Double after loss, reset to base after win
         if (!won)
         {
@@ -162,7 +131,8 @@ int Player::calculateNextBet(bool lastRoundWon)
         }
         return currentProgressiveBet;
     }
-    case BettingStrategy::Fibonacci: {
+    case BettingStrategy::Fibonacci:
+    {
         // Move up sequence after loss, down two after win
         static const int fibSeq[] = {1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144};
         static const int maxFibIndex = 11;
@@ -178,7 +148,8 @@ int Player::calculateNextBet(bool lastRoundWon)
         currentProgressiveBet = baseBet * fibSeq[fibIndex];
         return currentProgressiveBet;
     }
-    case BettingStrategy::Paroli: {
+    case BettingStrategy::Paroli:
+    {
         // Double after win (up to 3 wins), reset after loss
         if (won)
         {
@@ -201,7 +172,8 @@ int Player::calculateNextBet(bool lastRoundWon)
         }
         return currentProgressiveBet;
     }
-    default: { // Flat and unknown strategies
+    default:
+    { // Flat and unknown strategies
         return baseBet;
     }
     }
@@ -306,4 +278,3 @@ SettlementResult Player::settle(const Hand& hand, int dealerValue, bool dealerBu
     payout = hand.getBet();
     return SettlementResult::Push;
 }
-

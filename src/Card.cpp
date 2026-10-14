@@ -23,37 +23,10 @@ std::string Card::getBlackjackValueToString() const
     return std::to_string(value);
 }
 
-bool Card::isAce() const
-{
-    return value == 1;
-}
+bool Card::isAce() const { return value == 1; }
 
-bool Card::isFaceCard() const
-{
-    return value >= 11 && value <= 13;
-}
+bool Card::isFaceCard() const { return value >= 11 && value <= 13; }
 
-bool Card::isCutCard() const
-{
-    return value == Constants::CUT_CARD_VALUE;
-}
+bool Card::isCutCard() const { return value == Constants::CUT_CARD_VALUE; }
 
-[[nodiscard]] int Card::getHiLoValue() const
-{
-    int val = getBlackjackValue();
-    if (val >= 2 && val <= 6) return +1;
-    if (val >= 10) return -1;  // 10, J, Q, K
-    return 0;  // 7, 8, 9, A
-}
-
-char Card::getSuitSymbol() const
-{
-    switch (suit)
-    {
-    case Suit::Spades: return u8"♠"[0];
-    case Suit::Hearts: return u8"♥"[0];
-    case Suit::Diamonds: return u8"♦"[0];
-    case Suit::Clubs: return u8"♣"[0];
-    }
-    return u8"?"[0];
-}
+char Card::getSuitSymbol() const { switch (suit) { case Suit::Spades: return u8"♠"[0]; case Suit::Hearts: return u8"♥"[0]; case Suit::Diamonds: return u8"♦"[0]; case Suit::Clubs: return u8"♣"[0]; } return u8"?"[0];}

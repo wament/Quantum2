@@ -1,7 +1,6 @@
 #include <cmath>
 #include "Game.hpp"
 #include "GameRenderer.hpp"
-#include "Game.hpp"
 #include "Constants.hpp"
 #include "Graphics.hpp"
 #include "Replay.hpp"
@@ -9,7 +8,7 @@
 
 #include <algorithm>
 
-void GameRenderer::draw(Game &game)
+void GameRenderer::draw(Game& game)
 {
     game.window.clear();
     game.window.draw(*game.backgroundSprite);
@@ -45,9 +44,8 @@ void GameRenderer::draw(Game &game)
     game.window.display();
 }
 
-
 // Shared table-draw for Playing and Paused states (dealer + players + chips).
-void GameRenderer::drawGameTable(Game &game)
+void GameRenderer::drawGameTable(Game& game)
 {
     // Lay out split hands once so cards, chips and the active-player highlight all line up.
     std::vector<PlayerHandLayout> lanes = allocatePlayerLanes(game);
@@ -59,7 +57,7 @@ void GameRenderer::drawGameTable(Game &game)
 
 // Split hands fan up-and-to-the-right from each seat's betting circle; the vertical step keeps them from piling on
 // one another or onto a neighbour, whose group is nudged outward when their footprints collide (below).
-std::vector<PlayerHandLayout> GameRenderer::allocatePlayerLanes(Game &game) const
+std::vector<PlayerHandLayout> GameRenderer::allocatePlayerLanes(Game& game) const
 {
     const std::size_t n = game.players.size();
     if (n == 0)
@@ -72,8 +70,10 @@ std::vector<PlayerHandLayout> GameRenderer::allocatePlayerLanes(Game &game) cons
 
     // Cascade step per split hand (0 for a single hand; else j-(hands-2)): newest takes the up-right slot, earlier ones
     // shift one step down-left; <=2 hands reproduce the original staircase exactly.
-    auto stepAt = [](int j, int hands) -> float {
-        if (hands <= 1) return 0.f;
+    auto stepAt = [](int j, int hands) -> float
+    {
+        if (hands <= 1)
+            return 0.f;
         return static_cast<float>(j - (hands - 2));
     };
 
@@ -107,12 +107,17 @@ std::vector<PlayerHandLayout> GameRenderer::allocatePlayerLanes(Game &game) cons
             if (overlap > 0.0f)
             {
                 const float half = overlap * 0.5f;
-                cx[i] -= half;                 leftEdge[i] -= half;      rightEdge[i] -= half;
-                cx[i + 1] += half; leftEdge[i + 1] += half; rightEdge[i + 1] += half;
+                cx[i] -= half;
+                leftEdge[i] -= half;
+                rightEdge[i] -= half;
+                cx[i + 1] += half;
+                leftEdge[i + 1] += half;
+                rightEdge[i + 1] += half;
                 changed = true;
             }
         }
-        if (!changed) break;
+        if (!changed)
+            break;
     }
 
     // Clamp the row into the usable band: a no-op when seats fit, else nudge the whole row to clear an overflowing
@@ -120,10 +125,15 @@ std::vector<PlayerHandLayout> GameRenderer::allocatePlayerLanes(Game &game) cons
     // is room on one side would drag hands and chips off their rings in normal play.
     float shift = 0.0f;
     if (leftEdge[0] < leftBound)
-        shift = leftBound - leftEdge[0];                 // too far left: nudge right
+        shift = leftBound - leftEdge[0]; // too far left: nudge right
     else if (rightEdge[n - 1] > rightBound)
-        shift = rightBound - rightEdge[n - 1];           // too far right: nudge left
-    for (std::size_t i = 0; i < n; ++i) { cx[i] += shift; leftEdge[i] += shift; rightEdge[i] += shift; }
+        shift = rightBound - rightEdge[n - 1]; // too far right: nudge left
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        cx[i] += shift;
+        leftEdge[i] += shift;
+        rightEdge[i] += shift;
+    }
 
     // Convert seats to per-hand x/y. drawChips reads the same leftX/offsetY, so bet stacks stay anchored to each hand's
     // own slot (e.g. the 3rd of 4 hands sits at step 0 = its original betting circle).
@@ -131,7 +141,7 @@ std::vector<PlayerHandLayout> GameRenderer::allocatePlayerLanes(Game &game) cons
     for (std::size_t i = 0; i < n; ++i)
     {
         const int hands = static_cast<int>(game.players[i].hands.size());
-        PlayerHandLayout &lane = lanes[i];
+        PlayerHandLayout& lane = lanes[i];
         lane.cx = cx[i];
         lane.cw = Constants::CARD_WIDTH + static_cast<float>((hands > 0 ? hands : 1) - 1) * spreadX + Constants::BOX_PAD;
         for (int j = 0; j < hands; ++j)
@@ -145,7 +155,7 @@ std::vector<PlayerHandLayout> GameRenderer::allocatePlayerLanes(Game &game) cons
     return lanes;
 }
 
-void GameRenderer::resizeView(sf::RenderWindow &window, sf::View &view)
+void GameRenderer::resizeView(sf::RenderWindow& window, sf::View& view)
 {
     float windowRatio = static_cast<float>(window.getSize().x) /
                         static_cast<float>(window.getSize().y);
@@ -167,7 +177,7 @@ void GameRenderer::resizeView(sf::RenderWindow &window, sf::View &view)
     window.setView(view);
 }
 
-void GameRenderer::drawDealer(Game &game)
+void GameRenderer::drawDealer(Game& game)
 {
     if (game.roundState == RoundState::PlayerTurn || game.roundState == RoundState::OfferInsurance)
     {
@@ -184,7 +194,7 @@ void GameRenderer::drawDealer(Game &game)
     for (std::size_t i = 0; i < game.dealer.size(); i++)
     {
         Graphics::drawCard(game.window, game.cardTexture, game.dealer.getCard(i),
-                          Constants::DEALER_X + i * 60, Constants::DEALER_Y);
+                           Constants::DEALER_X + i * 60, Constants::DEALER_Y);
     }
     // Draw the dealer's total to the left of their hand, once the hand has finished.
     if (game.roundState == RoundState::DealerTurn || game.roundState == RoundState::Cleanup)
@@ -208,29 +218,29 @@ void GameRenderer::drawDealer(Game &game)
     }
 }
 
-sf::Vector2f GameRenderer::getPlayerPosition(Game &game, size_t playerIndex, size_t totalPlayers) const
+sf::Vector2f GameRenderer::getPlayerPosition(Game& game, size_t playerIndex, size_t totalPlayers) const
 {
     // Seats map onto fixed betting-circle rings (0-indexed); the six-row layout below is that projection and smaller
     // seat counts reuse a subset, so every hand stays on a ring.
     static const int slotMap[7][6] = {
         {},
-        {2},                         // 1 player -> circle 3 (centre)
-        {2, 4},                      // 2 players -> circles 2 and 4
-        {1, 2, 3},                   // 3 players -> circles 1, 3, 5
-        {1, 2, 3, 4},                // 4 players -> circles 1, 3, 4, 6
-        {0, 1, 2, 3, 4},             // 5 players -> every ring except circle 6
-        {0, 1, 2, 3, 4, 5}           // 6 players -> all rings (unchanged)
+        {2},               // 1 player -> circle 3 (centre)
+        {2, 4},            // 2 players -> circles 2 and 4
+        {1, 2, 3},         // 3 players -> circles 1, 3, 5
+        {1, 2, 3, 4},      // 4 players -> circles 1, 3, 4, 6
+        {0, 1, 2, 3, 4},   // 5 players -> every ring except circle 6
+        {0, 1, 2, 3, 4, 5} // 6 players -> all rings (unchanged)
     };
 
     const size_t slot = slotMap[totalPlayers][playerIndex];
 
-     // Manual per-player offsets for fine-tuning placement
+    // Manual per-player offsets for fine-tuning placement
     static const sf::Vector2f playerOffsets[6] = {
-        {-21.f, -1.f},  // Player 0
-        {-3.f, -9.f},    // Player 1
-        {-1.f, 0.f},    // Player 2
+        {-21.f, -1.f}, // Player 0
+        {-3.f, -9.f},  // Player 1
+        {-1.f, 0.f},   // Player 2
         {8.f, 0.f},    // Player 3
-        {7.f, -3.f},    // Player 4
+        {7.f, -3.f},   // Player 4
         {6.f, 7.f}     // Player 5
     };
     // Arrange players in an arc around the table
@@ -248,7 +258,7 @@ sf::Vector2f GameRenderer::getPlayerPosition(Game &game, size_t playerIndex, siz
     float angleRad = angle * 3.14159f / 180.f;
 
     float x = centerX + radius * sin(angleRad);
-    float y = centerY - radius * cosh(0.78*angleRad);
+    float y = centerY - radius * cosh(0.78 * angleRad);
 
     sf::Vector2f offset = (slot < 6) ? playerOffsets[slot] : sf::Vector2f(0.f, 0.f);
     return {x - Constants::PLAYER_X + offset.x, y - Constants::PLAYER_Y + offset.y};
@@ -257,7 +267,7 @@ sf::Vector2f GameRenderer::getPlayerPosition(Game &game, size_t playerIndex, siz
 // Draws a numeric hand total in white (16pt). With rightAlign the number's right edge sits at x
 // (used for the dealer, flush left of its cards); otherwise it is centered on the anchor (player
 // hands above each card fan).
-void GameRenderer::drawTotal(Game &game, int value, float x, float y, bool rightAlign) const
+void GameRenderer::drawTotal(Game& game, int value, float x, float y, bool rightAlign) const
 {
     sf::Text text(FontManager::get(), std::to_string(value), 16.f);
     text.setFillColor(sf::Color::White);
@@ -273,7 +283,7 @@ void GameRenderer::drawTotal(Game &game, int value, float x, float y, bool right
 // Draw a status label ("BUSTED"/"BLACKJACK!") centered horizontally and vertically over a hand's anchor
 // point so it sits squarely on the cards instead of flush to one corner. 18pt bold text; color is chosen
 // by the caller (red for busted, green for "Blackjack!").
-void GameRenderer::drawStatusLabel(Game &game, const std::string &label, float cx, float cy, const sf::Color &color) const
+void GameRenderer::drawStatusLabel(Game& game, const std::string& label, float cx, float cy, const sf::Color& color) const
 {
     sf::Text text(FontManager::get(), label, 18.f);
     text.setStyle(sf::Text::Bold);
@@ -284,7 +294,7 @@ void GameRenderer::drawStatusLabel(Game &game, const std::string &label, float c
     game.window.draw(text);
 }
 
-void GameRenderer::drawPlayers(Game &game, const std::vector<PlayerHandLayout>& lanes)
+void GameRenderer::drawPlayers(Game& game, const std::vector<PlayerHandLayout>& lanes)
 {
     for (size_t playerIndex = 0; playerIndex < game.players.size(); playerIndex++)
     {
@@ -302,7 +312,7 @@ void GameRenderer::drawPlayers(Game &game, const std::vector<PlayerHandLayout>& 
 
         if (playerIndex == game.activePlayerIndex && game.roundState == RoundState::PlayerTurn)
         {
-            const PlayerHandLayout &lane = lanes[playerIndex];
+            const PlayerHandLayout& lane = lanes[playerIndex];
             sf::RectangleShape highlight(sf::Vector2f(lane.cw + 80.f, 260.f));
             highlight.setFillColor(sf::Color(255, 255, 0, 30));
             highlight.setOutlineColor(sf::Color(255, 255, 0, 150));
@@ -318,7 +328,7 @@ void GameRenderer::drawPlayers(Game &game, const std::vector<PlayerHandLayout>& 
 
         for (std::size_t handIndex = 0; handIndex < p.hands.size(); handIndex++)
         {
-            const Hand &hand = p.hands[handIndex];
+            const Hand& hand = p.hands[handIndex];
             float handX = lanes[playerIndex].leftX[handIndex];
             float handY = Constants::PLAYER_Y + yOffset + lanes[playerIndex].offsetY[handIndex];
 
@@ -354,14 +364,15 @@ void GameRenderer::drawPlayers(Game &game, const std::vector<PlayerHandLayout>& 
                     Graphics::drawCard(game.window, game.cardTexture, hand.getCard(i), cardX, cardY);
                 }
             }
-            
+
             // Draw the hand's total above it, once the hand has finished.
             if ((game.roundState == RoundState::DealerTurn ||
-                   game.roundState == RoundState::Cleanup) && hand.size() > 0)
+                 game.roundState == RoundState::Cleanup) &&
+                hand.size() > 0)
             {
                 const std::size_t n = hand.size();
-                float fanRight = static_cast<float>(n - 1) * 16.f + Constants::CARD_WIDTH; // right edge of the card row
-                float cx = fanLeftX + fanRight / 2.f; // center horizontally over this hand's rebalanced cards
+                float fanRight = static_cast<float>(n - 1) * 16.f + Constants::CARD_WIDTH;                // right edge of the card row
+                float cx = fanLeftX + fanRight / 2.f;                                                     // center horizontally over this hand's rebalanced cards
                 float cy = handY - Constants::CARD_HEIGHT / 2.f - 16.f - static_cast<float>(n - 1) * 8.f; // sit above the rising cards
                 drawTotal(game, hand.getValue(), cx, cy, false);
             }
@@ -381,7 +392,7 @@ void GameRenderer::drawPlayers(Game &game, const std::vector<PlayerHandLayout>& 
             {
                 int pn = static_cast<int>(hand.size());
                 float fanRight = static_cast<float>(pn - 1) * 16.f + Constants::CARD_WIDTH;
-                float pcx = fanLeftX + fanRight / 2.f; // center horizontally over the rebalanced card row
+                float pcx = fanLeftX + fanRight / 2.f;                                               // center horizontally over the rebalanced card row
                 float pcy = handY - static_cast<float>(pn - 1) * 8.f + Constants::CARD_HEIGHT / 2.f; // vertical center of the rising cards
                 drawStatusLabel(game, "BLACKJACK!", pcx, pcy, sf::Color(0, 180, 0));
             }
@@ -406,7 +417,7 @@ void GameRenderer::drawPlayers(Game &game, const std::vector<PlayerHandLayout>& 
     }
 }
 
-void GameRenderer::drawChips(Game &game, const std::vector<PlayerHandLayout>& lanes)
+void GameRenderer::drawChips(Game& game, const std::vector<PlayerHandLayout>& lanes)
 {
     struct Chip
     {
@@ -415,14 +426,13 @@ void GameRenderer::drawChips(Game &game, const std::vector<PlayerHandLayout>& la
     };
 
     const std::vector<Chip> denominations =
-    {
-        {50000, sf::Color(128, 0, 128)},
-        {10000, sf::Color::Black},
-        {2500, sf::Color(0, 180, 0)},
-        {500, sf::Color::Red},
-        {250, sf::Color(255, 105, 180)},
-        {100, sf::Color::White}
-    };
+        {
+            {50000, sf::Color(128, 0, 128)},
+            {10000, sf::Color::Black},
+            {2500, sf::Color(0, 180, 0)},
+            {500, sf::Color::Red},
+            {250, sf::Color(255, 105, 180)},
+            {100, sf::Color::White}};
 
     for (size_t playerIndex = 0; playerIndex < game.players.size(); playerIndex++)
     {
@@ -432,7 +442,7 @@ void GameRenderer::drawChips(Game &game, const std::vector<PlayerHandLayout>& la
         float yOffset = pos.y;
 
         int handIndex = 0;
-        for (Hand &hand : p.hands)
+        for (Hand& hand : p.hands)
         {
             int totalBet = hand.getBet();
             int stackBet = hand.isDoubledDown() ? totalBet / 2 : totalBet;
@@ -442,14 +452,14 @@ void GameRenderer::drawChips(Game &game, const std::vector<PlayerHandLayout>& la
                 handIndex++;
                 continue;
             }
- 
+
             float chipX = lanes[playerIndex].leftX[handIndex] + Constants::CHIP_BET_X_OFFSET; // sit centered in the felt betting ring, ahead of each hand's first card
             float chipY = Constants::PLAYER_Y + yOffset + lanes[playerIndex].offsetY[handIndex] + Constants::CARD_HEIGHT + 45.f;
 
             int remaining = stackBet * 100;
             std::vector<Chip> stack;
 
-            for (const auto &chip : denominations)
+            for (const auto& chip : denominations)
             {
                 while (remaining >= chip.value)
                 {
@@ -501,17 +511,17 @@ void GameRenderer::drawChips(Game &game, const std::vector<PlayerHandLayout>& la
     }
 }
 
-void GameRenderer::drawDeck(Game &game)
+void GameRenderer::drawDeck(Game& game)
 {
     for (std::size_t i = 0; i < game.deck.size(); i++)
     {
         Graphics::drawCard(game.window, game.cardTexture, game.deck.getCard(i),
-                          Constants::DECK_X + (i % 52) * 20,
-                          Constants::DECK_Y + (i / 52) * 80);
+                           Constants::DECK_X + (i % 52) * 20,
+                           Constants::DECK_Y + (i / 52) * 80);
     }
 }
 
-void GameRenderer::drawInsurance(Game &game)
+void GameRenderer::drawInsurance(Game& game)
 {
     auto& p = game.players[game.activePlayerIndex];
     sf::Text text(FontManager::get(),
@@ -528,7 +538,7 @@ void GameRenderer::drawInsurance(Game &game)
     game.window.draw(text);
 }
 
-void GameRenderer::drawSummaryOverlay(Game &game)
+void GameRenderer::drawSummaryOverlay(Game& game)
 {
     if (game.hudState.playerSummaries.empty() || game.hudState.summaryTimer <= 0.0f)
         return;
@@ -553,7 +563,7 @@ void GameRenderer::drawSummaryOverlay(Game &game)
     }
 }
 
-void GameRenderer::drawMenuItem(Game &game, const std::string &label, bool selected, float y, bool hovered)
+void GameRenderer::drawMenuItem(Game& game, const std::string& label, bool selected, float y, bool hovered)
 {
     sf::Text text(FontManager::get(), label, 24);
 
@@ -573,7 +583,7 @@ void GameRenderer::drawMenuItem(Game &game, const std::string &label, bool selec
     game.window.draw(text);
 }
 
-int GameRenderer::getHoveredMenuItemIndex(Game &game) const
+int GameRenderer::getHoveredMenuItemIndex(Game& game) const
 {
     float cx = static_cast<float>(game.window.getSize().x) / 2.0f;
     sf::Vector2f mousePos = game.window.mapPixelToCoords(sf::Mouse::getPosition(game.window));
@@ -583,7 +593,7 @@ int GameRenderer::getHoveredMenuItemIndex(Game &game) const
     float bestDistance = rowHalfHeight;
     for (int i = 0; i < static_cast<int>(mainMenuItems().size()); ++i)
     {
-        const MainMenuItem &item = mainMenuItems()[i];
+        const MainMenuItem& item = mainMenuItems()[i];
         float distance = std::abs(mousePos.y - item.y);
         if (distance < bestDistance && std::abs(mousePos.x - cx) < 250.f)
         {
@@ -599,7 +609,7 @@ int GameRenderer::getHoveredMenuItemIndex(Game &game) const
 // Vertical pixel-centre of pause-menu row `index` at the current window height. Uses the
 // fractional positions from pauseMenuItems() so it matches drawPauseMenu and the click/hover
 // hit-testing exactly -- one source of truth for where those rows sit.
-float GameRenderer::pauseRowY(Game &game, int index) const
+float GameRenderer::pauseRowY(Game& game, int index) const
 {
     if (index < 0 || index >= static_cast<int>(pauseMenuItems().size()))
         return -1.f;
@@ -611,7 +621,7 @@ float GameRenderer::pauseRowY(Game &game, int index) const
 // Index of the pause-menu row currently under the mouse cursor, or -1 if none. Nearest-centre
 // within each row's half-height and centred horizontally around the screen centre -- used by both
 // hover highlighting (drawPauseMenu) and click selection (processPauseEvents) so they agree.
-int GameRenderer::getHoveredPauseMenuItemIndex(Game &game) const
+int GameRenderer::getHoveredPauseMenuItemIndex(Game& game) const
 {
     constexpr float rowHalfHeight = 20.f;
 
@@ -639,7 +649,7 @@ int GameRenderer::getHoveredPauseMenuItemIndex(Game &game) const
     return hoveredIndex;
 }
 
-void GameRenderer::drawMainMenu(Game &game)
+void GameRenderer::drawMainMenu(Game& game)
 {
     game.window.clear(sf::Color(20, 20, 30));
     float cx = static_cast<float>(game.window.getSize().x) / 2.0f;
@@ -655,7 +665,7 @@ void GameRenderer::drawMainMenu(Game &game)
 
     for (int i = 0; i < static_cast<int>(mainMenuItems().size()); ++i)
     {
-        const MainMenuItem &item = mainMenuItems()[i];
+        const MainMenuItem& item = mainMenuItems()[i];
         std::string label;
         switch (item.option)
         {
@@ -670,10 +680,18 @@ void GameRenderer::drawMainMenu(Game &game)
             std::string speedLabel = "Speed: ";
             switch (game.gameSpeed)
             {
-            case GameSpeed::Fast:      speedLabel += "Fast"; break;
-            case GameSpeed::Normal:    speedLabel += "Normal"; break;
-            case GameSpeed::Slow:      speedLabel += "Slow"; break;
-            case GameSpeed::AutoPlay:  speedLabel += "AutoPlay"; break;
+            case GameSpeed::Fast:
+                speedLabel += "Fast";
+                break;
+            case GameSpeed::Normal:
+                speedLabel += "Normal";
+                break;
+            case GameSpeed::Slow:
+                speedLabel += "Slow";
+                break;
+            case GameSpeed::AutoPlay:
+                speedLabel += "AutoPlay";
+                break;
             }
             speedLabel += " (Left/Right)";
             label = speedLabel;
@@ -694,7 +712,7 @@ void GameRenderer::drawMainMenu(Game &game)
     game.window.draw(instr);
 }
 
-void GameRenderer::drawPauseMenu(Game &game)
+void GameRenderer::drawPauseMenu(Game& game)
 {
     float w = static_cast<float>(game.window.getSize().x);
     float h = static_cast<float>(game.window.getSize().y);
@@ -714,7 +732,7 @@ void GameRenderer::drawPauseMenu(Game &game)
     int hoveredIndex = getHoveredPauseMenuItemIndex(game);
     for (int i = 0; i < static_cast<int>(pauseMenuItems().size()); ++i)
     {
-        const PauseMenuItem &item = pauseMenuItems()[i];
+        const PauseMenuItem& item = pauseMenuItems()[i];
         bool selected = (game.pauseSelection == item.option);
         bool hovered = (i == hoveredIndex);
 

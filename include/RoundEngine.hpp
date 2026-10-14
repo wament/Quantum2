@@ -1,7 +1,7 @@
 #pragma once
 
-// Forward declaration keeps this header decoupled from Game.hpp (and its SFML-heavy
-// include chain). RoundEngine::tick() takes a Game& and relies on Game granting it
+// Forward declaration
+// RoundEngine::tick() takes a Game& and relies on Game granting it
 // friendship to reach the turn/round state machine's private members.
 class Game;
 

@@ -3,27 +3,27 @@
 #include <SFML/Graphics.hpp>
 #include <vector>
 
-enum class AppMode {
+enum class AppMode
+{
     MainMenu,
     Playing,
     Paused,
     ReplayHistory,
     ReplayPlaying
 };
-enum class MenuOption {
+enum class MenuOption
+{
     PlayGame,
     PlayerCount,
     GameSpeed,
     ReviewHistory
 };
-enum class PauseOption {
+enum class PauseOption
+{
     Resume,
     Restart,
     QuitToMenu
 };
-// GameSpeed lives in Constants.hpp (near the top) so the GameTiming accessors can reference it; the include
-// below pulls in the rest of the constants. Keeping it here means every header that includes Game.hpp still
-// sees both, in order.
 #include "Constants.hpp"
 #include "BasicStrategy.hpp"
 #include "Deck.hpp"
@@ -56,9 +56,9 @@ enum class GameState
 
 class Game
 {
-public:
+  public:
     Game();
-    explicit Game(bool headless);  // test-only: no SFML window/assets/replay/HUD, pure game state only
+    explicit Game(bool headless); // test-only: no SFML window/assets/replay/HUD, pure game state only
     ~Game();
 
     // ---- Test support: headless construction + deterministic deck injection ----
@@ -69,8 +69,8 @@ public:
     // dealer's up-card is not an ace. Used to exercise split/hit/stand end-to-end without SFML.
     void startTestRound();
 
-    const Hand& testHand(size_t playerIndex, size_t handIndex) const;   // read a player hand back
-    Player& testPlayer(int index = 0) { return players[index]; }        // mutate/read a player (bankroll etc.)
+    const Hand& testHand(size_t playerIndex, size_t handIndex) const; // read a player hand back
+    Player& testPlayer(int index = 0) { return players[index]; }      // mutate/read a player (bankroll etc.)
     const Hand& testDealer() const { return dealer; }
     RoundState roundStateForTest() const { return roundState; }
     GameState gameStateForTest() const { return gameState; }
@@ -89,7 +89,6 @@ public:
     // Click the count-style label ("Count (Hi-Lo)") to toggle between counting systems. Both are always
     // counted in the background; this swaps which buffer drives the active count and flips the style.
     void toggleCountingStyle();
-    std::string gameMessage;
     float deltaTime;
 
     friend class GameRenderer;
@@ -97,7 +96,7 @@ public:
     friend class HandEvaluator;
     friend class RoundEngine;
 
-private: 
+  private:
     AppMode appMode = AppMode::MainMenu;
     std::unique_ptr<Replay> replay;
     GameRenderer renderer;
@@ -149,7 +148,7 @@ private:
 
     GameState gameState = GameState::Started;
 
-    int initalBet = 0;
+    int initialBet = 0;
     int runningCount = 0;
     // Other counting system's running count, kept current every draw so toggling between systems is instant.
     int backgroundRunningCount = 0;
@@ -166,7 +165,7 @@ private:
     int shoeCumulativeWinLoss = 0;    // running win/loss for current shoe
     int sessionCumulativeWinLoss = 0; // running win/loss for entire session
 
-    PlayerStats &getStats()
+    PlayerStats& getStats()
     {
         return players[0].getStats();
     }
@@ -188,7 +187,7 @@ private:
     void updateHUDState();
 
     // Shared HUD timer countdown for summary / after-hand / after-shoe timers.
-    void tickTimer(float &timerField, float deltaTime);
+    void tickTimer(float& timerField, float deltaTime);
     // Advance + wrap activePlayerIndex (and evaluate Blackjack) at insurance-loop boundaries.
     void advanceToNextInsurancePlayer();
 
@@ -214,22 +213,21 @@ private:
     // Handle rare case where deck runs out before cut card
     void handleEmptyDeck();
 
-    void dealCardToPlayer(Hand &hand);
+    void dealCardToPlayer(Hand& hand);
     void dealCardToDealer();
 
     void dealerTurn();
 
     void offerInsurance();
 
-    char giveBasicStrategyAdvice(Hand &playerHand, Hand &dealerHand);
+    char giveBasicStrategyAdvice(Hand& playerHand, Hand& dealerHand);
     void logStrategyDeviation(char actionTaken);
 
     // NPC decision making
     void npcTakeTurn();
 
-    // Compute global hand index for handActions (flat list across all players) 
-    size_t getGlobalHandIndexForPlayer(size_t playerIdx, size_t handIdx); 
-    size_t incrementGlobalHandIndex(size_t current);
+    // Compute global hand index for handActions (flat list across all players)
+    size_t getGlobalHandIndexForPlayer(size_t playerIdx, size_t handIdx);
 
     // Accessors for the seat whose turn it is, so action methods don't re-index every time.
     Player& activePlayer() { return players[activePlayerIndex]; }

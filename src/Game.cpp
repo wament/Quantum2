@@ -5,8 +5,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <filesystem>
-   
-#include "FontManager.hpp" 
+
+#include "FontManager.hpp"
 #include "Logger.hpp"
 #include "Replay.hpp"
 
@@ -30,7 +30,7 @@ Game::Game()
     npcActionTimer = 0.0f;
     npcActionDelay = 1.0f;
     loadAssets();
-    
+
     replay = std::make_unique<Replay>(window, cardTexture, FontManager::get());
     auto profile = players[0].getProfile();
     replay->loadHistory(profile.getLongHistory());
@@ -81,8 +81,6 @@ void Game::run()
         renderer.draw(*this);
     }
 }
- 
-// Setup
 
 void Game::startNewGame()
 {
@@ -90,7 +88,7 @@ void Game::startNewGame()
     players.clear();
 
     // Human player (William) - always first
-    players.push_back(Player("William")); 
+    players.push_back(Player("William"));
 
     for (int i = 0; i < GameConfig::NPC_COUNT && i + 1 < playerCount; i++)
     {
@@ -133,7 +131,7 @@ void Game::loadAssets()
     Logger::debug("Current working directory: " + std::filesystem::current_path().string());
 
     if (!FontManager::load("assets/fonts/noto/NotoSans-Regular.ttf",
-         "assets/fonts/roboto/RobotoFlex-VariableFont.ttf"))
+                           "assets/fonts/roboto/RobotoFlex-VariableFont.ttf"))
     {
         Logger::error("Failed to load font!");
         return;
@@ -170,7 +168,7 @@ void Game::nextRound()
     Logger::info("New round");
     for (auto& p : players)
     {
-        p.resetRound(initalBet); //replace bet
+        p.resetRound(initialBet);
     }
     dealer.clear();
     currentRoundRecord = {};
@@ -193,14 +191,13 @@ void Game::update(float deltaTime)
     if (appMode != AppMode::Playing)
         return;
 
-
     // Delegate the turn/round state machine to RoundEngine.
     RoundEngine engine;
     engine.tick(deltaTime, *this);
 }
 
 // Shared HUD timer countdown used by update().
-void Game::tickTimer(float &timerField, float deltaTime)
+void Game::tickTimer(float& timerField, float deltaTime)
 {
     if (timerField > 0.0f)
     {
@@ -278,7 +275,7 @@ Game::Game(bool headless)
     gameState = GameState::Started;
     roundState = RoundState::PlayerTurn;
     activePlayerIndex = 0;
-    initalBet = 0;
+    initialBet = 0;
     shoeCumulativeWinLoss = 0;
     sessionCumulativeWinLoss = 0;
 }
@@ -314,13 +311,13 @@ void Game::startTestRound()
     gameState = GameState::Started;
     roundState = RoundState::PlaceBets;
     activePlayerIndex = 0;
-    initalBet = Constants::MINIMUM_BET;
+    initialBet = Constants::MINIMUM_BET;
 
     handActions.clear();
     handActions.resize(1);
 
     players[0].resetRound(Constants::MINIMUM_BET); // one hand, minimum bet (>0) so it gets dealt
-    deal();                                         // initial two cards + dealer up card from the injected shoe
+    deal();                                        // initial two cards + dealer up card from the injected shoe
 }
 
 // Player actions
@@ -328,7 +325,7 @@ void Game::startTestRound()
 void Game::hit()
 {
     auto& p = activePlayer();
-    Hand &hand = activeHand();
+    Hand& hand = activeHand();
 
     if (hand.isFinished())
         return;
@@ -366,7 +363,7 @@ void Game::hit()
 void Game::stand()
 {
     auto& p = activePlayer();
-    Hand &hand = activeHand();
+    Hand& hand = activeHand();
     Logger::info() << p.getName() << " stands on " << hand.getValue() << ".";
     logStrategyDeviation('S');
     hand.setFinished(true);
@@ -378,8 +375,8 @@ void Game::stand()
 bool Game::doubleDown()
 {
     auto& p = activePlayer();
-    Hand &hand = activeHand();
-    int initalbet = hand.getBet();
+    Hand& hand = activeHand();
+    int initialBet = hand.getBet();
 
     if (hand.isFinished())
     {
@@ -403,21 +400,21 @@ bool Game::doubleDown()
 
     logStrategyDeviation('D');
     hand.setDoubledDown(true);
-    if (!p.placeBet(initalbet))
+    if (!p.placeBet(initialBet))
     {
         Logger::warn() << p.getName() << " tried to double down but cannot afford the bet.";
         return false;
     }
 
-    hand.setBet(initalbet * 2);
+    hand.setBet(initialBet * 2);
     dealCardToPlayer(hand);
 
-    PlayerStats &stats = getStats();
+    PlayerStats& stats = getStats();
     stats.doubles++;
     stats.betsPlaced++;
-    stats.betSum += initalbet;
+    stats.betSum += initialBet;
 
-    Logger::info() << p.getName() << " doubles " << initalbet << " to " << hand.getBet() << " on a " << hand.getValue() << ".";
+    Logger::info() << p.getName() << " doubles " << initialBet << " to " << hand.getBet() << " on a " << hand.getValue() << ".";
 
     hand.setFinished(true);
 
@@ -474,7 +471,7 @@ bool Game::split()
     handActions.push_back({}); // new action vector for the split hand
     p.hands[handIndex].setSplit(true, splitValue);
 
-    PlayerStats &stats = getStats();
+    PlayerStats& stats = getStats();
     stats.splits++;
     stats.betsPlaced++;
     stats.betSum += p.hands[handIndex].getBet(); // new hand inherits bet amount
@@ -484,7 +481,7 @@ bool Game::split()
 bool Game::surrender()
 {
     auto& p = activePlayer();
-    Hand &hand = activeHand();
+    Hand& hand = activeHand();
 
     // Cannot surrender a finished hand
     if (hand.isFinished())
@@ -511,11 +508,10 @@ bool Game::surrender()
     return true;
 }
 
-
 void Game::logStrategyDeviation(char actionTaken)
 {
     auto& p = players[activePlayerIndex];
-    Hand &hand = p.hands[p.currentHand];
+    Hand& hand = p.hands[p.currentHand];
     int playerValue = hand.getValue();
     int dealerUpValue = dealer.getDealerUpCard().getBlackjackValue();
     bool hasAce = hand.isSoft();
@@ -526,7 +522,7 @@ void Game::logStrategyDeviation(char actionTaken)
 
     char correct = BasicStrategy::getRecommendedAction(playerValue, dealerUpValue, hasAce, isPair, pairValue);
 
-    PlayerStats &stats = getStats();
+    PlayerStats& stats = getStats();
     stats.strategyTotal++;
 
     if (actionTaken == correct)
@@ -553,7 +549,7 @@ void Game::logStrategyDeviation(char actionTaken)
     }
 }
 
-char Game::giveBasicStrategyAdvice(Hand &playerHand, Hand &dealerHand)
+char Game::giveBasicStrategyAdvice(Hand& playerHand, Hand& dealerHand)
 {
     int playerValue = playerHand.getValue();
     int dealerUpValue = dealerHand.getDealerUpCard().getBlackjackValue();
@@ -564,7 +560,7 @@ char Game::giveBasicStrategyAdvice(Hand &playerHand, Hand &dealerHand)
     int pairValue = isPair ? playerHand.getCard(0).getBlackjackValue() : 0;
 
     return BasicStrategy::getRecommendedAction(playerValue, dealerUpValue, hasAce, isPair, pairValue);
-}  
+}
 
 size_t Game::getGlobalHandIndexForPlayer(size_t playerIdx, size_t handIdx)
 {
@@ -575,11 +571,6 @@ size_t Game::getGlobalHandIndexForPlayer(size_t playerIdx, size_t handIdx)
     }
     globalIndex += handIdx;
     return globalIndex;
-}
-
-size_t Game::incrementGlobalHandIndex(size_t current)
-{
-    return current + 1;
 }
 
 int Game::calculateOptimalBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet) const
@@ -599,10 +590,10 @@ void Game::confirmBet()
         return;
     }
 
-    initalBet = currentBet;
+    initialBet = currentBet;
 
     // Track bet stats
-    PlayerStats &stats = getStats();
+    PlayerStats& stats = getStats();
     stats.betsPlaced++;
     stats.betSum += currentBet;
 
@@ -641,7 +632,7 @@ void Game::confirmBet()
 
     deal();
 }
- 
+
 // Advance + wrap active player index at insurance-loop boundaries.
 void Game::advanceToNextInsurancePlayer()
 {
@@ -681,8 +672,6 @@ void Game::offerInsurance()
     }
     // else: human player in manual mode - wait for input (handled in InputHandler)
 }
-
-
 
 void Game::confirmInsurance()
 {
@@ -739,7 +728,6 @@ void Game::deal()
     Logger::info() << players[0].getName() << " has a " << players[0].hands[0].getValue() << " against dealer's " << dealer.getDealerUpCardToString() << ".";
 }
 
-
 void Game::npcTakeTurn()
 {
     auto& p = activePlayer();
@@ -794,7 +782,8 @@ void Game::afterDraw(Card card)
     runningCount = BasicStrategy::updateCount(runningCount, card.getBlackjackValue(), countingStyle);
 
     const BasicStrategy::CountingStyle other = (countingStyle == BasicStrategy::CountingStyle::REKO)
-                                                 ? BasicStrategy::CountingStyle::HI_LO : BasicStrategy::CountingStyle::REKO;
+                                                   ? BasicStrategy::CountingStyle::HI_LO
+                                                   : BasicStrategy::CountingStyle::REKO;
     backgroundRunningCount = BasicStrategy::updateCount(backgroundRunningCount, card.getBlackjackValue(), other);
 
     if (deck.reachedCutCard())
@@ -814,7 +803,8 @@ void Game::toggleCountingStyle()
     backgroundRunningCount = tmp;
 
     countingStyle = (countingStyle == BasicStrategy::CountingStyle::REKO)
-                        ? BasicStrategy::CountingStyle::HI_LO : BasicStrategy::CountingStyle::REKO;
+                        ? BasicStrategy::CountingStyle::HI_LO
+                        : BasicStrategy::CountingStyle::REKO;
 }
 
 // Collect all cards currently on the table (dealer + all player hands)
@@ -857,21 +847,8 @@ void Game::handleEmptyDeck()
     players[0].updateProfile(profile);
     players[0].saveProfile();
 
-    // Create a new shoe: full shoe minus the cards on the table
-    deck.create(Constants::NUM_DECKS);
-    std::vector<Card>& cards = const_cast<std::vector<Card>&>(deck.getCards());
-    for (const auto& tableCard : tableCards)
-    {
-        for (auto it = cards.begin(); it != cards.end(); ++it)
-        {
-            if (it->value == tableCard.value && it->suit == tableCard.suit)
-            {
-                cards.erase(it);
-                break;
-            }
-        }
-    }
-    deck.shuffle();
+    // Rebuild the shoe (full NUM_DECKS set minus what's been dealt) and continue dealing from it.
+    deck.reshuffleWithRemaining(tableCards);
 
     // Start fresh shoe record, marked as continuation
     currentShoeRecord = {};
@@ -885,10 +862,10 @@ void Game::handleEmptyDeck()
     Logger::info() << "New shoe created with " << deck.size() << " cards.";
 }
 
-void Game::dealCardToPlayer(Hand &hand)
-{ 
-    if (deck.empty()) 
-        handleEmptyDeck(); 
+void Game::dealCardToPlayer(Hand& hand)
+{
+    if (deck.empty())
+        handleEmptyDeck();
 
     Card card = deck.draw();
     afterDraw(card);
@@ -896,15 +873,15 @@ void Game::dealCardToPlayer(Hand &hand)
 }
 
 void Game::dealCardToDealer()
-{ 
-    if (deck.empty()) 
-        handleEmptyDeck(); 
+{
+    if (deck.empty())
+        handleEmptyDeck();
 
     Card card = deck.draw();
     afterDraw(card);
     dealer.addCard(card);
 }
- 
+
 // Dealer
 void Game::dealerTurn()
 {
@@ -938,8 +915,6 @@ void Game::dealerTurn()
     }
     if (shouldHit)
     {
-        
-
         dealerStartDelayTimer -= deltaTime;
         if (dealerStartDelayTimer > 0.0f)
         {
@@ -951,7 +926,7 @@ void Game::dealerTurn()
         dealCardToDealer();
 
         // Arm the beat before the next card so cards come out one at a time, not all at once.
-        dealerStartDelayTimer = GameTiming::DEALER_CARD_DELAY;
+        dealerStartDelayTimer = GameTiming::DEALER_ACTION_DELAY;
         return;
     }
 
@@ -1001,8 +976,6 @@ void Game::dealerTurn()
         getStats().shoesFinished++;
         shoeCumulativeWinLoss = 0; // reset for next shoe
 
-        // do end game saving here
-
         PlayerProfile profile = players[0].getProfile();
 
         profile.addShoeRecord(currentShoeRecord);
@@ -1013,7 +986,7 @@ void Game::dealerTurn()
         Logger::info() << "Shoe completed. Final shoe profit: " << shoeCumulativeWinLoss << ".";
 
         if (gameSpeed == GameSpeed::AutoPlay)
-        { 
+        {
             Logger::info() << "Auto-play: Starting a new shoe.";
             hudState.afterShoeTimer = GameTiming::afterShoeWait(gameSpeed);
         }

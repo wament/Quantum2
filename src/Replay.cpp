@@ -1,5 +1,4 @@
 #include "Replay.hpp"
-
 #include "Constants.hpp"
 #include "BasicStrategy.hpp"
 #include "Graphics.hpp"
@@ -7,15 +6,10 @@
 #include "Hand.hpp"
 #include "Card.hpp"
 #include "ReplayView.hpp"
-
 #include <algorithm>
 #include <cmath>
 #include <sstream>
 #include <iomanip>
-
-// --------------------------------------------------
-// Construction / Initialization
-// --------------------------------------------------
 
 Replay::Replay(sf::RenderWindow &window,
                sf::Texture &cardTexture,
@@ -120,10 +114,6 @@ void Replay::exitReplay()
     autoPlay = false;
 }
 
-// --------------------------------------------------
-// Step Building
-// --------------------------------------------------
-
 std::vector<ReplayInternals::ReplayStep>
 Replay::buildSteps(const ShoeRecord &shoe)
 {
@@ -141,7 +131,7 @@ Replay::buildSteps(const ShoeRecord &shoe)
         step.trueCount = BasicStrategy::computeTrueCount(runningCount, step.cardsRemaining);
         step.cumulativeProfit = shoeProfit;
         result.push_back(step);
-        runningCount += step.card.getHiLoValue(); // update after card dealt
+        runningCount += BasicStrategy::calculateHiLoValue(step.card.getBlackjackValue()); // update after card dealt
         cardsDealtSoFar++;
     };
 
@@ -159,9 +149,6 @@ Replay::buildSteps(const ShoeRecord &shoe)
     {
         const auto &round = shoe.rounds[r];
 
-        // --- Initial deal: replay Game::deal() order across ALL seats at the table ---
-        // Order: [all active seats] first card -> dealer hole card ->
-        //        [all active seats] second card -> dealer up card.
         for (int h = 0; h < static_cast<int>(round.playerHands.size()); ++h)
         {
             const auto &handOutcome = round.playerHands[h];
@@ -320,10 +307,6 @@ Replay::buildSteps(const ShoeRecord &shoe)
     return result;
 }
 
-// --------------------------------------------------
-// State Reconstruction
-// --------------------------------------------------
-
 ReplayInternals::ReplayState Replay::buildStateAtStep(int stepIndex) const
 {
     ReplayInternals::ReplayState state;
@@ -436,10 +419,6 @@ ReplayInternals::ReplayState Replay::buildStateAtStep(int stepIndex) const
     return state;
 }
 
-// --------------------------------------------------
-// Navigation Helpers
-// --------------------------------------------------
-
 int Replay::findRoundStartStep(int roundIndex) const
 {
     for (int i = 0; i < static_cast<int>(steps.size()); ++i)
@@ -487,11 +466,6 @@ int Replay::findNextDecisionStep(int fromStepIndex) const
     }
     return static_cast<int>(steps.size()) - 1;
 }
-
-// --------------------------------------------------
-// Navigation Commands
-// --------------------------------------------------
-
 
 void Replay::stepForward()
 {
@@ -576,10 +550,6 @@ void Replay::setAutoPlay(bool enable, float stepsPerSecond)
     autoPlayTimer = 0.0f;
 }
 
-// --------------------------------------------------
-// History List Navigation
-// --------------------------------------------------
-
 void Replay::selectPreviousShoe()
 {
     if (selectedHistoryIndex > 0)
@@ -602,8 +572,6 @@ void Replay::selectNextShoe()
 
 // Index of the list row under `mousePos` (window pixels), or -1 if none. Rows start at y=120 in
 // window space with 40px height and the highlight background spans x [50, 1250] (see drawHistoryList).
-// The current scroll offset shifts each row's on-screen position so hover highlighting and click
-// selection agree on exactly the same rows as drawn -- one source of truth for hover + click.
 int Replay::hoveredHistoryRow(sf::Vector2i mousePos) const
 {
     if (historyEntries.empty())
@@ -632,8 +600,6 @@ int Replay::hoveredHistoryRow(sf::Vector2i mousePos) const
     return -1;
 }
 
-// How many shoe rows fit in the list's visible area above the window bottom edge. Rows begin at y=120
-// and are 40px tall, so this is one source of truth shared by scrolling, the scrollbar, and clamping.
 int Replay::historyVisibleRowCount() const
 {
     constexpr float topStart = 120.f;
@@ -644,15 +610,12 @@ int Replay::historyVisibleRowCount() const
     return static_cast<int>((windowHeight - topStart - lineHeight) / lineHeight) + 1;
 }
 
-// Largest scroll offset that still leaves at least one row visible in the list.
 int Replay::maxHistoryScrollOffset() const
 {
     int maxOffset = static_cast<int>(historyEntries.size()) - historyVisibleRowCount();
     return maxOffset > 0 ? maxOffset : 0;
 }
 
-// After arrow-key navigation, clamp the scroll offset so the selected row stays within view. Used by
-// selectPreviousShoe / selectNextShoe to keep keyboard scrolling consistent with wheel scrolling.
 void Replay::adjustHistorySelectionVisibility()
 {
     int visible = historyVisibleRowCount();
@@ -672,49 +635,19 @@ void Replay::adjustHistorySelectionVisibility()
         historyScrollOffset = maxOffset;
 }
 
-void Replay::setStartingBankroll(int bankroll)
-{
-    startingBankroll = bankroll;
-    currentBankroll = bankroll;
-}
+void Replay::setStartingBankroll(int bankroll) { startingBankroll = bankroll; currentBankroll = bankroll; }
 
-// --------------------------------------------------
-// Queries
-// --------------------------------------------------
+Replay::Mode Replay::getMode() const { return mode; }
 
-Replay::Mode Replay::getMode() const
-{
-    return mode;
-}
+const ReplayInternals::ReplayState &Replay::getCurrentState() const { return currentState; }
 
-const ReplayInternals::ReplayState &Replay::getCurrentState() const
-{
-    return currentState;
-}
+const std::vector<ReplayHistoryEntry> &Replay::getHistoryEntries() const { return historyEntries; }
 
-const std::vector<ReplayHistoryEntry> &Replay::getHistoryEntries() const
-{
-    return historyEntries;
-}
+int Replay::getSelectedHistoryIndex() const { return selectedHistoryIndex; }
 
-int Replay::getSelectedHistoryIndex() const
-{
-    return selectedHistoryIndex;
-}
+bool Replay::isAtStart() const { return currentStepIndex <= 0; }
 
-bool Replay::isAtStart() const
-{
-    return currentStepIndex <= 0;
-}
-
-bool Replay::isAtEnd() const
-{
-    return currentStepIndex >= static_cast<int>(steps.size()) - 1;
-}
-
-// --------------------------------------------------
-// Event Processing
-// --------------------------------------------------
+bool Replay::isAtEnd() const { return currentStepIndex >= static_cast<int>(steps.size()) - 1; }
 
 void Replay::processEvents(sf::Event &event)
 {
@@ -905,10 +838,6 @@ void Replay::processEvents(sf::Event &event)
     }
 }
 
-// --------------------------------------------------
-// Update
-// --------------------------------------------------
-
 void Replay::update(float deltaTime)
 {
     if (mode != Mode::Playing)
@@ -932,10 +861,6 @@ void Replay::update(float deltaTime)
     sliderBounds.size.y = 16.0f;
 }
 
-// --------------------------------------------------
-// Drawing
-// --------------------------------------------------
-
 void Replay::draw()
 {
     window.clear(sf::Color(20, 20, 30));
@@ -954,9 +879,6 @@ void Replay::draw()
     window.display();
 }
 
-// --------------------------------------------------
-// Basic Strategy Helper
-// --------------------------------------------------
 char Replay::getBasicStrategyAction(const ReplayInternals::ReplayState &state) const
 {
     if (state.playerHands.empty() || state.dealerHand.size() < 2)

@@ -14,13 +14,7 @@ public:
     void setTitle(const std::string &title);
 
     std::string getTitle() const;
-
-    // World-space bounds of the title text, used for click hit-testing (e.g. toggling the counting style).
     sf::FloatRect getTitleBounds() const;
-
-    // Union of the title+value bounds so a click anywhere on a whole clickable box (e.g. the counting-style
-    // toggle) registers, not just on its label line. In world space, like getTitleBounds().
-    sf::FloatRect getTitleValueBounds() const;
 
     void setValue(const std::string &value);
 

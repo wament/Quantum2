@@ -19,12 +19,6 @@ public:
 
     void draw(sf::RenderWindow &window);
 
-    void toggleLeftPanel();
-    void toggleRightPanel();
-
-    bool leftVisible() const;
-    bool rightVisible() const;
-
     // World-space bounds of the Counting Style toggle box (label + value), used for click hit-testing.
     sf::FloatRect countTitleBounds() const;
 

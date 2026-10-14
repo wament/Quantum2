@@ -10,12 +10,7 @@ namespace BasicStrategy
 
     const char* countingStyleName(CountingStyle style);
 
-    char getRecommendedAction(
-        int playerValue,
-        int dealerUpValue,
-        bool hasAce,
-        bool isPair,
-        int pairValue);
+    char getRecommendedAction(int playerValue,int dealerUpValue,bool hasAce,bool isPair,int pairValue);
 
     int calculateKellyBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet);
 
