@@ -16,9 +16,8 @@ out/
 .DS_Store
 Thumbs.db
 
-# personal local files
-.ai-responses
-.continue-gens
-.junk
-docs/
-.continue
+# personal local files 
+.junk/
+.summaries/
+.continue/
+.diary/
