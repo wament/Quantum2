@@ -85,6 +85,10 @@ constexpr int MAX_SPLIT_HANDS = 4;
 constexpr float BLACKJACK_PAYOUT = 1.5; // 1.5 = 3:2, 1.2 = 6:5
 constexpr bool DOUBLE_AFTER_SPLIT_ALLOWED = true;
 constexpr bool RESPLIT_ACES_ALLOWED = true;
+// Resplitting ten-value cards (10/J/Q/K) into a second/third/etc. hand after one has been drawn to it.
+// A fresh pair of tens is always splittable at the deal regardless of this flag; it only gates *re*-splits.
+// inline so tests can flip the rule at runtime (constexpr cannot be reassigned).
+inline bool RESPLIT_TENS_ALLOWED = true;
 
 // Betting Constants
 constexpr int MINIMUM_BET = 10;

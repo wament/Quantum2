@@ -19,6 +19,11 @@ void Panel::setBounds(sf::Vector2f position, sf::Vector2f size)
     m_background.setSize(size);
 }
 
+sf::Rect<float> Panel::bounds() const
+{
+    return sf::Rect<float>(m_background.getPosition(), m_background.getSize());
+}
+
 StatBox* Panel::addStatBox(const std::string& title)
 {
     auto* box = new StatBox();

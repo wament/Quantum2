@@ -29,12 +29,29 @@ struct HUDState
     // Right Panel
     const ShoeRecord* currentShoe = nullptr;
 
+    // Bumped by the game whenever a new shoe begins (fresh deal or a deck reshuffle). The HUD uses it as the
+    // graph-recalibration signal: when it changes every accumulated chart series is cleared so graphs show only
+    // this shoe's data instead of drifting persistently upward across shoes/sessions.
+    int currentShoeId = 0;
+
     // Internal
     int cardsRemaining = 0;
     int decksRemaining = 0;
 
     // Basic Strategy Advisor
     std::string basicStrategyHint;
+    // Verdict on the Book box after a completed action: Correct -> green, Deviated -> red. None while advising live.
+    AdvisorFeedback advisorFeedback = AdvisorFeedback::None;
+
+    // Advanced Analytics dashboard values (Feature 3). stdDev and edge are derived live; streaks and series come
+    // from the player's incremental trackers and feed the HUD chart + stat boxes.
+    double analyticsStdDev = 0.0;   // standard deviation of per-hand net profits
+    int longestWinningStreak = 0;
+    int longestLosingStreak = 0;
+    double edgePercent = 0.0;       // estimated player edge over the current session, as a percentage
+    std::vector<float> bankrollSeries; // cumulative net profit per round (bankroll curve for the chart)
+    std::vector<double> edgeSeries;    // cumulative estimated edge per round (edge-tracking chart)
+    std::vector<float> trueCountPerRound_; // raw true count per round (backs the Edge chart secondary view)
 
     // Human-readable name of the active counting style (e.g. "Hi-Lo"/"Reko"), used to title the Count box.
     std::string countingStyleName;

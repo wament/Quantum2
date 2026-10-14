@@ -4,6 +4,7 @@
 #include <deque>
 #include <string>
 #include <chrono>
+#include <map>
 
 #include "Card.hpp"
 #include "Deck.hpp"
@@ -18,8 +19,11 @@ struct DeviationRecord
     char actionTaken = 0;
     char correctAction = 0;
     int bet = 0;
-    bool won = false;
+    bool won = false; // set at evaluation time: whether the hand that contained this deviation ultimately won
 };
+
+// Verdict shown on the Book advisor box after a player completes an action.
+enum class AdvisorFeedback { None, Correct, Deviated };
 
 struct PlayerStats
 {
@@ -48,6 +52,22 @@ struct PlayerStats
     int strategyDeviations = 0; // plays not matching basic strategy
     int strategyTotal = 0;      // total plays evaluated
     std::vector<DeviationRecord> recentDeviations; // last 10 deviations
+
+    // Times the player won a hand after deviating from basic strategy (Feature 1). "Winning" means the hand's
+    // settlement was a win, not a push — a push neither wins nor loses the wager.
+    int winsAfterDeviation = 0;
+
+    // Advanced analytics live trackers (Feature 3), updated once per settled hand so they persist and stay O(1).
+    int greatestHandLoss = 0;          // worst single-hand net profit (<= 0)
+    int longestWinningStreak = 0;      // longest run of winning hands, ever
+    int longestLosingStreak = 0;       // longest run of losing hands, ever
+    long long handProfitCount = 0;     // hands settled for variance
+    long long handProfitSum = 0;       // sum of per-hand net profits (mean * count)
+    long long handProfitSumSq = 0;     // sum of squared per-hand net profits (for variance/std dev)
+
+    // Bet sizes placed during the session, keyed by bet value -> frequency. Backs the Feature 3 bet-distribution
+    // histogram; accumulated over the whole session and persisted across shoes/sessions (not reset between rounds).
+    std::map<int, int> betDistribution;
 };
 
 struct HandOutcome

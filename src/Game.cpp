@@ -5,6 +5,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <filesystem>
+#include <cmath>
+#include <algorithm>
 
 #include "FontManager.hpp"
 #include "Logger.hpp"
@@ -107,12 +109,25 @@ void Game::startNewGame()
     currentShoeRecord.initialDeck = deck.getCards();
     currentShoeRecord.rounds.clear();
 
-    // Reko is unbalanced and compensated by starting the count at -4 per deck; Hi-Lo needs no offset.
-    runningCount = (countingStyle == BasicStrategy::CountingStyle::REKO) ? -4 * Constants::NUM_DECKS : 0;
+    // A brand-new shoe: start the analytics curves from zero so the bankroll/edge charts reflect only this shoe.
+    shoeGeneration++;
+    bankrollSeries_.clear();
+    edgeSeries_.clear();
+
+    // Reko is unbalanced and compensated by starting the count at its per-deck offset (per the roadmap table);
+    // Hi-Lo starts flat. rekoStartingOffset maps NUM_DECKS to -1/-5/-12/-20/-27 for 1/2/4/6/8 decks.
+    runningCount = (countingStyle == BasicStrategy::CountingStyle::REKO) ? BasicStrategy::rekoStartingOffset(Constants::NUM_DECKS) : 0;
     shoeCumulativeWinLoss = 0;
     sessionCumulativeWinLoss = 0;
     handActions.clear();
     handActions.resize(1);
+    handDeviations_.clear();
+    handDeviations_.resize(1);
+    advisorFeedback = AdvisorFeedback::None;
+    advisorAction = 0;
+    // A new game starts a fresh session: reset the running streaks, but keep career records (longest streaks, variance).
+    handWinStreak = 0;
+    handLoseStreak = 0;
     dealer.clear();
     players[0].resetRound(0);
     nextRound();
@@ -174,6 +189,10 @@ void Game::nextRound()
     currentRoundRecord = {};
     handActions.clear();
     handActions.resize(players.size()); // one entry per player initially
+    handDeviations_.clear();
+    handDeviations_.resize(players.size());
+    advisorFeedback = AdvisorFeedback::None;
+    advisorAction = 0;
     roundState = RoundState::PlaceBets;
     activePlayerIndex = 0;
 }
@@ -223,12 +242,13 @@ void Game::updateHUDState()
     hudState.runningCount = runningCount;
     hudState.countingStyleName = BasicStrategy::countingStyleName(countingStyle);
 
-    // The True Count box always shows the HI_LO true count, even when Reko is active (surfaced in yellow as a
-    // cross-check). Derive it from the HI_LO running count rather than the active system's count.
-    const int hiLoRunningCount =
-        (countingStyle == BasicStrategy::CountingStyle::HI_LO) ? runningCount : backgroundRunningCount;
-    hudState.trueCount =
-        BasicStrategy::computeTrueCount(hiLoRunningCount, static_cast<int>(deck.size()));
+    // The True Count box reflects the active system's true count. Hi-Lo normalizes its running count by decks
+    // remaining; Reko is unbalanced, so "the true count is the running count" (per the roadmap). Highlighted in
+    // yellow to flag when Reko is the active style. Both counts are still tracked in the background for instant swap.
+    if (countingStyle == BasicStrategy::CountingStyle::REKO)
+        hudState.trueCount = static_cast<float>(runningCount);
+    else
+        hudState.trueCount = BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
     hudState.trueCountHighlighted = (countingStyle == BasicStrategy::CountingStyle::REKO);
 
     hudState.cardsRemaining = deck.size();
@@ -236,11 +256,16 @@ void Game::updateHUDState()
     // Turn awareness so the book advisor can hide its action during the dealer's turn.
     hudState.isDealerTurn = (roundState == RoundState::DealerTurn);
 
-    // Persistently advise basic strategy for the active hand while it is the player's turn.
-    if (!hudState.isDealerTurn && roundState == RoundState::PlayerTurn &&
-        !players.empty() &&
-        activePlayerIndex < static_cast<int>(players.size()) &&
-        !players[static_cast<size_t>(activePlayerIndex)].hands.empty())
+    // The Book box has three states: while a verdict is pending after a completed action, show the book's letter as
+    // green/red feedback; otherwise advise the live move only during the player's turn; hide on the dealer's turn.
+    if (advisorFeedback != AdvisorFeedback::None)
+    {
+        hudState.basicStrategyHint = std::string(1, advisorAction);
+    }
+    else if (!hudState.isDealerTurn && roundState == RoundState::PlayerTurn &&
+             !players.empty() &&
+             activePlayerIndex < static_cast<int>(players.size()) &&
+             !players[static_cast<size_t>(activePlayerIndex)].hands.empty())
     {
         hudState.basicStrategyHint = std::string(1, giveBasicStrategyAdvice(activeHand(), dealer));
     }
@@ -248,10 +273,36 @@ void Game::updateHUDState()
     {
         hudState.basicStrategyHint.clear();
     }
+    hudState.advisorFeedback = advisorFeedback;
 
     hudState.playerStats = &getStats();
 
+    // Advanced Analytics (Feature 3): derive live values from the incremental per-hand trackers. Standard deviation is
+    // computed from the running sum / sum-of-squares of per-hand net profits (variance = E[x^2] - (E[x])^2).
+    const PlayerStats& ps = getStats();
+    hudState.longestWinningStreak = ps.longestWinningStreak;
+    hudState.longestLosingStreak = ps.longestLosingStreak;
+    if (ps.handProfitCount > 0)
+    {
+        double n = static_cast<double>(ps.handProfitCount);
+        double mean = static_cast<double>(ps.handProfitSum) / n;
+        double variance = static_cast<double>(ps.handProfitSumSq) / n - mean * mean;
+        hudState.analyticsStdDev = (variance > 0.0) ? std::sqrt(variance) : 0.0;
+    }
+    else
+    {
+        hudState.analyticsStdDev = 0.0;
+    }
+
+    // Feed the bankroll curve and edge-tracking series to the HUD chart, plus the latest cumulative edge as a number.
+    hudState.bankrollSeries = bankrollSeries_;
+    hudState.edgeSeries = edgeSeries_;
+    hudState.trueCountPerRound_ = trueCountPerRound_;
+    if (!edgeSeries_.empty())
+        hudState.edgePercent = edgeSeries_.back();
+
     hudState.currentShoe = &currentShoeRecord;
+    hudState.currentShoeId = shoeGeneration;
 }
 
 // Test support: headless construction + deterministic deck injection.
@@ -446,6 +497,16 @@ bool Game::split()
         return false;
     }
 
+    // RESPLIT_TENS_ALLOWED gates re-splitting ten-value pairs only: an ordinary initial split of tens is always
+    // permitted. A hand that was itself produced by splitting a previous one (isSplit()) is being re-split here;
+    // an untouched deal hand has isSplit() == false and splits freely regardless of the flag.
+    if (p.hands[handIndex].isSplit() &&
+        p.hands[handIndex].getCard(0).getBlackjackValue() == 10 && !Constants::RESPLIT_TENS_ALLOWED)
+    {
+        Logger::warn() << p.getName() << " tried to re-split tens but RESPLIT_TENS_ALLOWED is off.";
+        return false;
+    }
+
     logStrategyDeviation('P');
     Hand newHand;
     Card splitCard = p.hands[handIndex].takeLastCard();
@@ -469,6 +530,7 @@ bool Game::split()
     // unfinished, so it was left for the player to hit and even double down.
     p.hands.push_back(newHand);
     handActions.push_back({}); // new action vector for the split hand
+    handDeviations_.push_back({}); // parallel per-hand index; deviations on this new slot start empty
     p.hands[handIndex].setSplit(true, splitValue);
 
     PlayerStats& stats = getStats();
@@ -525,6 +587,11 @@ void Game::logStrategyDeviation(char actionTaken)
     PlayerStats& stats = getStats();
     stats.strategyTotal++;
 
+    // Set the verdict shown on the Book box after the action completes: green when it matched the book, red when
+    // the player deviated. advisorAction holds the book's letter so green/red reads as "book said X, you were right/wrong".
+    advisorFeedback = (actionTaken == correct) ? AdvisorFeedback::Correct : AdvisorFeedback::Deviated;
+    advisorAction = correct;
+
     if (actionTaken == correct)
     {
         stats.strategyHits++;
@@ -542,7 +609,15 @@ void Game::logStrategyDeviation(char actionTaken)
         record.actionTaken = actionTaken;
         record.correctAction = correct;
         record.bet = hand.getBet();
-        record.won = false; // filled in later at evaluation time
+        record.won = false; // stamped at evaluation time (see HandEvaluator::evaluateHands)
+
+        // Store per global-hand index so evaluation can attribute the deviation to its hand and stamp won. This
+        // mirrors handActions' indexing exactly (see split() / nextRound()).
+        size_t gidx = getGlobalHandIndexForPlayer(activePlayerIndex, p.currentHand);
+        while (handDeviations_.size() <= gidx)
+            handDeviations_.emplace_back();
+        handDeviations_[gidx].push_back(record);
+
         stats.recentDeviations.push_back(record);
         if (stats.recentDeviations.size() > 10)
             stats.recentDeviations.erase(stats.recentDeviations.begin());
@@ -573,8 +648,23 @@ size_t Game::getGlobalHandIndexForPlayer(size_t playerIdx, size_t handIdx)
     return globalIndex;
 }
 
+float Game::activeTrueCount() const
+{
+    // Reko is an unbalanced system where "the true count is the running count" (per the roadmap); Hi-Lo normalizes
+    // the running count by decks remaining. Betting paths use this so each style's pattern sees its own true count.
+    if (countingStyle == BasicStrategy::CountingStyle::REKO)
+        return static_cast<float>(runningCount);
+
+    return BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
+}
+
 int Game::calculateOptimalBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet) const
 {
+    // Follow the active counting system's betting pattern: Reko uses its own tiered unit pattern; Hi-Lo keeps
+    // the Kelly criterion. One Reko "unit" is the table minimum bet.
+    if (countingStyle == BasicStrategy::CountingStyle::REKO)
+        return BasicStrategy::calculateRekoBet(trueCount, minBet, minBet, maxBet);
+
     return BasicStrategy::calculateKellyBet(trueCount, kellyFraction, bankroll, minBet, maxBet);
 }
 
@@ -596,6 +686,8 @@ void Game::confirmBet()
     PlayerStats& stats = getStats();
     stats.betsPlaced++;
     stats.betSum += currentBet;
+    // Feature 3: record this hand's wager into the session bet-distribution histogram (Feature 3).
+    stats.betDistribution[currentBet]++;
 
     Logger::info() << players[0].getName() << " bets " << players[0].hands[players[0].currentHand].getBet() << ". Remaining bankroll: " << players[0].getBankroll() << ". Running count: " << runningCount << ".";
 
@@ -855,8 +947,13 @@ void Game::handleEmptyDeck()
     currentShoeRecord.initialDeck = deck.getCards();
     currentShoeRecord.isContinuation = true;
 
-    // Reset running count for the new shoe. Reko is unbalanced and compensated by starting at -4 per deck.
-    runningCount = (countingStyle == BasicStrategy::CountingStyle::REKO) ? -4 * Constants::NUM_DECKS : 0;
+    // A reshuffled continuation is a new shoe: reset the analytics curves so graphs don't accumulate drift.
+    shoeGeneration++;
+    bankrollSeries_.clear();
+    edgeSeries_.clear();
+
+    // Reset running count for the new shoe. Reko is unbalanced and compensated by starting at its per-deck offset.
+    runningCount = (countingStyle == BasicStrategy::CountingStyle::REKO) ? BasicStrategy::rekoStartingOffset(Constants::NUM_DECKS) : 0;
     gameState = GameState::Started;
 
     Logger::info() << "New shoe created with " << deck.size() << " cards.";

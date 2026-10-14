@@ -34,7 +34,7 @@ void RoundEngine::tick(float deltaTime, Game& game)
     // Auto-play: auto-bet with Kelly strategy
     if (game.roundState == RoundState::PlaceBets && game.gameSpeed == GameSpeed::AutoPlay)
     {
-        float tc = BasicStrategy::computeTrueCount(game.runningCount, static_cast<int>(game.deck.size()));
+        float tc = game.activeTrueCount();
         int optimal = game.calculateOptimalBet(tc, GameConfig::KELLY_FRACTION, game.players[0].getBankroll(),
                                                Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
         game.players[0].hands[0].setBet(optimal);

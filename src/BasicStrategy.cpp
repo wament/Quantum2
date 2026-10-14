@@ -1,6 +1,7 @@
 #include "BasicStrategy.hpp"
 #include "Constants.hpp"
 #include <algorithm>
+#include <cmath>
 
 namespace BasicStrategy
 {
@@ -203,6 +204,33 @@ namespace BasicStrategy
             return 0;
         else // Ace (1) and ten-value cards (T, J, Q, K all map to a blackjack value of 10)
             return -1;
+    }
+
+    int rekoStartingOffset(int decks)
+    {
+        // Roadmap table: 1 deck -1, 2 decks -5, 4 decks -12, 6 decks -20, 8 decks -27.
+        // Bucketed so any deck count resolves to the nearest lower bracket; counts beyond 8 stay capped.
+        if (decks <= 1) return -1;
+        if (decks <= 2) return -5;
+        if (decks <= 4) return -12;
+        if (decks <= 6) return -20;
+        return -27;
+    }
+
+    int calculateRekoBet(float trueCount, int baseBet, int minBet, int maxBet)
+    {
+        // Reko betting pattern from the roadmap: TC <= 0 -> 1 unit, 0 < TC < 2 -> 2 units,
+        // TC > 2 -> floor(1 + TC) units. One unit is baseBet (the table minimum).
+        int units;
+        if (trueCount <= 0.f)
+            units = 1;
+        else if (trueCount < 2.f)
+            units = 2;
+        else
+            units = 1 + static_cast<int>(std::floor(trueCount));
+
+        int rawBet = units * baseBet;
+        return std::max(minBet, std::min(maxBet, rawBet));
     }
 
     int updateCount(int currentCount, const int bjValue, CountingStyle style)

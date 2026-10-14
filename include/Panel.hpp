@@ -17,6 +17,10 @@ public:
         sf::Vector2f position,
         sf::Vector2f size);
 
+    // World-space bounds of the panel background (position + size). Lets callers (HUD) lay out content relative
+    // to the real panel size instead of hard-coding geometry that breaks if the panel dimensions ever change.
+    sf::Rect<float> bounds() const;
+
     StatBox* addStatBox(const std::string& title);
 
     void draw(sf::RenderWindow& window);

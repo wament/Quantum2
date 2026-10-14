@@ -5,6 +5,7 @@
 
 #include <sstream>
 #include <chrono>
+#include <algorithm>
 #include "Logger.hpp"
 
 HandEvaluator::HandEvaluator(Game& game) : game(game) {}
@@ -75,6 +76,45 @@ void HandEvaluator::evaluateHands()
 
             int netProfitOnHand = payout - hand.getBet();
 
+            // Feature 1 + 3 (human seat only): attribute deviations to their hand and stamp won, count wins after a
+            // deviation, maintain per-hand win/lose streaks (+ running max for the dashboard), and feed the variance
+            // accumulators used to derive standard deviation. NPCs are tracked separately via recordRoundResult().
+            if (pIdx == 0)
+            {
+                size_t gidx = game.getGlobalHandIndexForPlayer(pIdx, handIndex);
+                bool hadDeviation = !game.handDeviations_[gidx].empty();
+                for (auto& dev : game.handDeviations_[gidx])
+                    dev.won = (result == SettlementResult::Win);
+                if (hadDeviation && result == SettlementResult::Win)
+                    stats.winsAfterDeviation++;
+
+                // Per-hand streaks persist across rounds within a session; longest records are the running max.
+                if (result == SettlementResult::Win)
+                {
+                    ++game.handWinStreak;
+                    game.handLoseStreak = 0;
+                }
+                else if (result == SettlementResult::Lose || result == SettlementResult::Surrender)
+                {
+                    ++game.handLoseStreak;
+                    game.handWinStreak = 0;
+                }
+                else // a push is neither win nor loss: it breaks both streaks
+                {
+                    game.handWinStreak = 0;
+                    game.handLoseStreak = 0;
+                }
+                stats.longestWinningStreak = std::max(stats.longestWinningStreak, game.handWinStreak);
+                stats.longestLosingStreak = std::max(stats.longestLosingStreak, game.handLoseStreak);
+
+                long long net = static_cast<long long>(netProfitOnHand);
+                stats.handProfitCount++;
+                stats.handProfitSum += net;
+                stats.handProfitSumSq += net * net;
+                if (net < stats.greatestHandLoss)
+                    stats.greatestHandLoss = net;
+            }
+
             game.currentRoundRecord.playerHands.push_back(outcome);
 
             // Record result for NPC progressive betting strategies
@@ -98,6 +138,23 @@ void HandEvaluator::evaluateHands()
                 stats.greatestSessionWin = game.sessionCumulativeWinLoss;
             if (game.sessionCumulativeWinLoss < stats.greatestSessionLoss)
                 stats.greatestSessionLoss = game.sessionCumulativeWinLoss;
+        }
+    }
+
+    // Refresh the "last 10 deviations" display now that every record's win/loss outcome is finalized (Feature 1). Only
+    // player-seat 0's hands belong to this seat; their records live in handDeviations_ slots [0, p0Hands).
+    {
+        PlayerStats& dstats = game.getStats();
+        dstats.recentDeviations.clear();
+        const size_t p0Hands = game.players[0].hands.size();
+        for (size_t slot = 0; slot < p0Hands && slot < game.handDeviations_.size(); ++slot)
+        {
+            for (const auto& dev : game.handDeviations_[slot])
+            {
+                dstats.recentDeviations.push_back(dev);
+                if (dstats.recentDeviations.size() > 10)
+                    dstats.recentDeviations.erase(dstats.recentDeviations.begin());
+            }
         }
     }
 
@@ -156,6 +213,17 @@ void HandEvaluator::evaluateHands()
     {
         roundNet += outcome.payout - outcome.wager;
     }
+
+    // Feature 3 analytics: extend the bankroll curve (cumulative net profit) and edge-tracking series one point per
+    // completed round. The edge proxy integrates ~0.5% player edge per true-count unit across rounds for the chart.
+    {
+        const float lastBank = game.bankrollSeries_.empty() ? 0.f : game.bankrollSeries_.back();
+        game.bankrollSeries_.push_back(lastBank + static_cast<float>(roundNet));
+        const double lastEdge = game.edgeSeries_.empty() ? 0.0 : game.edgeSeries_.back();
+        game.edgeSeries_.push_back(lastEdge + static_cast<double>(game.currentRoundRecord.trueCount) * 0.5);
+        game.trueCountPerRound_.push_back(static_cast<float>(game.currentRoundRecord.trueCount)); // raw true count, backs the Edge chart secondary view
+    }
+
     Logger::info() << "Round complete. Net: " << (roundNet >= 0 ? "+" : "") << roundNet
                   << ". Bankroll: " << game.players[0].getBankroll() << ".";
 

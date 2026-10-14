@@ -54,7 +54,15 @@ inline void to_json(json& j, const PlayerStats& s)
         {"greatestWin", s.greatestWin},
         {"greatestLoss", s.greatestLoss},
         {"greatestSessionWin", s.greatestSessionWin},
-        {"greatestSessionLoss", s.greatestSessionLoss}
+        {"greatestSessionLoss", s.greatestSessionLoss},
+        {"winsAfterDeviation", s.winsAfterDeviation},
+        {"greatestHandLoss", s.greatestHandLoss},
+        {"longestWinningStreak", s.longestWinningStreak},
+        {"longestLosingStreak", s.longestLosingStreak},
+        {"handProfitCount", s.handProfitCount},
+        {"handProfitSum", s.handProfitSum},
+        {"handProfitSumSq", s.handProfitSumSq},
+        {"betDistribution", s.betDistribution}
     };
 }
 
@@ -75,6 +83,16 @@ inline void from_json(const json& j, PlayerStats& s)
     j.at("greatestLoss").get_to(s.greatestLoss);
     j.at("greatestSessionWin").get_to(s.greatestSessionWin);
     j.at("greatestSessionLoss").get_to(s.greatestSessionLoss);
+    // Newer fields: fall back to the struct's default (0) so profiles saved before Feature 1/3 still load.
+    s.winsAfterDeviation = j.value("winsAfterDeviation", int{0});
+    s.greatestHandLoss = j.value("greatestHandLoss", int{0});
+    s.longestWinningStreak = j.value("longestWinningStreak", int{0});
+    s.longestLosingStreak = j.value("longestLosingStreak", int{0});
+    s.handProfitCount = j.value("handProfitCount", (long long)0);
+    s.handProfitSum = j.value("handProfitSum", (long long)0);
+    s.handProfitSumSq = j.value("handProfitSumSq", (long long)0);
+    // Backward compatible: older profiles have no bet histogram yet.
+    s.betDistribution = j.value("betDistribution", std::map<int, int>{});
 }
 
 // HandOutcome serialization

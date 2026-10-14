@@ -288,6 +288,15 @@ void InputHandler::processGameEvents(const sf::Event& event)
             {
                 game.toggleCountingStyle();
             }
+
+            // Clicking a graph pane toggles its secondary overlay view (see HUD::toggleGraphSecondary). The panes are
+            // the stacked charts on the left; hit-testing uses their screen-space bounds reported by the HUD.
+            for (const auto& pane : game.hud.graphPaneBounds())
+                if (pane.first.contains(world))
+                {
+                    game.hud.toggleGraphSecondary(pane.second);
+                    break;
+                }
         }
     }
 
@@ -335,7 +344,7 @@ void InputHandler::processGameEvents(const sf::Event& event)
                 break;
             case sf::Keyboard::Key::Left:
             {
-                float tc = BasicStrategy::computeTrueCount(game.runningCount, game.deck.size());
+                float tc = game.activeTrueCount();
                 int optimal = game.calculateOptimalBet(tc, GameConfig::KELLY_FRACTION, game.players[0].getBankroll() + game.players[0].hands[0].getBet(),
                                                       Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
                 game.players[0].hands[0].setBet(optimal);

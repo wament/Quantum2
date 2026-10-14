@@ -75,6 +75,9 @@ class Game
     RoundState roundStateForTest() const { return roundState; }
     GameState gameStateForTest() const { return gameState; }
     size_t activePlayerIndexForTest() const { return activePlayerIndex; }
+    // Feature 1: expose the advisor verdict set by logStrategyDeviation (the source of the Book box color).
+    AdvisorFeedback advisorFeedbackForTest() const { return advisorFeedback; }
+    char advisorActionForTest() const { return advisorAction; }
 
     // ---------------- Player Actions (public so the round-state machine and tests can drive them) ----
 
@@ -170,6 +173,29 @@ class Game
         return players[0].getStats();
     }
 
+    // Basic Strategy advisor feedback shown on the Book box after each completed player action.
+    AdvisorFeedback advisorFeedback = AdvisorFeedback::None;
+    char advisorAction = 0; // book's advice letter for the just-completed hand (the green/red target)
+
+    // Per global-hand-index deviation records — source of truth during a round, mirroring handActions' indexing.
+    // Popped into by logStrategyDeviation so evaluation can stamp DeviationRecord.won and count winsAfterDeviation.
+    std::vector<std::vector<DeviationRecord>> handDeviations_;
+
+    // Advanced analytics series (Feature 3), accumulated per settled round and fed to the HUD chart/edge displays.
+    // Cleared whenever a new shoe begins so the curves reflect one shoe instead of growing without bound.
+    std::vector<float> bankrollSeries_; // cumulative net profit after each round (bankroll curve)
+    std::vector<double> edgeSeries_;    // cumulative estimated player edge (%) over time
+    std::vector<float> trueCountPerRound_; // raw true count per round (backs the Edge chart secondary view)
+
+    // Bumped every time a new shoe begins (startNewGame or a mid-session reshuffle). Exposed to the HUD via
+    // HUDState::currentShoeId as the per-shoe recalibration signal; also drives clearing bankrollSeries_/edgeSeries_.
+    int shoeGeneration = 0;
+
+    // Persistent current hand win/lose streaks for analytics (Feature 3). They survive across rounds/shoes within a
+    // session so "longest winning/losing streak" reflects the whole session; longest records live in PlayerStats.
+    int handWinStreak = 0;
+    int handLoseStreak = 0;
+
     // ---------------- Setup ----------------
 
     void startNewGame();
@@ -194,10 +220,19 @@ class Game
     // Removed: void draw(); - now in GameRenderer
     // ---------------- Betting ----------------
 
+  public:
+    // Place the human's current hand bet and record it for the session bet-distribution histogram. Public (with
+    // activeTrueCount() below) so tests can drive a full betting round without SFML.
     void confirmBet();
     // Kelly-based optimal bet calculation (uses kellyFraction)
     int calculateOptimalBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet) const;
 
+    // The true count the betting logic should act on for the active counting system: Reko uses the raw running
+    // count ("the true count is the running count"), Hi-Lo normalizes by decks remaining. Drives the human's
+    // auto-bet paths (manual Left-arrow bet and AutoPlay) so Reko betting follows its spec tiered pattern.
+    float activeTrueCount() const;
+
+  private:
     void confirmInsurance();
 
     void declineInsurance();
