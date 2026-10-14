@@ -8,49 +8,36 @@
 
 class Deck
 {
-public:
+  public:
     Deck() = default;
 
     void create(int numberOfDecks);
     void shuffle();
+    // Reshuffle the cards still in the shoe together with ones that were dealt (offTable), then reinsert
+    // the cut card. Used to start a fresh shoe after the cut card is reached or on reshuffle requests.
+    void reshuffleWithRemaining(const std::vector<Card>& offTable);
+    // Replace the entire shoe with an exact card order. Used by unit tests to deal a deterministic hand.
+    void setCards(const std::vector<Card>& cards);
 
-    [[nodiscard]] Card draw();
+    Card draw();
     const Card& getCard(std::size_t index) const;
     const std::vector<Card>& getCards() const;
 
-    [[nodiscard]] bool empty() const;
-    [[nodiscard]] std::size_t size() const;
+    bool empty() const;
+    std::size_t size() const;
 
-    [[nodiscard]] bool reachedCutCard() const;
-
-    /**
-     * @brief Reshuffles the remaining deck cards plus any table cards.
-     * 
-     * Used as a fallback when the deck runs out before the cut card.
-     * The tableCards are added back to the shoe before shuffling.
-     */
-    void reshuffleWithRemaining(const std::vector<Card>& tableCards);
+    bool reachedCutCard() const;
 
     /**
      * @brief Returns the shoe record from the previous cycle.
-     * 
+     *
      * This should be called BEFORE reshuffling in your game logic.
      * Returns nullptr if there is no previous record (e.g., start of game).
      * Resets the internal flag so the record is only retrieved once.
      */
-    [[nodiscard]] const std::vector<Card>* getPreviousShoeRecord();
+    const std::vector<Card>* getPreviousShoeRecord();
 
-    /**
-     * @brief Returns the shoe record currently in play (or most recently shuffled).
-     * 
-     * Use this when the player exits the game to save the final shoe state.
-     */
-    [[nodiscard]] const std::vector<Card>& getFinalShoeRecord() const;
-
-
-    [[nodiscard]] const unsigned long long getLastShuffleSeed() const;
-
-private:
+  private:
     std::vector<Card> cards;
     std::mt19937 rng;
     unsigned long long lastShuffleSeed;
@@ -58,7 +45,7 @@ private:
 
     // The record of the currently active shoe
     std::vector<Card> activeShoeRecord;
-    
+
     // The record of the previous shoe, waiting to be saved
     std::vector<Card> previousShoeRecord;
     bool hasPreviousRecord = false;

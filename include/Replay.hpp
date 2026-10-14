@@ -1,5 +1,3 @@
-// include/Replay.hpp
-
 #pragma once
 
 #include <SFML/Graphics.hpp>
@@ -10,6 +8,9 @@
 #include "GameRecord.hpp"
 #include "Hand.hpp"
 #include "Card.hpp"
+
+// Forward declaration so the extracted view layer can be granted friendship without a circular include.
+class ReplayView;
 
 namespace ReplayInternals
 {
@@ -70,6 +71,7 @@ namespace ReplayInternals
             bool isDoubledDown = false;
             bool isSurrendered = false;
             std::vector<std::string> actionsTaken;
+            std::string playerName = "";  // seat identity (William or an NPC name)
 
             // Computed properties — derive them from Hand on demand, or cache lazily:
             bool isBlackjack() const { return cards.isBlackjack(); }
@@ -150,6 +152,10 @@ public:
     // --- History list navigation ---
     void selectPreviousShoe();
     void selectNextShoe();
+    // Index of the history-list row under `mousePos` (window pixels), or -1 if none.
+    // Shared by drawHistoryList (hover highlight) and processEvents (click selection) so
+    // they agree on which shoe is under the cursor.
+    int hoveredHistoryRow(sf::Vector2i mousePos) const;
 
     // --- Queries ---
     Mode getMode() const;
@@ -163,6 +169,9 @@ public:
     void processEvents(sf::Event &event);
     void update(float deltaTime);
     void draw();
+
+    // Allow the extracted view layer to read this class's private step/state data for rendering.
+    friend class ReplayView;
 
 private:
     // Parse ShoeRecord into an ordered sequence of ReplaySteps
@@ -179,6 +188,14 @@ private:
 
     // Rendering helpers
     void drawHistoryList();
+
+    // --- History list scrolling ---
+    // Number of rows currently fitting above the window bottom edge (rows start at y=120, 40px tall).
+    int historyVisibleRowCount() const;
+    // Largest scroll offset that still leaves at least one shoe row visible in the list.
+    int maxHistoryScrollOffset() const;
+    // After arrow-key navigation, clamp the scroll offset so the selected row stays within view.
+    void adjustHistorySelectionVisibility();
     void drawReplayView();
     void drawTable(const ReplayInternals::ReplayState &state);
     void drawControls(const ReplayInternals::ReplayState &state);
@@ -198,6 +215,13 @@ private:
     std::vector<ShoeRecord> allShoes; // full shoe records for loading
     std::vector<ReplayHistoryEntry> historyEntries;
     int selectedHistoryIndex = 0;
+
+    // Number of rows scrolled past the top so shoe entries below the visible area can still be hovered and clicked.
+    int historyScrollOffset = 0;
+
+    // Current cursor (window pixels), updated each frame so the hover highlight and the
+    // click-selection path agree on which list row is under the mouse.
+    sf::Vector2i replayCursorPos{0, 0};
 
     // --- Replay state ---
     Mode mode = Mode::HistoryList;

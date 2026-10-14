@@ -1,6 +1,7 @@
 #include "HandEvaluator.hpp"
 #include "Game.hpp"
-#include "Constants.hpp" 
+#include "Constants.hpp"
+#include "BasicStrategy.hpp"
 
 #include <sstream>
 #include <chrono>
@@ -40,60 +41,39 @@ void HandEvaluator::evaluateHands()
             HandOutcome outcome;
             outcome.wager = hand.getBet();
             outcome.playerIndex = static_cast<int>(pIdx);
+            outcome.playerName = p.getName();
             outcome.actions = game.handActions[game.getGlobalHandIndexForPlayer(pIdx, handIndex)];
             for (size_t c = 0; c < hand.size(); c++)
                 outcome.cards.push_back(hand.getCard(c));
 
             stats.handsFinished++;
-            int netProfitOnHand = 0;
-            bool isNaturalBlackjack = hand.isBlackjack() && !hand.isSplit();
+            int payout = 0;
+            SettlementResult result = p.settle(hand, game.dealer.getValue(), game.dealer.isBust(), payout);
+            outcome.payout = payout;
+            outcome.won = (result == SettlementResult::Win || result == SettlementResult::Push);
 
-            if (hand.isSurrendered())
+            switch (result)
             {
-                p.loseBet(hand.getBet() / 2);
-                outcome.payout = hand.getBet() / 2;
-                outcome.won = false;
+            case SettlementResult::Surrender:
                 stats.losses++;
-                netProfitOnHand = hand.getBet() / 2 - hand.getBet();
                 Logger::info() << p.getName() << " surrendered hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ").";
-            }
-            else if (hand.isBust() || (hand.getValue() < game.dealer.getValue() && !game.dealer.isBust()))
-            {
-                if (!isNaturalBlackjack) p.loseBet(hand.getBet());
-                outcome.payout = 0;
-                outcome.won = false;
+                break;
+            case SettlementResult::Lose:
                 stats.losses++;
-                netProfitOnHand = -hand.getBet();
                 roundLost = true;
                 Logger::info() << p.getName() << " lost hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ").";
-            }
-            else if (hand.getValue() > game.dealer.getValue() || game.dealer.isBust())
-            {
-                if (isNaturalBlackjack)
-                {
-                    p.winBet(hand.getBet() * Constants::BLACKJACK_PAYOUT);
-                    outcome.payout = hand.getBet() * (1 + Constants::BLACKJACK_PAYOUT);
-                }
-                else
-                {
-                    p.winBet(hand.getBet());
-                    outcome.payout = hand.getBet() * 2;
-                }
-                outcome.won = true;
+                break;
+            case SettlementResult::Win:
                 stats.wins++;
-                netProfitOnHand = outcome.payout - hand.getBet();
                 roundWon = true;
-                Logger::info() << p.getName() << " won hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ", payout: " << outcome.payout << ").";
-            }
-            else
-            {
-                if (!isNaturalBlackjack) {}
-                outcome.payout = hand.getBet();
-                outcome.won = true;
+                Logger::info() << p.getName() << " won hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ", payout: " << payout << ").";
+                break;
+            case SettlementResult::Push:
                 stats.pushes++;
-                netProfitOnHand = 0;
-                Logger::info() << p.getName() << " pushed hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ").";
+                break;
             }
+
+            int netProfitOnHand = payout - hand.getBet();
 
             game.currentRoundRecord.playerHands.push_back(outcome);
 
@@ -133,8 +113,6 @@ void HandEvaluator::evaluateHands()
                 stats.greatestSessionWin = game.sessionCumulativeWinLoss;
             if (game.sessionCumulativeWinLoss < stats.greatestSessionLoss)
                 stats.greatestSessionLoss = game.sessionCumulativeWinLoss;
-
-            game.incrementGlobalHandIndex(game.getGlobalHandIndexForPlayer(pIdx, handIndex));
         }
     }
 
@@ -201,19 +179,10 @@ void HandEvaluator::evaluateHands()
             oss << "Push";
         game.hudState.playerSummaries.push_back(oss.str());
     }
-    if (game.gameSpeed == GameSpeed::Fast || game.gameSpeed == GameSpeed::AutoPlay)
-    {
-        game.hudState.summaryTimer = SummaryTiming::FAST_AUTOPLAY;
-    }
-    else
-    {
-        game.hudState.summaryTimer = SummaryTiming::NORMAL_SLOW;
-    }
-
-    if (game.gameSpeed == GameSpeed::AutoPlay)
-    {
-        game.hudState.afterHandTimer = Constants::AUTOPLAY_AFTER_HAND_DELAY;
-    }
+    // End-of-round summary display time and AutoPlay inter-hand hold both come from the single timing table
+    // (GameTiming), keyed by speed. Non-AutoPlay speeds wait 0s between hands, so there is no artificial delay.
+    game.hudState.summaryTimer = GameTiming::summaryDisplayTime(game.gameSpeed);
+    game.hudState.afterHandTimer = GameTiming::afterHandWait(game.gameSpeed);
 
     int roundNet = 0;
     for (const auto& outcome : game.currentRoundRecord.playerHands)
@@ -246,6 +215,8 @@ void HandEvaluator::evaluateBlackjack()
             Hand& hand = p.hands[handIndex];
             int bet = hand.getBet();
 
+            // Insurance pays 2:1 and settles independently of the hand's win/loss, so it is paid whenever
+            // it was taken. An own natural blackjack then just pushes versus a dealer blackjack.
             if (dealerHasBJ)
             {
                 if (hand.getInsuranceBet() > 0)

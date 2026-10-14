@@ -1,6 +1,10 @@
+#ifdef _MSC_VER
+#define _CRT_SECURE_NO_WARNINGS
+#endif
 #include "Player.hpp"
 #include "Constants.hpp"
 #include "Logger.hpp"
+#include "BasicStrategy.hpp"
 #include <cstdlib>
 #include <filesystem>
 
@@ -15,7 +19,7 @@ static std::string getSavePath()
         // Fallback to relative path if HOME is not set
         return std::string(Constants::PLAYER_FILE_FALLBACK);
     }
-    
+
     fs::path saveDir = fs::path(home) / ".local" / "share" / "blackjack" / "saves";
     fs::create_directories(saveDir);
     return (saveDir / "player_profile.json").string();
@@ -25,7 +29,7 @@ Player::Player(const std::string& playerName)
     : name(playerName)
 {
     std::string savePath = getSavePath();
-    
+
     // Try to load existing profile; otherwise create new
     profile = PlayerProfile::load(savePath);
     if (profile.getBankroll() == 0)
@@ -40,15 +44,18 @@ Player::Player(const std::string& playerName)
     bankroll = profile.getBankroll();
 }
 
-PlayerProfile Player::getProfile()
+// NPC seat: fresh in-memory profile only. NPCs are ephemeral — they keep no profile on disk.
+// The human player persists via the load/save path above
+Player::Player(const std::string& playerName, int startingBankroll)
+    : name(playerName), bankroll(startingBankroll)
 {
-    return profile;
+    profile = PlayerProfile(playerName);
+    profile.setBankroll(startingBankroll);
 }
 
-PlayerStats& Player::getStats()
-{
-    return profile.stats;
-}
+PlayerProfile Player::getProfile() { return profile; }
+
+PlayerStats& Player::getStats() { return profile.stats; }
 
 PlayerProfile Player::updateProfile(PlayerProfile p)
 {
@@ -71,45 +78,19 @@ void Player::resetRound(int previousBet)
     hands.resize(1);
     hands[0].setBet(previousBet);
     currentHand = 0;
-} 
-
-int Player::getBankroll() const
-{
-    return bankroll;
 }
 
-void Player::setBankroll(int amount)
-{
-    bankroll = amount;
-}
+int Player::getBankroll() const { return bankroll; }
 
-const std::string& Player::getName() const
-{
-    return name;
-}
-bool Player::placeBet(int amount)
-{
-    if (amount <= bankroll)
-    {
-        return true;
-    }
-    return false;
-}
+void Player::setBankroll(int amount) { bankroll = amount; }
 
-void Player::winBet(int amount)
-{
-    bankroll += amount;
-}
+const std::string& Player::getName() const { return name; }
 
-void Player::loseBet(int amount)
-{
-   bankroll -= amount;
-}
+bool Player::placeBet(int amount) { return amount <= bankroll; }
 
-void Player::pushBet(int amount)
-{
-    bankroll += amount;
-}
+void Player::winBet(int amount) { bankroll += amount; }
+
+void Player::loseBet(int amount) { bankroll -= amount; }
 
 // --- Betting Strategy Implementation ---
 
@@ -130,10 +111,12 @@ int Player::calculateNextBet(bool lastRoundWon)
     switch (bettingStrategy)
     {
     case BettingStrategy::Kelly:
+    {
         // Kelly is calculated by Game using true count, not here
         return baseBet;
-
+    }
     case BettingStrategy::Martingale:
+    {
         // Double after loss, reset to base after win
         if (!won)
         {
@@ -147,8 +130,9 @@ int Player::calculateNextBet(bool lastRoundWon)
                 currentProgressiveBet = baseBet * 64;
         }
         return currentProgressiveBet;
-
+    }
     case BettingStrategy::Fibonacci:
+    {
         // Move up sequence after loss, down two after win
         static const int fibSeq[] = {1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144};
         static const int maxFibIndex = 11;
@@ -163,8 +147,9 @@ int Player::calculateNextBet(bool lastRoundWon)
         }
         currentProgressiveBet = baseBet * fibSeq[fibIndex];
         return currentProgressiveBet;
-
+    }
     case BettingStrategy::Paroli:
+    {
         // Double after win (up to 3 wins), reset after loss
         if (won)
         {
@@ -186,10 +171,11 @@ int Player::calculateNextBet(bool lastRoundWon)
             currentProgressiveBet = baseBet;
         }
         return currentProgressiveBet;
-
-    case BettingStrategy::Flat:
+    }
     default:
+    { // Flat and unknown strategies
         return baseBet;
+    }
     }
 }
 
@@ -202,3 +188,93 @@ void Player::recordRoundResult(bool won)
     }
 }
 
+int Player::determineRoundBet(float trueCount)
+{
+    if (bettingStrategy == BettingStrategy::Kelly)
+        return BasicStrategy::calculateKellyBet(trueCount, GameConfig::KELLY_FRACTION, bankroll, Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
+
+    // Progressive strategies size off their own internal state, not the true count.
+    return calculateNextBet(false);
+}
+
+void Player::adjustHandBet(int delta, std::size_t handIndex)
+{
+    if (handIndex >= hands.size())
+        handIndex = 0;
+
+    int next = hands[handIndex].getBet() + delta;
+    if (next < Constants::MINIMUM_BET)
+        next = Constants::MINIMUM_BET;
+    if (next > Constants::MAXIMUM_BET)
+        next = Constants::MAXIMUM_BET;
+    hands[handIndex].setBet(next);
+}
+
+bool Player::shouldTakeInsurance(int bet, float trueCount, BasicStrategy::CountingStyle style) const
+{
+    // Deviation thresholds are counting-system specific: Hi-Lo requires +3 to take insurance, Reko requires +2.
+    float threshold = (style == BasicStrategy::CountingStyle::REKO) ? 2.0f : 3.0f;
+    return trueCount >= threshold && bet > 0;
+}
+
+void Player::takeInsurance(int amount)
+{
+    if (amount <= 0)
+        return;
+
+    hands[currentHand].setInsuranceBet(amount);
+    placeBet(amount);
+}
+
+void Player::raiseInsurance()
+{
+    int maxIns = hands[currentHand].getBet() / 2;
+    if (hands[currentHand].getInsuranceBet() < maxIns)
+        hands[currentHand].setInsuranceBet(hands[currentHand].getInsuranceBet() + 1);
+}
+
+void Player::lowerInsurance()
+{
+    int current = hands[currentHand].getInsuranceBet();
+    if (current > 0)
+        hands[currentHand].setInsuranceBet(current - 1);
+}
+
+SettlementResult Player::settle(const Hand& hand, int dealerValue, bool dealerBust, int& payout)
+{
+    // Only a natural (2-card) unsplit blackjack pays 3:2. A split hand that totals 21 is not treated
+    // as one and settles at even money — the !hand.isSplit() guard drives every branch below.
+    bool isNaturalBlackjack = hand.isBlackjack() && !hand.isSplit();
+
+    if (hand.isSurrendered())
+    {
+        loseBet(hand.getBet() / 2);
+        payout = hand.getBet() / 2;
+        return SettlementResult::Surrender;
+    }
+    if (hand.isBust() || (hand.getValue() < dealerValue && !dealerBust))
+    {
+        if (!isNaturalBlackjack)
+            loseBet(hand.getBet());
+        payout = 0;
+        return SettlementResult::Lose;
+    }
+    if (hand.getValue() > dealerValue || dealerBust)
+    {
+        if (isNaturalBlackjack)
+        {
+            winBet(hand.getBet() * Constants::BLACKJACK_PAYOUT);
+            payout = hand.getBet() * (1 + Constants::BLACKJACK_PAYOUT);
+        }
+        else
+        {
+            winBet(hand.getBet());
+            payout = hand.getBet() * 2;
+        }
+        return SettlementResult::Win;
+    }
+
+    // Push: the wager stays on the table and the bankroll is unchanged.
+    payout = hand.getBet();
+    return SettlementResult::Push;
+}

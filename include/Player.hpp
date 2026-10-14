@@ -3,37 +3,68 @@
 #include "Hand.hpp"
 #include "Deck.hpp"
 #include "PlayerProfile.hpp"
+#include "BasicStrategy.hpp"
+
+#include <cstddef>
 
 enum class BettingStrategy
 {
-    Kelly,
-    Martingale,
+    Flat,
     Fibonacci,
     Paroli,
-    Flat
+    Martingale,
+    Kelly
+};
+
+// How a single hand settles against the dealer, reported by Player::settle.
+enum class SettlementResult
+{
+    Surrender,
+    Lose,
+    Win,
+    Push
 };
 
 class Player
 {
-public: 
+  public:
     Player(const std::string& playerName);
 
-    void resetRound(int previousBet);  
+    // NPC seat
+    Player(const std::string& playerName, int startingBankroll);
 
-    int currentHand = 0; 
+    void resetRound(int previousBet);
+
+    int currentHand = 0;
     std::vector<Hand> hands;
 
     // Betting
     bool placeBet(int amount);
     void winBet(int amount);
     void loseBet(int amount);
-    void pushBet(int amount);
 
     // Betting strategy
     void setBettingStrategy(BettingStrategy strategy, int baseBet = 10);
     BettingStrategy getBettingStrategy() const { return bettingStrategy; }
     int calculateNextBet(bool lastRoundWon);
     void recordRoundResult(bool won);
+
+    int determineRoundBet(float trueCount);
+
+    void adjustHandBet(int delta, std::size_t handIndex = 0);
+
+    bool shouldTakeInsurance(int bet, float trueCount, BasicStrategy::CountingStyle style = BasicStrategy::CountingStyle::HI_LO) const;
+
+    void takeInsurance(int amount);
+
+    // Raise/lower the active hand's insurance bet by 1, clamped to [0, half the main bet].
+    void raiseInsurance();
+    void lowerInsurance();
+
+    // Settle one hand against the dealer and apply the result to the bankroll. Reports how it settled;
+    // writes the payout. A natural (2-card) unsplit blackjack pays 3:2 — any other hand totaling 21
+    // settles at even money, so the !hand.isSplit() guard drives every branch below.
+    SettlementResult settle(const Hand& hand, int dealerValue, bool dealerBust, int& payout);
 
     // Bankroll
     void setBankroll(int amount);
@@ -45,13 +76,13 @@ public:
     PlayerStats& getStats();
     PlayerProfile updateProfile(PlayerProfile profile);
     void saveProfile();
-private:
+
+  private:
     std::string name;
 
     PlayerProfile profile;
     int bankroll = 1000;
- 
-    // Progressive betting state
+
     BettingStrategy bettingStrategy = BettingStrategy::Flat;
     int baseBet = 10;
     int currentProgressiveBet = 0;

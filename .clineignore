@@ -1,0 +1,23 @@
+# Compiled binaries
+blackjack
+
+# Object files
+*.o
+
+# Build directories
+build/
+out/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# personal local files 
+.junk/
+.summaries/
+.continue/
+.diary/

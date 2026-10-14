@@ -102,6 +102,7 @@ struct HandOutcome
     int insuranceBet = 0;          // insurance wager (only on first hand of round)
     bool insuranceTaken = false;   // whether insurance was taken
     int playerIndex = 0;           // which player this hand belongs to
+    std::string playerName = "";   // human-readable seat name (William or an NPC)
 };
 
 struct RoundRecord

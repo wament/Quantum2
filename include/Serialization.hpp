@@ -110,7 +110,8 @@ inline void to_json(json& j, const HandOutcome& h)
         {"won", h.won},
         {"surrendered", h.surrendered},
         {"insuranceBet", h.insuranceBet},
-        {"insuranceTaken", h.insuranceTaken}
+        {"insuranceTaken", h.insuranceTaken},
+        {"playerName", h.playerName}
     };
 }
 
@@ -124,6 +125,9 @@ inline void from_json(const json& j, HandOutcome& h)
     j.at("surrendered").get_to(h.surrendered);
     j.at("insuranceBet").get_to(h.insuranceBet);
     j.at("insuranceTaken").get_to(h.insuranceTaken);
+    if (j.contains("playerName"))
+        j.at("playerName").get_to(h.playerName);
+    // else defaults to "" for backward compatibility with existing saves
 }
 
 // RoundRecord serialization

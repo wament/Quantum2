@@ -3,7 +3,6 @@
 
 sf::Font FontManager::s_font;
 bool FontManager::s_loaded = false;
-bool FontManager::s_hasUnicode = false;
 std::string FontManager::s_fontPath;
 
 bool FontManager::load(const std::string& primaryPath, const std::string& fallbackPath)
@@ -29,9 +28,6 @@ bool FontManager::load(const std::string& primaryPath, const std::string& fallba
         }
     }
 
-    // Noto Sans has full Unicode coverage; RobotoFlex does not
-    s_hasUnicode = (s_fontPath.find("NotoSans") != std::string::npos);
-
     return s_loaded;
 }
 
@@ -42,14 +38,4 @@ sf::Font &FontManager::get()
         throw std::runtime_error("FontManager::get() called before load() or load failed.");
     }
     return s_font;
-}
-
-const sf::Font &FontManager::getConst()
-{
-    return get();
-}
-
-bool FontManager::hasUnicodeSupport()
-{
-    return s_hasUnicode;
-}
+} 

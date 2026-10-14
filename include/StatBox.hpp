@@ -14,8 +14,12 @@ public:
     void setTitle(const std::string &title);
 
     std::string getTitle() const;
+    sf::FloatRect getTitleBounds() const;
 
     void setValue(const std::string &value);
+
+    // Recolor the value text (e.g. yellow true count when Reko is active). Non-const; matches draw().
+    void setValueColor(sf::Color color);
 
     void setPosition(sf::Vector2f position);
 
