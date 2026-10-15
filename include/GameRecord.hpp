@@ -107,6 +107,7 @@ struct ShoeRecord
     
     bool isContinuation = false; // true if this shoe was created due to deck exhaustion mid-hand
     bool completed = true; // true if cut card reached, false if player quit mid-shoe
+    int bankrollAtShoeEnd = 0; // player's bankroll when the shoe record was finalized (backs the lifetime bankroll progression)
     unsigned long long shuffleSeed = 0; // MT19937 seed used when shoe was created
 };
 

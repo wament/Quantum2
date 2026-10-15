@@ -156,6 +156,7 @@ inline void to_json(json& j, const ShoeRecord& s)
         {"initialDeck", s.initialDeck},
         {"rounds", s.rounds},
         {"completed", s.completed},
+        {"bankrollAtShoeEnd", s.bankrollAtShoeEnd},
         {"shuffleSeed", s.shuffleSeed}
     };
 }
@@ -168,6 +169,8 @@ inline void from_json(const json& j, ShoeRecord& s)
         j.at("completed").get_to(s.completed);
     // else defaults to true for backward compatibility
     s.shuffleSeed = j.value("shuffleSeed", 0ull);
+    // Older saves won't have this field; default to 0 (unknown bankroll at that shoe).
+    s.bankrollAtShoeEnd = j.value("bankrollAtShoeEnd", 0);
 }
 
 // PlayerProfile serialization

@@ -113,6 +113,7 @@ void Game::startNewGame()
     shoeGeneration++;
     bankrollSeries_.clear();
     edgeSeries_.clear();
+    lifetimeBankrollSeries_.clear();
 
     // Reko is unbalanced and compensated by starting the count at its per-deck offset (per the roadmap table);
     // Hi-Lo starts flat. rekoStartingOffset maps NUM_DECKS to -1/-5/-12/-20/-27 for 1/2/4/6/8 decks.
@@ -298,8 +299,10 @@ void Game::updateHUDState()
     hudState.bankrollSeries = bankrollSeries_;
     hudState.edgeSeries = edgeSeries_;
     hudState.trueCountPerRound_ = trueCountPerRound_;
-    if (!edgeSeries_.empty())
-        hudState.edgePercent = edgeSeries_.back();
+    hudState.lifetimeBankroll = lifetimeBankrollSeries_;
+    // After a shoe boundary the edge series is cleared; show 0 until new rounds repopulate it, otherwise this would
+    // keep its stale last value forever.
+    hudState.edgePercent = edgeSeries_.empty() ? 0.0 : edgeSeries_.back();
 
     hudState.currentShoe = &currentShoeRecord;
     hudState.currentShoeId = shoeGeneration;
@@ -934,6 +937,8 @@ void Game::handleEmptyDeck()
 
     // Save the current (incomplete) shoe record to the profile before reshuffling
     currentShoeRecord.completed = false;
+    currentShoeRecord.bankrollAtShoeEnd = players[0].getBankroll();
+    lifetimeBankrollSeries_.push_back(currentShoeRecord.bankrollAtShoeEnd);
     PlayerProfile profile = players[0].getProfile();
     profile.addShoeRecord(currentShoeRecord);
     players[0].updateProfile(profile);
@@ -1075,6 +1080,9 @@ void Game::dealerTurn()
 
         PlayerProfile profile = players[0].getProfile();
 
+        // Capture the player's bankroll as each shoe completes so the lifetime bankroll progression can be built.
+        currentShoeRecord.bankrollAtShoeEnd = players[0].getBankroll();
+        lifetimeBankrollSeries_.push_back(currentShoeRecord.bankrollAtShoeEnd);
         profile.addShoeRecord(currentShoeRecord);
         players[0].updateProfile(profile);
         players[0].saveProfile();

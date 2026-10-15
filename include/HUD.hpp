@@ -67,11 +67,16 @@ private:
 
     std::vector<float> m_bankrollSeries;   // bankroll curve: cumulative net profit per round
     std::vector<double> m_edgeSeries;      // edge-tracking series: cumulative estimated edge per round
+    std::vector<double> m_lifetimeBankroll; // lifetime bankroll progression (one point per completed shoe) for the Bankroll overlay
     double m_analyticsStdDev = 0.0;        // standard deviation of per-hand net profits
     int m_longestWinStreak = 0;            // longest winning streak, session-long
     int m_longestLoseStreak = 0;           // longest losing streak, session-long
     double m_edgePercent = 0.0;            // latest cumulative estimated edge (%)
     std::vector<std::pair<int, int>> m_betDistribution; // (bet size, frequency) for the histogram
+    // Full per-bet-size distribution includes the minimum bet as a major outlier, so the chart plots this filtered
+    // copy (min-bet column removed) and reports how many min bets were placed via m_minBetCount instead.
+    std::vector<std::pair<int, int>> m_betsPlotDistribution; // same data without the minimum-bet column
+    int m_minBetCount = 0;                 // number of minimum-bet hands placed this session (shown beside the title)
 
     // Per-shoe graph recalibration: remembers the last HUDState::currentShoeId seen so we can reset the chart
     // series exactly when a new shoe begins. -1 = never initialised yet.

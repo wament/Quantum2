@@ -37,7 +37,7 @@ void HUD::initialize(sf::Font& font)
 
     m_leftPanel.setBounds(
         sf::Vector2f(0.f, 0.f),
-        sf::Vector2f(200.f, Constants::WINDOW_HEIGHT - BOTTOM_HEIGHT));
+        sf::Vector2f(260.f, Constants::WINDOW_HEIGHT - BOTTOM_HEIGHT));
 
     m_rightPanel.setBounds(
         sf::Vector2f(Constants::WINDOW_WIDTH - 200.f, 0.f),
@@ -143,7 +143,12 @@ void HUD::updateControls(sf::Font& font)
     // Center horizontally
     sf::FloatRect bounds = m_controlsText->getLocalBounds();
     m_controlsText->setOrigin(sf::Vector2f(bounds.size.x / 2.f, 0.f));
-    m_controlsText->setPosition(sf::Vector2f(Constants::WINDOW_WIDTH / 2.f, Constants::WINDOW_HEIGHT - 80.f - 20.f));
+    // Center horizontally within the central play band between the two side panels (not at absolute screen center) so
+    // the controls stay balanced as panel sizes change. Uses real panel bounds rather than hard-coded coordinates.
+    const sf::Rect<float>& left = m_leftPanel.bounds();
+    const sf::Rect<float>& right = m_rightPanel.bounds();
+    float center = (left.position.x + left.size.x + right.position.x) / 2.f;
+    m_controlsText->setPosition(sf::Vector2f(center, Constants::WINDOW_HEIGHT - 80.f - 20.f));
 }
 
 void HUD::update(const HUDState& hudState)
@@ -284,6 +289,23 @@ void HUD::update(const HUDState& hudState)
     if (hudState.playerStats)
         m_betDistribution.assign(hudState.playerStats->betDistribution.begin(),
                                  hudState.playerStats->betDistribution.end());
+
+    // Bet-distribution chart: the minimum bet is almost always a massive outlier (flat/betting strategies all start
+    // there), so it dominates the histogram and hides the real spread. Keep the full distribution for stats, but plot
+    // a copy with the min-bet column removed and report how many min bets were placed as a counter beside the title.
+    // std::map iterates sorted ascending by bet size, so ordering is preserved.
+    m_betsPlotDistribution.clear();
+    if (hudState.playerStats)
+    {
+        const auto& full = hudState.playerStats->betDistribution;
+        m_minBetCount = full.count(Constants::MINIMUM_BET) ? full.at(Constants::MINIMUM_BET) : 0;
+        for (const auto& kv : full)
+            if (kv.first != Constants::MINIMUM_BET)
+                m_betsPlotDistribution.emplace_back(kv);
+    }
+
+    // Lifetime bankroll progression: copied each frame so the Bankroll overlay can render without HUDState lifetime.
+    m_lifetimeBankroll.assign(hudState.lifetimeBankroll.begin(), hudState.lifetimeBankroll.end());
 }
 
 void HUD::draw(sf::RenderWindow& window)
@@ -388,7 +410,7 @@ namespace {
     }
 
     // Which secondary overlay drawLineChart adds on top of its primary line (display-only; toggled per graph pane).
-    enum class GraphOverlay { None, BankrollSwings, EdgeTrueCount };
+    enum class GraphOverlay { None, BankrollSwings, EdgeTrueCount, BankrollLifetime };
 
     // Secondary view for the bankroll chart: per-round net-profit swings (delta[i] = equity[i]-equity[i-1]) drawn as
     // sign-colored bars centered on a breakeven line and normalized to the plot height by the largest swing. Scaled
@@ -489,6 +511,51 @@ namespace {
         window.draw(label);
     }
 
+    // Secondary view for the bankroll chart: the player's lifetime bankroll progression (one point per completed
+    // shoe), drawn as a bright line with markers at each shoe boundary. Scaled independently of the primary session
+    // curve so an absolute bankroll (~thousands) reads clearly alongside the small per-round net-profit deltas, and
+    // the discrete per-shoe points are legible rather than looking like one smooth line. Element type is templated so
+    // any numeric series binds without conversion.
+    template <typename Series>
+    void drawLifetimeBankroll(sf::RenderWindow& window, const sf::Rect<float>& pbox, const Series& values)
+    {
+        const std::size_t n = values.size();
+        if (n == 0)
+            return;
+
+        double lo = values.front(), hi = values.front();
+        for (double v : values) { lo = std::min(lo, v); hi = std::max(hi, v); }
+        if (hi <= lo) hi = lo + 1.0;
+
+        const float plotBottom = pbox.position.y + pbox.size.y;
+        auto xAt = [&](std::size_t i) { return pbox.position.x + pbox.size.x * static_cast<float>(i) / static_cast<float>(n); };
+        auto yAt = [&](double v) { double frac = (v - lo) / (hi - lo); return plotBottom - static_cast<float>(frac) * pbox.size.y; };
+
+        // Connecting line across shoe boundaries.
+        sf::VertexArray line(sf::PrimitiveType::LineStrip, n);
+        for (std::size_t i = 0; i < n; ++i) { line[i].position = sf::Vector2f(xAt(i), yAt(values[i])); line[i].color = sf::Color(255, 215, 0, 220); }
+        window.draw(line);
+
+        // A marker at each completed shoe so the discrete progression is legible.
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            sf::RectangleShape dot(sf::Vector2f(5.f, 5.f));
+            dot.setFillColor(sf::Color(255, 215, 0));
+            dot.setPosition(sf::Vector2f(xAt(i) - 2.5f, yAt(values[i]) - 2.5f));
+            window.draw(dot);
+        }
+
+        // Label the most recent shoe's bankroll so the overlay is interpretable on its own.
+        std::ostringstream oss;
+        oss << "Lifetime: " << static_cast<long long>(values[n - 1]);
+        sf::Text label(FontManager::get(), oss.str(), 10u);
+        label.setFillColor(sf::Color(255, 215, 0));
+        sf::FloatRect lb = label.getLocalBounds();
+        label.setOrigin(sf::Vector2f(lb.size.x + 4.f, 0.f));
+        label.setPosition(sf::Vector2f(pbox.position.x + pbox.size.x - 4.f, pbox.position.y + 2.f));
+        window.draw(label);
+    }
+
     // Horizontal grid lines + right-aligned value labels for a y axis spanning [lo, hi], plus a zero baseline when
     // it falls inside the range and the left axis line. Labels sit in the gutter to the left of the data area.
     void drawYAxis(sf::RenderWindow& window, const sf::Rect<float>& pbox, double lo, double hi, int precision)
@@ -565,10 +632,17 @@ namespace {
             window.draw(tick);
 
             std::ostringstream oss;
-            oss << "Round " << roundNo;
+            oss << roundNo;
             sf::Text label(FontManager::get(), oss.str(), 10u);
             label.setFillColor(sf::Color(160, 160, 160));
             sf::FloatRect lb = label.getLocalBounds();
+            // Opaque backing so the number sits in a clean cutout over the gridlines/background. Without it, centered
+            // digits whose width changes each round (9->10->...->100) smear against whatever is behind them and read
+            // as stale ghosting/residue rather than crisp labels.
+            sf::RectangleShape backing(sf::Vector2f(lb.size.x + 4.f, lb.size.y + 2.f));
+            backing.setPosition(sf::Vector2f(x - lb.size.x * 0.5f - 2.f, bottom + 3.f));
+            backing.setFillColor(sf::Color(18, 22, 36));
+            window.draw(backing);
             label.setOrigin(sf::Vector2f(lb.size.x * 0.5f, lb.size.y));  // bottom-center anchor
             label.setPosition(sf::Vector2f(x, bottom + 4.f));
             window.draw(label);
@@ -578,27 +652,36 @@ namespace {
     template <typename Series>
     void drawLineChart(sf::RenderWindow& window, const sf::Rect<float>& rect, const Series& data,
                        sf::Color lineColor, int precision, const char* title, GraphOverlay overlay,
-                       const std::vector<double>& trueCounts)
+                       const std::vector<double>& trueCounts, const std::vector<double>& lifetimeSeries)
     {
         sf::RectangleShape bg(sf::Vector2f(rect.size.x - 6.f, rect.size.y - 6.f));
         bg.setPosition(sf::Vector2f(rect.position.x + 3.f, rect.position.y + 3.f));
         bg.setFillColor(sf::Color(20, 25, 40, 130));
         window.draw(bg);
 
-        // Title label stays in the reserved top strip.
-        {
-            sf::Text titleLabel(FontManager::get(), title, 13u);
-            titleLabel.setFillColor(sf::Color(220, 220, 220));
-            sf::FloatRect lb = titleLabel.getLocalBounds();
-            titleLabel.setOrigin(sf::Vector2f(lb.size.x + 6.f, 0.f));
-            titleLabel.setPosition(sf::Vector2f(rect.position.x + 6.f, rect.position.y + 4.f));
-            window.draw(titleLabel);
-        }
+        // Title label centered on top of the chart so it never hangs off the left edge. Its height is captured so a
+        // stacked overlay legend can be placed just beneath it without overlapping.
+        sf::Text titleLabel(FontManager::get(), title, 13u);
+        titleLabel.setFillColor(sf::Color(220, 220, 220));
+        sf::FloatRect tlb = titleLabel.getLocalBounds();
+        const float titleHeight = tlb.size.y;
+        titleLabel.setOrigin(sf::Vector2f(tlb.size.x * 0.5f, 0.f));   // top-center anchor
+        titleLabel.setPosition(sf::Vector2f(rect.position.x + rect.size.x * 0.5f, rect.position.y + 4.f));
+        window.draw(titleLabel);
 
         if (data.size() < 2)
             return;
 
-        const sf::Rect<float> pbox = plotArea(rect);
+        sf::Rect<float> pbox = plotArea(rect);
+        // When an overlay is shown the main title and its legend both sit in the top strip, so drop the plot a little
+        // to make room for both titles above the data (see requirement: move the overlay title down).
+        if (overlay != GraphOverlay::None)
+        {
+            const float extra = 16.f;
+            pbox.position.y += extra;
+            pbox.size.y -= extra;
+        }
+
         double lo = data.front(), hi = data.front();
         for (const auto& v : data) { lo = std::min(lo, static_cast<double>(v)); hi = std::max(hi, static_cast<double>(v)); }
         if (hi <= lo) hi = lo + 1.0;
@@ -615,38 +698,71 @@ namespace {
         window.draw(line);
 
         // Secondary overlay on top of the primary curve. Scaled independently (see drawBankrollSwings /
-        // drawTrueCountLine) so it always reads clearly even though it shares a different unit/scale than the axis.
+        // drawTrueCountLine / drawLifetimeBankroll) so it always reads clearly even though it shares a different
+        // unit/scale than the axis. The legend is stacked just below the main title so both titles stay legible.
         if (overlay != GraphOverlay::None)
         {
-            if (overlay == GraphOverlay::BankrollSwings)
-                drawBankrollSwings(window, pbox, data);
-            else
+            const char* legend = "OVERLAY: per-round swings";
+            sf::Color legColor = sf::Color(240, 220, 120);
+            if (overlay == GraphOverlay::EdgeTrueCount)
+            {
+                legend = "OVERLAY: true-count signal";
                 drawTrueCountLine(window, pbox, trueCounts);
+            }
+            else if (overlay == GraphOverlay::BankrollLifetime)
+            {
+                legend = "OVERLAY: lifetime bankroll";
+                legColor = sf::Color(255, 215, 0);
+                drawLifetimeBankroll(window, pbox, lifetimeSeries);
+            }
+            else // GraphOverlay::BankrollSwings
+            {
+                drawBankrollSwings(window, pbox, data);
+            }
 
-            const char* legend = (overlay == GraphOverlay::BankrollSwings) ? "OVERLAY: per-round swings" : "OVERLAY: true-count signal";
             sf::Text leg(FontManager::get(), legend, 10u);
-            leg.setFillColor(sf::Color(240, 220, 120));
+            leg.setFillColor(legColor);
             sf::FloatRect bl = leg.getLocalBounds();
             leg.setOrigin(sf::Vector2f(bl.size.x + 5.f, 0.f));
-            leg.setPosition(sf::Vector2f(rect.position.x + rect.size.x - 5.f, rect.position.y + 3.f));
+            // Place the overlay legend a few pixels below the main title's baseline instead of at the chart's top,
+            // where it previously overlapped the default title.
+            const float legendY = rect.position.y + 4.f + titleHeight + 6.f;
+            leg.setPosition(sf::Vector2f(rect.position.x + rect.size.x - 5.f, legendY));
             window.draw(leg);
         }
     }
 
-    void drawHistogram(sf::RenderWindow& window, const sf::Rect<float>& rect, const std::vector<std::pair<int, int>>& entries, bool showCumulative)
+    void drawHistogram(sf::RenderWindow& window, const sf::Rect<float>& rect, const std::vector<std::pair<int, int>>& entries, bool showCumulative, int minBetCount)
     {
         sf::RectangleShape bg(sf::Vector2f(rect.size.x - 6.f, rect.size.y - 6.f));
         bg.setPosition(sf::Vector2f(rect.position.x + 3.f, rect.position.y + 3.f));
         bg.setFillColor(sf::Color(20, 25, 40, 130));
         window.draw(bg);
 
+        // "Bets Placed" title centered on top of the chart; a "Min bets: N" counter sits just to its left. The minimum
+        // bet column is omitted from the bars because it is usually a dominant outlier — see update(). `titleHeight`
+        // is hoisted here so the cumulative-distribution legend can be stacked beneath both labels when toggled on.
+        sf::Text titleLabel(FontManager::get(), "Bets Placed", 13u);
+        titleLabel.setFillColor(sf::Color(220, 220, 220));
+        sf::FloatRect tlb = titleLabel.getLocalBounds();
+        const float titleHeight = tlb.size.y;
+        titleLabel.setOrigin(sf::Vector2f(tlb.size.x * 0.5f, 0.f));   // top-center anchor
+        const float titleCenterX = rect.position.x + rect.size.x * 0.5f;
+        titleLabel.setPosition(sf::Vector2f(titleCenterX, rect.position.y + 4.f));
+        window.draw(titleLabel);
+
+        if (minBetCount > 0)
         {
-            sf::Text titleLabel(FontManager::get(), "Bets Placed", 13u);
-            titleLabel.setFillColor(sf::Color(220, 220, 220));
-            sf::FloatRect lb = titleLabel.getLocalBounds();
-            titleLabel.setOrigin(sf::Vector2f(lb.size.x + 6.f, 0.f));
-            titleLabel.setPosition(sf::Vector2f(rect.position.x + 6.f, rect.position.y + 4.f));
-            window.draw(titleLabel);
+            std::ostringstream minOss;
+            minOss << "Min bets: " << minBetCount;
+            sf::Text minLabel(FontManager::get(), minOss.str(), 10u);
+            minLabel.setFillColor(sf::Color(180, 180, 180));
+            sf::FloatRect mlb = minLabel.getLocalBounds();
+            // Right-anchor so the counter sits flush to the left of the centered title.
+            minLabel.setOrigin(sf::Vector2f(mlb.size.x + 4.f, 0.f));
+            const float minBetX = titleCenterX - tlb.size.x * 0.5f - 8.f;
+            minLabel.setPosition(sf::Vector2f(minBetX, rect.position.y + 4.f));
+            window.draw(minLabel);
         }
 
         if (entries.empty())
@@ -656,7 +772,15 @@ namespace {
         if (maxFreq == 0)
             return;
 
-        const sf::Rect<float> pbox = plotArea(rect);
+        sf::Rect<float> pbox = plotArea(rect);
+        // When the cumulative-distribution overlay is shown, both its legend and the main title sit in the top strip,
+        // so drop the plot a little to make room for both labels above the bars (mirrors drawLineChart).
+        if (showCumulative)
+        {
+            const float extra = 16.f;
+            pbox.position.y += extra;
+            pbox.size.y -= extra;
+        }
         drawYAxis(window, pbox, 0.0, static_cast<double>(maxFreq), 0);
 
         const float plotBottom = pbox.position.y + pbox.size.y;
@@ -737,7 +861,9 @@ namespace {
             leg.setFillColor(sf::Color(230, 160, 240));
             sf::FloatRect bl = leg.getLocalBounds();
             leg.setOrigin(sf::Vector2f(bl.size.x + 5.f, 0.f));
-            leg.setPosition(sf::Vector2f(rect.position.x + rect.size.x - 5.f, rect.position.y + 3.f));
+            // Stack beneath the "Bets Placed" title (and its min-bet counter) instead of overlapping it at the top.
+            const float legendY = rect.position.y + 4.f + titleHeight + 6.f;
+            leg.setPosition(sf::Vector2f(rect.position.x + rect.size.x - 5.f, legendY));
             window.draw(leg);
         }
 
@@ -771,14 +897,19 @@ namespace {
 
 void HUD::drawCharts(sf::RenderWindow& window) const
 {
+    // Bankroll Curve defaults to the current session's per-round net-profit curve. Toggling the pane switches the
+    // secondary view from per-round swings (removed) to the lifetime bankroll progression across completed shoes.
     if (!m_bankrollSeries.empty())
         drawLineChart(window, m_bankrollChartRect, m_bankrollSeries, sf::Color(90, 200, 90), 0, "Bankroll Curve",
-                      m_bankrollShowSecondary ? GraphOverlay::BankrollSwings : GraphOverlay::None, m_trueCountPerRound_);
+                      m_bankrollShowSecondary ? GraphOverlay::BankrollLifetime : GraphOverlay::None, m_trueCountPerRound_,
+                      m_lifetimeBankroll);
     if (!m_edgeSeries.empty())
         drawLineChart(window, m_edgeChartRect, m_edgeSeries, sf::Color(120, 170, 255), 1, "Edge Over Time",
-                      m_edgeShowSecondary ? GraphOverlay::EdgeTrueCount : GraphOverlay::None, m_trueCountPerRound_);
-    if (!m_betDistribution.empty())
-        drawHistogram(window, m_betsChartRect, m_betDistribution, m_betsShowSecondary);
+                      m_edgeShowSecondary ? GraphOverlay::EdgeTrueCount : GraphOverlay::None, m_trueCountPerRound_,
+                      m_lifetimeBankroll);
+    // Plot the min-bet-free distribution; surface the omitted minimum bets as a counter beside the title.
+    if (!m_betsPlotDistribution.empty())
+        drawHistogram(window, m_betsChartRect, m_betsPlotDistribution, m_betsShowSecondary, m_minBetCount);
 }
 
 void HUD::toggleGraphSecondary(GraphPane pane)

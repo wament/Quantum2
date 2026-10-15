@@ -51,6 +51,7 @@ struct HUDState
     double edgePercent = 0.0;       // estimated player edge over the current session, as a percentage
     std::vector<float> bankrollSeries; // cumulative net profit per round (bankroll curve for the chart)
     std::vector<double> edgeSeries;    // cumulative estimated edge per round (edge-tracking chart)
+    std::vector<int> lifetimeBankroll; // player bankroll captured at each completed shoe (lifetime bankroll progression overlay)
     std::vector<float> trueCountPerRound_; // raw true count per round (backs the Edge chart secondary view)
 
     // Human-readable name of the active counting style (e.g. "Hi-Lo"/"Reko"), used to title the Count box.

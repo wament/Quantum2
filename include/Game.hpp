@@ -186,6 +186,7 @@ class Game
     std::vector<float> bankrollSeries_; // cumulative net profit after each round (bankroll curve)
     std::vector<double> edgeSeries_;    // cumulative estimated player edge (%) over time
     std::vector<float> trueCountPerRound_; // raw true count per round (backs the Edge chart secondary view)
+    std::vector<int> lifetimeBankrollSeries_; // player bankroll captured at each completed shoe (lifetime bankroll progression)
 
     // Bumped every time a new shoe begins (startNewGame or a mid-session reshuffle). Exposed to the HUD via
     // HUDState::currentShoeId as the per-shoe recalibration signal; also drives clearing bankrollSeries_/edgeSeries_.

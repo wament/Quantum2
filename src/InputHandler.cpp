@@ -310,6 +310,20 @@ void InputHandler::processGameEvents(const sf::Event& event)
                 game.deck.create(Constants::NUM_DECKS);
                 game.deck.shuffle();
                 game.currentShoeRecord.initialDeck = game.deck.getCards();
+                // A fresh shoe: reset the per-shoe analytics and running count so the bankroll/edge graphs start
+                // from zero instead of carrying the previous shoe's values forward. This mirrors handleEmptyDeck()
+                // / startNewGame(): incrementing shoeGeneration is the HUD's recalibration signal, and clearing the
+                // series ensures edgePercent + the edge curve reset as soon as new rounds repopulate them. The
+                // lifetime bankroll series is intentionally NOT cleared here — it is meant to span shoes within a
+                // game session (it only resets on startNewGame(), which starts a brand-new game). This path keeps
+                // the player's accumulated bankroll because it continues the same session rather than restarting.
+                game.shoeGeneration++;
+                game.bankrollSeries_.clear();
+                game.edgeSeries_.clear();
+                game.trueCountPerRound_.clear();
+                game.shoeCumulativeWinLoss = 0;
+                game.runningCount = (game.countingStyle == BasicStrategy::CountingStyle::REKO)
+                                        ? BasicStrategy::rekoStartingOffset(Constants::NUM_DECKS) : 0;
                 game.gameState = GameState::Started;
             }
             else if (game.roundState == RoundState::Cleanup && game.gameState != GameState::LastHand)
