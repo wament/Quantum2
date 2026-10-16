@@ -180,7 +180,10 @@ inline void to_json(json& j, const PlayerProfile& p)
         {"name", p.name},
         {"bankroll", p.bankroll},
         {"stats", p.stats},
-        {"longHistory", p.longHistory}
+        {"longHistory", p.longHistory},
+        {"preferredPlayerCount", p.preferredPlayerCount},
+        {"preferredSpeed", p.preferredSpeed},
+        {"preferredCountingStyle", p.preferredCountingStyle}
     };
 }
 
@@ -190,4 +193,8 @@ inline void from_json(const json& j, PlayerProfile& p)
     j.at("bankroll").get_to(p.bankroll);
     j.at("stats").get_to(p.stats);
     j.at("longHistory").get_to(p.longHistory);
+    // Backward compatible: profiles saved before table settings existed fall back to the struct defaults.
+    p.preferredPlayerCount = j.value("preferredPlayerCount", GameConfig::DEFAULT_PLAYER_COUNT);
+    p.preferredSpeed = j.value("preferredSpeed", static_cast<int>(GameSpeed::Normal));
+    p.preferredCountingStyle = j.value("preferredCountingStyle", 1);
 }

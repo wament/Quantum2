@@ -27,7 +27,7 @@ TEST_CASE("Player settles an even-money win", "[Player][Settlement]")
     p.setBankroll(500);
 
     int payout = 0;
-    SettlementResult result = p.settle(makeHand({7, 8}, 20), /*dealerValue*/ 13, /*dealerBust*/ false, payout);
+    SettlementResult result = p.settle(makeHand({7, 8}, 20), /*dealerValue*/ 13, /*dealerBust*/ false, /*dealerHasBlackjack*/ false, payout);
 
     CHECK(result == SettlementResult::Win);
     CHECK(payout == 40);
@@ -40,7 +40,7 @@ TEST_CASE("Player settles a loss against a higher dealer total", "[Player][Settl
     p.setBankroll(500);
 
     int payout = 0;
-    SettlementResult result = p.settle(makeHand({7, 8}, 20), /*dealerValue*/ 17, /*dealerBust*/ false, payout);
+    SettlementResult result = p.settle(makeHand({7, 8}, 20), /*dealerValue*/ 17, /*dealerBust*/ false, /*dealerHasBlackjack*/ false, payout);
 
     CHECK(result == SettlementResult::Lose);
     CHECK(payout == 0);
@@ -53,7 +53,7 @@ TEST_CASE("Player settles a bust as a loss regardless of the dealer", "[Player][
     p.setBankroll(500);
 
     int payout = 0;
-    SettlementResult result = p.settle(makeHand({8, 8, 8}, 20), /*dealerValue*/ 18, /*dealerBust*/ false, payout);
+    SettlementResult result = p.settle(makeHand({8, 8, 8}, 20), /*dealerValue*/ 18, /*dealerBust*/ false, /*dealerHasBlackjack*/ false, payout);
 
     CHECK(result == SettlementResult::Lose);
     CHECK(payout == 0);
@@ -66,7 +66,7 @@ TEST_CASE("Player settles a dealer bust as a win", "[Player][Settlement]")
     p.setBankroll(500);
 
     int payout = 0;
-    SettlementResult result = p.settle(makeHand({7, 8}, 20), /*dealerValue*/ 22, /*dealerBust*/ true, payout);
+    SettlementResult result = p.settle(makeHand({7, 8}, 20), /*dealerValue*/ 22, /*dealerBust*/ true, /*dealerHasBlackjack*/ false, payout);
 
     CHECK(result == SettlementResult::Win);
     CHECK(payout == 40);
@@ -79,7 +79,7 @@ TEST_CASE("Player settles a push with the bankroll unchanged", "[Player][Settlem
     p.setBankroll(500);
 
     int payout = 0;
-    SettlementResult result = p.settle(makeHand({10, 5}, 20), /*dealerValue*/ 15, /*dealerBust*/ false, payout);
+    SettlementResult result = p.settle(makeHand({10, 5}, 20), /*dealerValue*/ 15, /*dealerBust*/ false, /*dealerHasBlackjack*/ false, payout);
 
     CHECK(result == SettlementResult::Push);
     CHECK(payout == 20);
@@ -92,7 +92,7 @@ TEST_CASE("Player settles a natural blackjack at 3:2", "[Player][Settlement]")
     p.setBankroll(500);
 
     int payout = 0;
-    SettlementResult result = p.settle(makeHand({1, 10}, 20), /*dealerValue*/ 20, /*dealerBust*/ false, payout);
+    SettlementResult result = p.settle(makeHand({1, 10}, 20), /*dealerValue*/ 20, /*dealerBust*/ false, /*dealerHasBlackjack*/ false, payout);
 
     CHECK(result == SettlementResult::Win);
     CHECK(payout == 50); // 20 * (1 + 1.5)
@@ -108,7 +108,7 @@ TEST_CASE("Player settles a split hand totaling 21 at even money", "[Player][Set
     twoOne.setSplit(true, 11); // makes it a split hand, so not a natural blackjack
 
     int payout = 0;
-    SettlementResult result = p.settle(twoOne, /*dealerValue*/ 20, /*dealerBust*/ false, payout);
+    SettlementResult result = p.settle(twoOne, /*dealerValue*/ 20, /*dealerBust*/ false, /*dealerHasBlackjack*/ false, payout);
 
     CHECK(result == SettlementResult::Win);
     CHECK(payout == 40); // even money, not 3:2
@@ -124,7 +124,7 @@ TEST_CASE("Player settles a surrendered hand losing half the bet", "[Player][Set
     surrendered.setSurrendered(true);
 
     int payout = 0;
-    SettlementResult result = p.settle(surrendered, /*dealerValue*/ 5, /*dealerBust*/ false, payout);
+    SettlementResult result = p.settle(surrendered, /*dealerValue*/ 5, /*dealerBust*/ false, /*dealerHasBlackjack*/ false, payout);
 
     CHECK(result == SettlementResult::Surrender);
     CHECK(payout == 10); // half the bet returned

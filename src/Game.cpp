@@ -29,6 +29,8 @@ Game::Game()
 {
     window.setView(gameView);
     players.push_back(Player("William"));
+    // Open the main menu on the settings this player actually uses instead of the compile-time defaults.
+    applySavedTableSettings();
     npcActionTimer = 0.0f;
     npcActionDelay = 1.0f;
     loadAssets();
@@ -87,6 +89,10 @@ void Game::run()
 void Game::startNewGame()
 {
     Logger::info("Starting new game");
+
+    // Remember what was just chosen before the profile is re-read below, so the next launch opens on it.
+    rememberTableSettings();
+
     players.clear();
 
     // Human player (William) - always first
@@ -109,16 +115,9 @@ void Game::startNewGame()
     currentShoeRecord.initialDeck = deck.getCards();
     currentShoeRecord.rounds.clear();
 
-    // A brand-new shoe: start the analytics curves from zero so the bankroll/edge charts reflect only this shoe.
-    shoeGeneration++;
-    bankrollSeries_.clear();
-    edgeSeries_.clear();
-    lifetimeBankrollSeries_.clear();
-
-    // Reko is unbalanced and compensated by starting the count at its per-deck offset (per the roadmap table);
-    // Hi-Lo starts flat. rekoStartingOffset maps NUM_DECKS to -1/-5/-12/-20/-27 for 1/2/4/6/8 decks.
-    runningCount = (countingStyle == BasicStrategy::CountingStyle::REKO) ? BasicStrategy::rekoStartingOffset(Constants::NUM_DECKS) : 0;
-    shoeCumulativeWinLoss = 0;
+    // A brand-new shoe: every per-shoe readout starts from zero, so the stat boxes and the bankroll/edge charts
+    // reflect only this shoe. (The bankroll itself is deliberately kept — it is the one value that persists.)
+    resetShoeAnalytics();
     sessionCumulativeWinLoss = 0;
     handActions.clear();
     handActions.resize(1);
@@ -126,14 +125,100 @@ void Game::startNewGame()
     handDeviations_.resize(1);
     advisorFeedback = AdvisorFeedback::None;
     advisorAction = 0;
-    // A new game starts a fresh session: reset the running streaks, but keep career records (longest streaks, variance).
-    handWinStreak = 0;
-    handLoseStreak = 0;
     dealer.clear();
     players[0].resetRound(0);
     nextRound();
 
     appMode = AppMode::Playing;
+}
+
+void Game::applySavedTableSettings()
+{
+    if (players.empty())
+        return;
+
+    const PlayerProfile profile = players[0].getProfile();
+
+    // setPlayerCount clamps to [1,6], so a stale or hand-edited value can never ask for a nonexistent seat.
+    setPlayerCount(profile.preferredPlayerCount);
+
+    // An int read off disk can be anything, so validate against the enumerators before trusting it.
+    switch (static_cast<GameSpeed>(profile.preferredSpeed))
+    {
+    case GameSpeed::Fast:
+    case GameSpeed::Normal:
+    case GameSpeed::Slow:
+    case GameSpeed::AutoPlay:
+        gameSpeed = static_cast<GameSpeed>(profile.preferredSpeed);
+        break;
+    default:
+        gameSpeed = GameSpeed::Normal;
+        break;
+    }
+
+    switch (static_cast<BasicStrategy::CountingStyle>(profile.preferredCountingStyle))
+    {
+    case BasicStrategy::CountingStyle::HI_LO:
+    case BasicStrategy::CountingStyle::REKO:
+        countingStyle = static_cast<BasicStrategy::CountingStyle>(profile.preferredCountingStyle);
+        break;
+    default:
+        countingStyle = BasicStrategy::CountingStyle::REKO;
+        break;
+    }
+
+    Logger::info() << "Restored table settings: " << playerCount << " players, "
+                   << BasicStrategy::countingStyleName(countingStyle) << " counting.";
+}
+
+void Game::rememberTableSettings()
+{
+    if (players.empty())
+        return;
+
+    PlayerProfile profile = players[0].getProfile();
+    profile.preferredPlayerCount = playerCount;
+    profile.preferredSpeed = static_cast<int>(gameSpeed);
+    profile.preferredCountingStyle = static_cast<int>(countingStyle);
+    players[0].updateProfile(profile);
+    players[0].saveProfile();
+}
+
+void Game::resetShoeAnalytics()
+{
+    // The single shoe-boundary reset. Bumping shoeGeneration is the HUD's recalibration signal (HUDState::
+    // currentShoeId); zeroing shoe_ is what actually puts the readouts back at baseline — the two graph series, the
+    // std-dev accumulators, the hand-to-hand and round-to-round streaks, the strategy counts and the bet
+    // distribution all restart here. That is the whole point of the per-shoe struct: every stat box except
+    // Bankroll reports THIS shoe, so nothing drifts upward across shoes or leaks in from previous sessions.
+    shoeGeneration++;
+    shoe_ = ShoeAnalytics{};
+
+    // Re-seed BOTH counting systems, not just the active one. `backgroundRunningCount` is what the other style
+    // swaps in when the player clicks the Count box, so leaving it at the previous shoe's value made the Count and
+    // True Count boxes jump to stale numbers the first time the style was toggled after a reshuffle.
+    // Reko is unbalanced and compensated by starting the count at its per-deck offset (per the roadmap table);
+    // Hi-Lo starts flat. rekoStartingOffset maps NUM_DECKS to -1/-5/-12/-20/-27 for 1/2/4/6/8 decks.
+    const int rekoSeed = BasicStrategy::rekoStartingOffset(Constants::NUM_DECKS);
+    const bool rekoActive = (countingStyle == BasicStrategy::CountingStyle::REKO);
+    runningCount = rekoActive ? rekoSeed : 0;
+    backgroundRunningCount = rekoActive ? 0 : rekoSeed;
+    trueCount = 0.f;
+
+    shoeCumulativeWinLoss = 0;
+    gameState = GameState::Started;
+}
+
+void Game::startNewShoe()
+{
+    // A fresh, full shoe plus the shared analytics reset. Used by the R key at end of shoe and by auto-play's
+    // auto-advance; the mid-shoe reshuffle (handleEmptyDeck) reuses resetShoeAnalytics() but keeps its partially
+    // dealt cards, and startNewGame() resets a whole session rather than just a shoe.
+    deck.create(Constants::NUM_DECKS);
+    deck.shuffle();
+    currentShoeRecord = {};
+    currentShoeRecord.initialDeck = deck.getCards();
+    resetShoeAnalytics();
 }
 
 void Game::setPlayerCount(int count)
@@ -276,18 +361,18 @@ void Game::updateHUDState()
     }
     hudState.advisorFeedback = advisorFeedback;
 
-    hudState.playerStats = &getStats();
-
-    // Advanced Analytics (Feature 3): derive live values from the incremental per-hand trackers. Standard deviation is
-    // computed from the running sum / sum-of-squares of per-hand net profits (variance = E[x^2] - (E[x])^2).
-    const PlayerStats& ps = getStats();
-    hudState.longestWinningStreak = ps.longestWinningStreak;
-    hudState.longestLosingStreak = ps.longestLosingStreak;
-    if (ps.handProfitCount > 0)
+    // Advanced Analytics (Feature 3): every readout below comes from this shoe's trackers (shoe_), which
+    // resetShoeAnalytics() zeroes at each boundary — so Std Dev, Long Win, Long Loss, Edge %, Streak and Strategy %
+    // all restart with the shoe while the Bankroll box keeps running. Standard deviation is computed from the
+    // running sum / sum-of-squares of per-hand net profits (variance = E[x^2] - (E[x])^2).
+    hudState.shoeAnalytics = &shoe_;
+    hudState.longestWinningStreak = shoe_.longestWinningStreak;
+    hudState.longestLosingStreak = shoe_.longestLosingStreak;
+    if (shoe_.handProfitCount > 0)
     {
-        double n = static_cast<double>(ps.handProfitCount);
-        double mean = static_cast<double>(ps.handProfitSum) / n;
-        double variance = static_cast<double>(ps.handProfitSumSq) / n - mean * mean;
+        double n = static_cast<double>(shoe_.handProfitCount);
+        double mean = static_cast<double>(shoe_.handProfitSum) / n;
+        double variance = static_cast<double>(shoe_.handProfitSumSq) / n - mean * mean;
         hudState.analyticsStdDev = (variance > 0.0) ? std::sqrt(variance) : 0.0;
     }
     else
@@ -295,14 +380,19 @@ void Game::updateHUDState()
         hudState.analyticsStdDev = 0.0;
     }
 
-    // Feed the bankroll curve and edge-tracking series to the HUD chart, plus the latest cumulative edge as a number.
-    hudState.bankrollSeries = bankrollSeries_;
-    hudState.edgeSeries = edgeSeries_;
-    hudState.trueCountPerRound_ = trueCountPerRound_;
-    hudState.lifetimeBankroll = lifetimeBankrollSeries_;
-    // After a shoe boundary the edge series is cleared; show 0 until new rounds repopulate it, otherwise this would
-    // keep its stale last value forever.
-    hudState.edgePercent = edgeSeries_.empty() ? 0.0 : edgeSeries_.back();
+    // Bottom-bar Streak box: the human's round-to-round streak, restarted with the shoe.
+    hudState.streak = shoe_.roundStreak;
+    hudState.streakIsWin = shoe_.roundStreakIsWin;
+
+    // Feed the bankroll curve and edge-tracking series to the HUD charts. Both hold the CURRENT shoe only — and
+    // the curve is the human seat's net profit alone, never the table's — so they return to their baseline the
+    // moment a new shoe begins.
+    hudState.bankrollSeries = shoe_.bankrollSeries;
+    hudState.edgeSeries = shoe_.edgeSeries;
+    // The Edge % box is the live figure: the same estimate the chart samples once per settled round, read from
+    // the Hi-Lo count as it stands this instant. On a fresh shoe that is the baseline (about -0.50% for basic
+    // strategy), not 0 - a new shoe is not an edge of nothing, it is the house's usual half percent.
+    hudState.edgePercent = BasicStrategy::estimateEdgePercent(hiLoTrueCount());
 
     hudState.currentShoe = &currentShoeRecord;
     hudState.currentShoeId = shoeGeneration;
@@ -351,9 +441,23 @@ const Hand& Game::testHand(size_t playerIndex, size_t handIndex) const
 // up-card is not an ace, so split/hit/stand can be exercised end-to-end without SFML or disk profiles.
 void Game::startTestRound()
 {
-    // In-memory single seat (NPC constructor: no disk read/write), so tests stay hermetic.
+    startTestRound(1);
+}
+
+// Same round setup, but seats up `seats - 1` extra in-memory NPC seats behind the human so the analytics tests can
+// prove the readouts follow the human seat alone. Bets are still placed by confirmBet(), exactly as a human would.
+void Game::startTestRound(int seats)
+{
+    // In-memory seats (NPC constructor: no disk read/write), so tests stay hermetic.
     players.clear();
     players.emplace_back("William", GameConfig::STARTING_BANKROLL);
+
+    for (int i = 0; i + 1 < seats; ++i)
+    {
+        const auto& cfg = GameConfig::NPC_CONFIGS[i];
+        players.push_back(Player(cfg.name, cfg.bankroll));
+        players[i + 1].setBettingStrategy(static_cast<BettingStrategy>(cfg.strategy), cfg.baseBet);
+    }
 
     npcActionTimer = 0.0f;
     npcActionDelay = 1.0f;
@@ -368,10 +472,15 @@ void Game::startTestRound()
     initialBet = Constants::MINIMUM_BET;
 
     handActions.clear();
-    handActions.resize(1);
+    handActions.resize(players.size());
+    // handDeviations_ mirrors handActions' per-hand indexing (nextRound()/startNewGame() size both together);
+    // sizing it here keeps a test-driven round from reading past the end in evaluateHands.
+    handDeviations_.clear();
+    handDeviations_.resize(players.size());
 
-    players[0].resetRound(Constants::MINIMUM_BET); // one hand, minimum bet (>0) so it gets dealt
-    deal();                                        // initial two cards + dealer up card from the injected shoe
+    for (auto& p : players)
+        p.resetRound(Constants::MINIMUM_BET); // one hand each, minimum bet (>0) so every seat gets dealt
+    deal();                                   // initial two cards + dealer up card from the injected shoe
 }
 
 // Player actions
@@ -463,7 +572,8 @@ bool Game::doubleDown()
     hand.setBet(initialBet * 2);
     dealCardToPlayer(hand);
 
-    PlayerStats& stats = getStats();
+    // Attribute to the seat that actually doubled (an NPC doubling must not land in the human's record).
+    PlayerStats& stats = p.getStats();
     stats.doubles++;
     stats.betsPlaced++;
     stats.betSum += initialBet;
@@ -536,7 +646,8 @@ bool Game::split()
     handDeviations_.push_back({}); // parallel per-hand index; deviations on this new slot start empty
     p.hands[handIndex].setSplit(true, splitValue);
 
-    PlayerStats& stats = getStats();
+    // Attribute to the seat that actually split (an NPC splitting must not land in the human's record).
+    PlayerStats& stats = p.getStats();
     stats.splits++;
     stats.betsPlaced++;
     stats.betSum += p.hands[handIndex].getBet(); // new hand inherits bet amount
@@ -587,8 +698,12 @@ void Game::logStrategyDeviation(char actionTaken)
 
     char correct = BasicStrategy::getRecommendedAction(playerValue, dealerUpValue, hasAce, isPair, pairValue);
 
-    PlayerStats& stats = getStats();
+    // Career counts go on the seat that took the action; the Strategy box counts only the human's plays, and only
+    // for this shoe (shoe_ is zeroed at every boundary). NPC play used to be tallied into the human's accuracy.
+    PlayerStats& stats = p.getStats();
     stats.strategyTotal++;
+    if (activePlayerIndex == 0)
+        shoe_.strategyTotal++;
 
     // Set the verdict shown on the Book box after the action completes: green when it matched the book, red when
     // the player deviated. advisorAction holds the book's letter so green/red reads as "book said X, you were right/wrong".
@@ -598,10 +713,14 @@ void Game::logStrategyDeviation(char actionTaken)
     if (actionTaken == correct)
     {
         stats.strategyHits++;
+        if (activePlayerIndex == 0)
+            shoe_.strategyHits++;
     }
     else
     {
         stats.strategyDeviations++;
+        if (activePlayerIndex == 0)
+            shoe_.strategyDeviations++;
         Logger::info() << "Strategy deviation: took " << actionTaken << " but book says " << correct << ".";
         DeviationRecord record;
         record.playerValue = playerValue;
@@ -661,6 +780,16 @@ float Game::activeTrueCount() const
     return BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
 }
 
+float Game::hiLoTrueCount() const
+{
+    // Both systems are counted on every draw (see afterDraw), so the Hi-Lo buffer is always current whichever way
+    // the display is set. The edge model is calibrated in Hi-Lo true-count points, so it uses this.
+    const int hiloRunning = (countingStyle == BasicStrategy::CountingStyle::HI_LO)
+                                ? runningCount
+                                : backgroundRunningCount;
+    return BasicStrategy::computeTrueCount(hiloRunning, static_cast<int>(deck.size()));
+}
+
 int Game::calculateOptimalBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet) const
 {
     // Follow the active counting system's betting pattern: Reko uses its own tiered unit pattern; Hi-Lo keeps
@@ -689,8 +818,11 @@ void Game::confirmBet()
     PlayerStats& stats = getStats();
     stats.betsPlaced++;
     stats.betSum += currentBet;
-    // Feature 3: record this hand's wager into the session bet-distribution histogram (Feature 3).
+    // Feature 3: record this hand's wager into the bet-distribution histogram (Feature 3). The career copy lives in
+    // the saved profile; shoe_ is what the Bets Placed chart reads and is zeroed at every shoe boundary, so the
+    // histogram shows this shoe's wagering spread rather than everything ever bet.
     stats.betDistribution[currentBet]++;
+    shoe_.betDistribution[currentBet]++;
 
     Logger::info() << players[0].getName() << " bets " << players[0].hands[players[0].currentHand].getBet() << ". Remaining bankroll: " << players[0].getBankroll() << ". Running count: " << runningCount << ".";
 
@@ -800,7 +932,7 @@ void Game::deal()
             dealCardToPlayer(p.hands[0]);
         }
     }
-    dealCardToDealer(); // dealer hole card
+    dealCardToDealer(); // dealer's first card: index 0, the face-up UP card (see Hand::getDealerUpCard)
     for (auto& p : players)
     {
         if (p.hands[0].getBet() > 0)
@@ -808,7 +940,7 @@ void Game::deal()
             dealCardToPlayer(p.hands[0]);
         }
     }
-    dealCardToDealer(); // dealer up card
+    dealCardToDealer(); // dealer's second card: the face-down hole card, revealed on the dealer's turn
 
     roundState = RoundState::PlayerTurn;
 
@@ -938,7 +1070,6 @@ void Game::handleEmptyDeck()
     // Save the current (incomplete) shoe record to the profile before reshuffling
     currentShoeRecord.completed = false;
     currentShoeRecord.bankrollAtShoeEnd = players[0].getBankroll();
-    lifetimeBankrollSeries_.push_back(currentShoeRecord.bankrollAtShoeEnd);
     PlayerProfile profile = players[0].getProfile();
     profile.addShoeRecord(currentShoeRecord);
     players[0].updateProfile(profile);
@@ -952,14 +1083,9 @@ void Game::handleEmptyDeck()
     currentShoeRecord.initialDeck = deck.getCards();
     currentShoeRecord.isContinuation = true;
 
-    // A reshuffled continuation is a new shoe: reset the analytics curves so graphs don't accumulate drift.
-    shoeGeneration++;
-    bankrollSeries_.clear();
-    edgeSeries_.clear();
-
-    // Reset running count for the new shoe. Reko is unbalanced and compensated by starting at its per-deck offset.
-    runningCount = (countingStyle == BasicStrategy::CountingStyle::REKO) ? BasicStrategy::rekoStartingOffset(Constants::NUM_DECKS) : 0;
-    gameState = GameState::Started;
+    // A reshuffled continuation is a new shoe: same reset the other boundaries use, so the graphs start from a
+    // flat baseline instead of accumulating drift across the reshuffle.
+    resetShoeAnalytics();
 
     Logger::info() << "New shoe created with " << deck.size() << " cards.";
 }
@@ -1080,9 +1206,7 @@ void Game::dealerTurn()
 
         PlayerProfile profile = players[0].getProfile();
 
-        // Capture the player's bankroll as each shoe completes so the lifetime bankroll progression can be built.
         currentShoeRecord.bankrollAtShoeEnd = players[0].getBankroll();
-        lifetimeBankrollSeries_.push_back(currentShoeRecord.bankrollAtShoeEnd);
         profile.addShoeRecord(currentShoeRecord);
         players[0].updateProfile(profile);
         players[0].saveProfile();

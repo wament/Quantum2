@@ -243,10 +243,15 @@ sf::Vector2f GameRenderer::getPlayerPosition(Game& game, size_t playerIndex, siz
         {7.f, -3.f},   // Player 4
         {6.f, 7.f}     // Player 5
     };
-    // Arrange players in an arc around the table
-    float centerX = Constants::WINDOW_WIDTH / 2.f - 12;
-    float centerY = 700.f;
-    float radius = 400.f;
+    // Arrange players in an arc around the table. The felt -- and the betting rings printed on it -- stretches
+    // with the window, while card sprites stay a fixed 64px, so the arc is expressed as fractions of the window
+    // and fitted so each seat's chip stack lands in its printed ring: radiusX tracks the window width (the rings
+    // spread horizontally), radiusY the height, and centerY absorbs the fixed card-height + chip offset that
+    // sits between a seat anchor and its ring.
+    float centerX = static_cast<float>(Constants::WINDOW_WIDTH) / 2.f - 12;
+    float centerY = static_cast<float>(Constants::WINDOW_HEIGHT) * 0.888f;
+    float radiusX = static_cast<float>(Constants::WINDOW_WIDTH) * 0.286f;
+    float radiusY = static_cast<float>(Constants::WINDOW_HEIGHT) * 0.5f;
 
     // Fixed six-ring projection: reuse the 6-player ring centers so every seat count lands inside a ring.
     const size_t n = 6;
@@ -257,8 +262,8 @@ sf::Vector2f GameRenderer::getPlayerPosition(Game& game, size_t playerIndex, siz
     float angle = startAngle + static_cast<float>(slot) * angleStep;
     float angleRad = angle * 3.14159f / 180.f;
 
-    float x = centerX + radius * sin(angleRad);
-    float y = centerY - radius * cosh(0.78 * angleRad);
+    float x = centerX + radiusX * sin(angleRad);
+    float y = centerY - radiusY * cosh(0.78 * angleRad);
 
     sf::Vector2f offset = (slot < 6) ? playerOffsets[slot] : sf::Vector2f(0.f, 0.f);
     return {x - Constants::PLAYER_X + offset.x, y - Constants::PLAYER_Y + offset.y};

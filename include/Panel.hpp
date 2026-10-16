@@ -21,6 +21,10 @@ public:
     // to the real panel size instead of hard-coding geometry that breaks if the panel dimensions ever change.
     sf::Rect<float> bounds() const;
 
+    // Read-only view of the boxes owned by this panel, so layout (and layout tests) can measure real box bounds
+    // instead of re-deriving them. The Panel keeps ownership; callers must not delete.
+    const std::vector<StatBox*>& statBoxes() const;
+
     StatBox* addStatBox(const std::string& title);
 
     void draw(sf::RenderWindow& window);

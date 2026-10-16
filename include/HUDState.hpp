@@ -23,8 +23,10 @@ struct HUDState
     float kellyFraction = 0.33f;
     bool riskSliderDragging = false;
 
-    // Left Panel
-    const PlayerStats* playerStats = nullptr;
+    // The per-shoe analytics snapshot (Game::shoe_): backs the Std Dev / Long Win / Long Loss / Edge % / Strategy
+    // boxes and the Bets Placed histogram. Game zeroes it at every shoe boundary, so every readout except
+    // Bankroll restarts with the new shoe.
+    const ShoeAnalytics* shoeAnalytics = nullptr;
 
     // Right Panel
     const ShoeRecord* currentShoe = nullptr;
@@ -43,16 +45,14 @@ struct HUDState
     // Verdict on the Book box after a completed action: Correct -> green, Deviated -> red. None while advising live.
     AdvisorFeedback advisorFeedback = AdvisorFeedback::None;
 
-    // Advanced Analytics dashboard values (Feature 3). stdDev and edge are derived live; streaks and series come
-    // from the player's incremental trackers and feed the HUD chart + stat boxes.
-    double analyticsStdDev = 0.0;   // standard deviation of per-hand net profits
-    int longestWinningStreak = 0;
-    int longestLosingStreak = 0;
-    double edgePercent = 0.0;       // estimated player edge over the current session, as a percentage
-    std::vector<float> bankrollSeries; // cumulative net profit per round (bankroll curve for the chart)
-    std::vector<double> edgeSeries;    // cumulative estimated edge per round (edge-tracking chart)
-    std::vector<int> lifetimeBankroll; // player bankroll captured at each completed shoe (lifetime bankroll progression overlay)
-    std::vector<float> trueCountPerRound_; // raw true count per round (backs the Edge chart secondary view)
+    // Advanced Analytics dashboard values (Feature 3), all derived from ShoeAnalytics and therefore all per-shoe:
+    // they return to their baseline the moment a new shoe starts.
+    double analyticsStdDev = 0.0;   // standard deviation of this shoe's per-hand net profits
+    int longestWinningStreak = 0;   // longest winning run this shoe
+    int longestLosingStreak = 0;    // longest losing run this shoe
+    double edgePercent = 0.0;       // live estimated player edge (%), read from the current count
+    std::vector<float> bankrollSeries; // your cumulative net profit per round this shoe (bankroll curve)
+    std::vector<double> edgeSeries;    // estimated edge sampled once per round of the current shoe (a level)
 
     // Human-readable name of the active counting style (e.g. "Hi-Lo"/"Reko"), used to title the Count box.
     std::string countingStyleName;

@@ -262,5 +262,13 @@ namespace BasicStrategy
             decksRemaining = 0.5f;
         return static_cast<float>(runningCount) / decksRemaining;
     }
+
+    float estimateEdgePercent(float trueCount)
+    {
+        // Linear in the count: the fresh-shoe edge plus the count's worth of player advantage. Deliberately not
+        // summed across rounds - each caller samples this at the moment it matters.
+        return static_cast<float>(Constants::BASE_PLAYER_EDGE_PERCENT +
+                                  Constants::EDGE_PERCENT_PER_TRUE_COUNT * static_cast<double>(trueCount));
+    }
 }
 

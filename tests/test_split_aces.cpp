@@ -141,7 +141,7 @@ TEST_CASE("Split ace plus a face card is 21 but not a 3:2 blackjack", "[SplitAce
 
     // Confirms the payout contract: even money (bet * 2), never 3:2 (which would be bet * 2.5).
     int payout = 0;
-    SettlementResult result = p.settle(hand0, /*dealerValue=*/20, /*dealerBust=*/false, payout);
+    SettlementResult result = p.settle(hand0, /*dealerValue=*/20, /*dealerBust=*/false, /*dealerHasBlackjack=*/false, payout);
     CHECK(result == SettlementResult::Win);
     CHECK(payout == hand0.getBet() * 2);
 

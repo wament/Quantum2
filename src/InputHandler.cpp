@@ -55,6 +55,10 @@ void InputHandler::activatePauseOption(Game &game, PauseOption option)
     }
     case PauseOption::QuitToMenu:
     {
+        // Stamp the current table settings first: this is the last save on the way out, so it is what makes
+        // the player count / speed / counting style survive to the next launch.
+        game.rememberTableSettings();
+
         PlayerProfile profile = game.players[0].getProfile();
         profile.addShoeRecord(game.currentShoeRecord);
         game.players[0].updateProfile(profile);
@@ -281,6 +285,10 @@ void InputHandler::processGameEvents(const sf::Event& event)
     {
         // Clicking the count-style label ("Count (Hi-Lo)") toggles which counting system is shown. Both
         // systems are counted in the background, so this just swaps which buffer drives the active count.
+        //
+        // This is the only clickable HUD element. The left-panel charts are display-only: their click-to-swap
+        // secondary "overlay" views are gone (each one hid the primary series it was drawn over without adding
+        // anything legible), so the graph panes no longer take clicks and need no hit-testing here.
         if (clicked->button == sf::Mouse::Button::Left)
         {
             sf::Vector2f world = game.window.mapPixelToCoords(sf::Mouse::getPosition(game.window));
@@ -288,15 +296,6 @@ void InputHandler::processGameEvents(const sf::Event& event)
             {
                 game.toggleCountingStyle();
             }
-
-            // Clicking a graph pane toggles its secondary overlay view (see HUD::toggleGraphSecondary). The panes are
-            // the stacked charts on the left; hit-testing uses their screen-space bounds reported by the HUD.
-            for (const auto& pane : game.hud.graphPaneBounds())
-                if (pane.first.contains(world))
-                {
-                    game.hud.toggleGraphSecondary(pane.second);
-                    break;
-                }
         }
     }
 
@@ -306,25 +305,14 @@ void InputHandler::processGameEvents(const sf::Event& event)
         {
             if (game.gameState == GameState::GameOver)
             {
+                // Fresh shoe. startNewShoe() is the single shoe-boundary path shared by auto-play, the mid-shoe
+                // reshuffle and a new game: it rebuilds the shoe AND resets the per-shoe analytics (the
+                // shoeGeneration recalibration signal, the bankroll/edge series and the running count), so the
+                // Edge % readout and the Edge Over Time curve fall back to their baseline here instead of carrying
+                // the previous shoe's drift forward. The player's bankroll is deliberately kept: this continues the
+                // same session rather than restarting the game.
                 Logger::info() << "Starting new shoe.";
-                game.deck.create(Constants::NUM_DECKS);
-                game.deck.shuffle();
-                game.currentShoeRecord.initialDeck = game.deck.getCards();
-                // A fresh shoe: reset the per-shoe analytics and running count so the bankroll/edge graphs start
-                // from zero instead of carrying the previous shoe's values forward. This mirrors handleEmptyDeck()
-                // / startNewGame(): incrementing shoeGeneration is the HUD's recalibration signal, and clearing the
-                // series ensures edgePercent + the edge curve reset as soon as new rounds repopulate them. The
-                // lifetime bankroll series is intentionally NOT cleared here — it is meant to span shoes within a
-                // game session (it only resets on startNewGame(), which starts a brand-new game). This path keeps
-                // the player's accumulated bankroll because it continues the same session rather than restarting.
-                game.shoeGeneration++;
-                game.bankrollSeries_.clear();
-                game.edgeSeries_.clear();
-                game.trueCountPerRound_.clear();
-                game.shoeCumulativeWinLoss = 0;
-                game.runningCount = (game.countingStyle == BasicStrategy::CountingStyle::REKO)
-                                        ? BasicStrategy::rekoStartingOffset(Constants::NUM_DECKS) : 0;
-                game.gameState = GameState::Started;
+                game.startNewShoe();
             }
             else if (game.roundState == RoundState::Cleanup && game.gameState != GameState::LastHand)
             {

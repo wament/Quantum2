@@ -240,11 +240,11 @@ void Player::lowerInsurance()
         hands[currentHand].setInsuranceBet(current - 1);
 }
 
-SettlementResult Player::settle(const Hand& hand, int dealerValue, bool dealerBust, int& payout)
+SettlementResult Player::settle(const Hand& hand, int dealerValue, bool dealerBust, bool dealerHasBlackjack, int& payout)
 {
     // Only a natural (2-card) unsplit blackjack pays 3:2. A split hand that totals 21 is not treated
     // as one and settles at even money — the !hand.isSplit() guard drives every branch below.
-    bool isNaturalBlackjack = hand.isBlackjack() && !hand.isSplit();
+    const bool isNaturalBlackjack = hand.isBlackjack() && !hand.isSplit();
 
     if (hand.isSurrendered())
     {
@@ -252,25 +252,34 @@ SettlementResult Player::settle(const Hand& hand, int dealerValue, bool dealerBu
         payout = hand.getBet() / 2;
         return SettlementResult::Surrender;
     }
+
+    // A natural blackjack is ranked against the dealer's hand TYPE, not against the dealer's TOTAL: it
+    // beats every non-natural hand, including a dealer 21 built from three or more cards, and only
+    // pushes against the dealer's own natural. Falling through to the total comparison below used to
+    // score "my blackjack vs a dealer that drew to 21" as a 21-vs-21 push.
+    if (isNaturalBlackjack)
+    {
+        if (dealerHasBlackjack)
+        {
+            payout = hand.getBet();
+            return SettlementResult::Push;
+        }
+
+        winBet(hand.getBet() * Constants::BLACKJACK_PAYOUT);
+        payout = hand.getBet() * (1 + Constants::BLACKJACK_PAYOUT);
+        return SettlementResult::Win;
+    }
+
     if (hand.isBust() || (hand.getValue() < dealerValue && !dealerBust))
     {
-        if (!isNaturalBlackjack)
-            loseBet(hand.getBet());
+        loseBet(hand.getBet());
         payout = 0;
         return SettlementResult::Lose;
     }
     if (hand.getValue() > dealerValue || dealerBust)
     {
-        if (isNaturalBlackjack)
-        {
-            winBet(hand.getBet() * Constants::BLACKJACK_PAYOUT);
-            payout = hand.getBet() * (1 + Constants::BLACKJACK_PAYOUT);
-        }
-        else
-        {
-            winBet(hand.getBet());
-            payout = hand.getBet() * 2;
-        }
+        winBet(hand.getBet());
+        payout = hand.getBet() * 2;
         return SettlementResult::Win;
     }
 

@@ -58,6 +58,8 @@ struct PlayerStats
     int winsAfterDeviation = 0;
 
     // Advanced analytics live trackers (Feature 3), updated once per settled hand so they persist and stay O(1).
+    // These are the CAREER record written to the profile on disk; the HUD's Std Dev / Long Win / Long Loss boxes
+    // read Game::ShoeAnalytics instead, which restarts at every shoe boundary.
     int greatestHandLoss = 0;          // worst single-hand net profit (<= 0)
     int longestWinningStreak = 0;      // longest run of winning hands, ever
     int longestLosingStreak = 0;       // longest run of losing hands, ever
@@ -65,9 +67,48 @@ struct PlayerStats
     long long handProfitSum = 0;       // sum of per-hand net profits (mean * count)
     long long handProfitSumSq = 0;     // sum of squared per-hand net profits (for variance/std dev)
 
-    // Bet sizes placed during the session, keyed by bet value -> frequency. Backs the Feature 3 bet-distribution
-    // histogram; accumulated over the whole session and persisted across shoes/sessions (not reset between rounds).
+    // Bet sizes placed, keyed by bet value -> frequency. This is the career copy kept in the saved profile; the
+    // Feature 3 bet-distribution chart reads ShoeAnalytics::betDistribution, which restarts at every shoe.
     std::map<int, int> betDistribution;
+};
+
+// Per-shoe analytics: every number the HUD reports EXCEPT the bankroll, which is the only value that carries
+// across a shoe boundary. Game owns one of these and Game::resetShoeAnalytics() zeroes the whole struct at every
+// boundary (new game, R at end of shoe, auto-play advance, mid-shoe reshuffle), so Edge %, Std Dev, Long Win,
+// Long Loss, Count, Streak, Strategy % and the Bets Placed histogram all restart with the shoe instead of
+// drifting upward across shoes and sessions.
+//
+// This is deliberately separate from PlayerStats: that struct is the persisted career record written to the
+// profile on disk (and read back at launch), so it must never be zeroed mid-session. Nothing on the HUD reads it.
+struct ShoeAnalytics
+{
+    // Std Dev box: variance of per-hand net profit is derived from these (variance = E[x^2] - (E[x])^2).
+    long long handProfitCount = 0;
+    long long handProfitSum = 0;
+    long long handProfitSumSq = 0;
+
+    // Long Win / Long Loss boxes: the running hand-to-hand streaks plus this shoe's longest runs.
+    int currentWinStreak = 0;
+    int currentLoseStreak = 0;
+    int longestWinningStreak = 0;
+    int longestLosingStreak = 0;
+
+    // Streak box on the bottom bar: the round-to-round streak, human seat only.
+    int roundStreak = 0;
+    bool roundStreakIsWin = false;
+
+    // Strategy box: basic-strategy accuracy over this shoe, human seat only.
+    int strategyHits = 0;
+    int strategyDeviations = 0;
+    int strategyTotal = 0;
+
+    // Bets Placed histogram: this shoe's wagers, bet value -> frequency.
+    std::map<int, int> betDistribution;
+
+    // Left-panel graph series: cumulative net profit per round (bankroll curve, human seat only) and the estimated
+    // edge sampled once per round. The edge is a level re-read from the count each round, not a running total.
+    std::vector<float> bankrollSeries;
+    std::vector<double> edgeSeries;
 };
 
 struct HandOutcome

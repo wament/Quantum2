@@ -469,7 +469,7 @@ TEST_CASE("Split ace + ten-value card reaching 21 pays even money, not 3:2", "[G
     CHECK(!splitHand.isBlackjack());
 
     int payout = 0;
-    SettlementResult result = splitPlayer.settle(splitHand, /*dealerValue=*/20, /*dealerBust=*/false, payout);
+    SettlementResult result = splitPlayer.settle(splitHand, /*dealerValue=*/20, /*dealerBust=*/false, /*dealerHasBlackjack=*/false, payout);
     CHECK(result == SettlementResult::Win);
     CHECK(payout == 200);   // even money (bet * 2), NOT 3:2 (which would be bet * 2.5 = 250)
 }
@@ -489,7 +489,7 @@ TEST_CASE("Split face pair reaching 21 pays even money, not 3:2", "[Game][Split]
     CHECK(!splitHand.isBlackjack());
 
     int payout = 0;
-    SettlementResult result = splitPlayer.settle(splitHand, /*dealerValue=*/20, /*dealerBust=*/false, payout);
+    SettlementResult result = splitPlayer.settle(splitHand, /*dealerValue=*/20, /*dealerBust=*/false, /*dealerHasBlackjack=*/false, payout);
     CHECK(result == SettlementResult::Win);
     CHECK(payout == 200);   // even money, NOT 3:2
 }
@@ -508,7 +508,7 @@ TEST_CASE("Natural Ace + face pays 3:2", "[Game][Blackjack][Payout]")
     CHECK(bj.isBlackjack());
 
     int payout = 0;
-    SettlementResult result = human.settle(bj, /*dealerValue=*/20, /*dealerBust=*/false, payout);
+    SettlementResult result = human.settle(bj, /*dealerValue=*/20, /*dealerBust=*/false, /*dealerHasBlackjack=*/false, payout);
     CHECK(result == SettlementResult::Win);
     CHECK(payout == 250);   // 3:2 (bet * 2.5)
 }

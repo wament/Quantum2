@@ -68,6 +68,9 @@ class Game
     // cards plus the dealer up-card from the injected shoe), leaving roundState at PlayerTurn when the
     // dealer's up-card is not an ace. Used to exercise split/hit/stand end-to-end without SFML.
     void startTestRound();
+    // Same, but seats up `seats - 1` extra in-memory NPC seats (Alice, Bob, ... from NPC_CONFIGS) behind the human.
+    // Used by the analytics tests to prove the HUD readouts follow the human seat alone and ignore the NPCs.
+    void startTestRound(int seats);
 
     const Hand& testHand(size_t playerIndex, size_t handIndex) const; // read a player hand back
     Player& testPlayer(int index = 0) { return players[index]; }      // mutate/read a player (bankroll etc.)
@@ -78,6 +81,30 @@ class Game
     // Feature 1: expose the advisor verdict set by logStrategyDeviation (the source of the Book box color).
     AdvisorFeedback advisorFeedbackForTest() const { return advisorFeedback; }
     char advisorActionForTest() const { return advisorAction; }
+
+    // Feature 3: the per-shoe analytics + the shoe-recalibration counter, exposed so tests can assert every readout
+    // (edge readout, Edge Over Time curve, streaks, std dev, strategy %, bet histogram) actually returns to
+    // baseline at a shoe boundary — and that nothing else clears them mid-shoe.
+    // updateHUDStateForTest/edgePercentForTest/hudStateForTest read back what the stat boxes show.
+    const std::vector<double>& edgeSeriesForTest() const { return shoe_.edgeSeries; }
+    const std::vector<float>& bankrollSeriesForTest() const { return shoe_.bankrollSeries; }
+    const ShoeAnalytics& shoeAnalyticsForTest() const { return shoe_; }
+    int runningCountForTest() const { return runningCount; }
+    int backgroundCountForTest() const { return backgroundRunningCount; }
+    float hiLoTrueCountForTest() const { return hiLoTrueCount(); }
+    const HUDState& hudStateForTest() const { return hudState; }
+    int shoeGenerationForTest() const { return shoeGeneration; }
+    // Drive the real shoe boundary (the same path the R key and auto-play advance take) from a test.
+    void startNewShoeForTest() { startNewShoe(); }
+    // Deal the next round at the same table without touching the shoe (what R does between rounds).
+    void nextRoundForTest() { nextRound(); }
+    void updateHUDStateForTest() { updateHUDState(); }
+    double edgePercentForTest() const { return hudState.edgePercent; }
+
+    // Table settings as they stand after the profile was applied at launch.
+    int playerCountForTest() const { return playerCount; }
+    int gameSpeedForTest() const { return static_cast<int>(gameSpeed); }
+    int countingStyleForTest() const { return static_cast<int>(countingStyle); }
 
     // ---------------- Player Actions (public so the round-state machine and tests can drive them) ----
 
@@ -181,25 +208,34 @@ class Game
     // Popped into by logStrategyDeviation so evaluation can stamp DeviationRecord.won and count winsAfterDeviation.
     std::vector<std::vector<DeviationRecord>> handDeviations_;
 
-    // Advanced analytics series (Feature 3), accumulated per settled round and fed to the HUD chart/edge displays.
-    // Cleared whenever a new shoe begins so the curves reflect one shoe instead of growing without bound.
-    std::vector<float> bankrollSeries_; // cumulative net profit after each round (bankroll curve)
-    std::vector<double> edgeSeries_;    // cumulative estimated player edge (%) over time
-    std::vector<float> trueCountPerRound_; // raw true count per round (backs the Edge chart secondary view)
-    std::vector<int> lifetimeBankrollSeries_; // player bankroll captured at each completed shoe (lifetime bankroll progression)
+    // Everything the HUD stat boxes + left-panel graphs report for the CURRENT shoe only: std-dev accumulators,
+    // the hand-to-hand and round-to-round streaks, strategy accuracy, the bet distribution and both graph series.
+    // resetShoeAnalytics() zeroes the whole struct, which is why the bankroll is the only value that carries over.
+    ShoeAnalytics shoe_;
 
-    // Bumped every time a new shoe begins (startNewGame or a mid-session reshuffle). Exposed to the HUD via
-    // HUDState::currentShoeId as the per-shoe recalibration signal; also drives clearing bankrollSeries_/edgeSeries_.
+    // Bumped every time a new shoe begins (new game, R at end of shoe, auto-play, mid-shoe reshuffle). Exposed to
+    // the HUD via HUDState::currentShoeId as the per-shoe recalibration signal. Every boundary that bumps it also
+    // zeroes shoe_ and re-seeds both running counts (see resetShoeAnalytics).
     int shoeGeneration = 0;
-
-    // Persistent current hand win/lose streaks for analytics (Feature 3). They survive across rounds/shoes within a
-    // session so "longest winning/losing streak" reflects the whole session; longest records live in PlayerStats.
-    int handWinStreak = 0;
-    int handLoseStreak = 0;
 
     // ---------------- Setup ----------------
 
     void startNewGame();
+
+    // Table settings persistence. applySavedTableSettings() seeds playerCount / gameSpeed / countingStyle
+    // from the profile loaded at launch, so the main menu opens on what the player last played with.
+    // rememberTableSettings() writes the current choices back into the profile; it runs at every point the
+    // profile is already being saved, so a settings change survives the session with no extra I/O.
+    void applySavedTableSettings();
+    void rememberTableSettings();
+
+    // Shoe boundaries. resetShoeAnalytics() is the ONE place a shoe boundary is handled: it bumps the recalibration
+    // signal, clears the per-shoe analytics curves (so the edge readout + Edge Over Time chart return to baseline)
+    // and re-seeds the running count for the new shoe. startNewShoe() layers a freshly created + shuffled shoe and
+    // a new shoe record on top of it. Every path that begins a shoe (new game, R at end of shoe, auto-play, the
+    // mid-shoe reshuffle) goes through these, so no boundary can silently skip the reset.
+    void resetShoeAnalytics();
+    void startNewShoe();
 
     void loadAssets();
 
@@ -232,6 +268,13 @@ class Game
     // count ("the true count is the running count"), Hi-Lo normalizes by decks remaining. Drives the human's
     // auto-bet paths (manual Left-arrow bet and AutoPlay) so Reko betting follows its spec tiered pattern.
     float activeTrueCount() const;
+
+    // The Hi-Lo true count regardless of which style is on screen: `runningCount` holds the active system's count
+    // and `backgroundRunningCount` the other one (see afterDraw). The edge estimate is calibrated against Hi-Lo
+    // true counts, so the Edge % box and the Edge Over Time chart read from this rather than from the displayed
+    // count - feeding Reko's raw (unbalanced, offset) count into that calibration would put the readout wildly
+    // out of range on the first round of every shoe.
+    float hiLoTrueCount() const;
 
   private:
     void confirmInsurance();

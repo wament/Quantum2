@@ -1,6 +1,7 @@
 #pragma once
 
 #include <SFML/Graphics.hpp>
+#include <map>
 #include <vector>
 #include <utility>
 
@@ -24,16 +25,28 @@ public:
     // World-space bounds of the Counting Style toggle box (label + value), used for click hit-testing.
     sf::FloatRect countTitleBounds() const;
 
-    // Clicking a graph pane toggles its secondary overlay view (see toggleGraphSecondary()). Pane identity is
-    // exposed so InputHandler can map a click to the correct chart; the display state itself lives in the HUD.
-    enum class GraphPane { Bankroll, Edge, Bets };
+    // Screen-space bounds of the three graph panes, in draw order (top to bottom). The panes are display-only —
+    // they are no longer clickable — but the bounds are exposed so the layout tests can assert they tile the left
+    // panel evenly.
+    std::vector<sf::Rect<float>> chartPaneBounds() const;
 
-    // Click-to-change views: toggles which secondary overlay (if any) is drawn on a graph pane. Called from
-    // InputHandler when a left-click lands inside a pane's bounds. Display-only state — no game logic changes.
-    void toggleGraphSecondary(GraphPane pane);
+    // Bets Placed histogram bucketing. The raw distribution holds one column per distinct wager, which renders as a
+    // bar per unique bet size and is unreadable. Bets are folded into `bucketCount` evenly spaced ranges spanning
+    // [0, maxBet], so the chart always shows the same number of evenly spaced bars no matter which sizes were
+    // wagered. Pure and static so it can be unit-tested directly.
+    static std::vector<int> bucketBetDistribution(const std::map<int, int>& distribution, int bucketCount, int maxBet);
 
-    // Screen-space bounds of each graph pane, in draw order, for input hit-testing (see InputHandler).
-    std::vector<std::pair<sf::Rect<float>, GraphPane>> graphPaneBounds() const;
+    // Screen-space bounds of the three HUD panels. Exposed so hit-testing and the layout tests can measure the real
+    // panels (asserting the side panels stay symmetric and that content stays inside its panel) rather than
+    // re-deriving coordinates the way hard-coded geometry used to.
+    sf::Rect<float> leftPanelBounds() const;
+    sf::Rect<float> rightPanelBounds() const;
+    sf::Rect<float> bottomPanelBounds() const;
+
+    // Read-only views of the boxes each panel owns (see Panel::statBoxes). Used by the layout tests to measure real
+    // rendered box bounds and assert the distribution stays even; the panels keep ownership.
+    const std::vector<StatBox*>& rightPanelStatBoxes() const;
+    const std::vector<StatBox*>& bottomPanelStatBoxes() const;
 
 private:
     bool m_showLeft = true;
@@ -66,31 +79,25 @@ private:
     StatBox *m_edgeBox = nullptr;     // latest estimated player edge (%)
 
     std::vector<float> m_bankrollSeries;   // bankroll curve: cumulative net profit per round
-    std::vector<double> m_edgeSeries;      // edge-tracking series: cumulative estimated edge per round
-    std::vector<double> m_lifetimeBankroll; // lifetime bankroll progression (one point per completed shoe) for the Bankroll overlay
+    std::vector<double> m_edgeSeries;      // edge chart: estimated edge sampled once per round (a level)
     double m_analyticsStdDev = 0.0;        // standard deviation of per-hand net profits
     int m_longestWinStreak = 0;            // longest winning streak, session-long
     int m_longestLoseStreak = 0;           // longest losing streak, session-long
-    double m_edgePercent = 0.0;            // latest cumulative estimated edge (%)
-    std::vector<std::pair<int, int>> m_betDistribution; // (bet size, frequency) for the histogram
-    // Full per-bet-size distribution includes the minimum bet as a major outlier, so the chart plots this filtered
-    // copy (min-bet column removed) and reports how many min bets were placed via m_minBetCount instead.
-    std::vector<std::pair<int, int>> m_betsPlotDistribution; // same data without the minimum-bet column
-    int m_minBetCount = 0;                 // number of minimum-bet hands placed this session (shown beside the title)
+    double m_edgePercent = 0.0;            // current estimated edge (%), live off the count
 
-    // Per-shoe graph recalibration: remembers the last HUDState::currentShoeId seen so we can reset the chart
-    // series exactly when a new shoe begins. -1 = never initialised yet.
-    int m_lastShoeId = -1;
+    // Bets Placed histogram, pre-bucketed into Constants::Hud::BET_BUCKET_COUNT evenly spaced wager ranges by
+    // bucketBetDistribution(). m_betBucketWidth is the width of one range in chips, used for the x-axis labels.
+    std::vector<int> m_betHistogram;
+    int m_betBucketWidth = 0;
 
-    // Per-pane graph geometry + secondary-overlay toggles for click-to-change views. Geometry is recomputed each
-    // frame from the left panel bounds; the flags are display-only and owned here (no game-logic feedback).
+    // Per-shoe graph reset is owned by Game (Game::resetShoeAnalytics zeroes the whole ShoeAnalytics struct at
+    // every shoe boundary), so the series copied in above are already per-shoe and the HUD keeps no shoe
+    // bookkeeping of its own.
+
+    // Per-pane graph geometry, recomputed each frame from the left panel bounds so it tracks the panel size.
     sf::Rect<float> m_bankrollChartRect{};
     sf::Rect<float> m_edgeChartRect{};
     sf::Rect<float> m_betsChartRect{};
-    bool m_bankrollShowSecondary = false;  // per-round net-profit swings overlay
-    bool m_edgeShowSecondary = false;      // raw true-count signal overlay
-    bool m_betsShowSecondary = false;      // cumulative-distribution overlay
-    std::vector<double> m_trueCountPerRound_;   // raw true count per round (backs the Edge chart secondary)
 
     // Controls display
     sf::Text *m_controlsText = nullptr;

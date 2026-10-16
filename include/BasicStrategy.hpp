@@ -35,4 +35,13 @@ namespace BasicStrategy
     int updateCount(int currentCount, const int bjValue, CountingStyle style);
 
     float computeTrueCount(int runningCount, int cardsRemaining); //hi-lo
+
+    // The player's estimated edge, as a percentage, at a given true count. This is a LEVEL, not a total: the
+    // Edge Over Time chart re-estimates it every round from the count as it stands, so the curve wobbles around
+    // the baseline instead of ramping up round after round. At true count 0 it is the fresh-shoe figure
+    // (Constants::BASE_PLAYER_EDGE_PERCENT, about -0.5% for basic strategy), moving by
+    // Constants::EDGE_PERCENT_PER_TRUE_COUNT per point of count.
+    // `trueCount` must be a Hi-Lo true count - that is what the calibration is measured against. Reko is
+    // unbalanced and its raw running count is not on the same scale.
+    float estimateEdgePercent(float trueCount);
 }

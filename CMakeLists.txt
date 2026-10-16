@@ -150,6 +150,11 @@ add_executable(Blackjack2Tests
     tests/test_reko_counting.cpp
     tests/test_advisor_feedback.cpp
     tests/test_analytics_betting.cpp
+    tests/test_analytics_charts.cpp
+    tests/test_shoe_analytics.cpp
+    tests/test_blackjack_settlement.cpp
+    tests/test_hud_layout.cpp
+    tests/test_profile_settings.cpp
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)

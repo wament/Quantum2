@@ -21,6 +21,14 @@ public:
     // Recolor the value text (e.g. yellow true count when Reko is active). Non-const; matches draw().
     void setValueColor(sf::Color color);
 
+    // Full vertical extent of the box (title line + value line). Position-independent, so callers can use it to
+    // center/distribute boxes inside a panel before placing them.
+    float blockHeight() const;
+
+    // The box's placement anchor (top-left of its title line). Layout code positions boxes, so layout checks read
+    // this rather than the rendered bounds, which hug the actual glyphs and shift with descenders.
+    sf::Vector2f getPosition() const;
+
     void setPosition(sf::Vector2f position);
 
     void draw(sf::RenderWindow &window);
@@ -30,4 +38,8 @@ private:
     sf::Text *m_value = nullptr;
 
     std::string m_titleText;
+
+    // Vertical pitch between the title line and the value line, derived from the font size in initialize() so the
+    // box stays proportional when the HUD font is scaled.
+    float m_lineGap = 18.f;
 };

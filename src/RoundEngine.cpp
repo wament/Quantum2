@@ -20,13 +20,12 @@ void RoundEngine::tick(float deltaTime, Game& game)
         if (game.hudState.afterShoeTimer <= 0.0f)
         {
             Logger::info() << "Auto-play: starting new shoe.";
-            game.deck.create(Constants::NUM_DECKS);
-            game.deck.shuffle();
-            game.currentShoeRecord.initialDeck = game.deck.getCards();
-            game.currentShoeRecord.rounds.clear();
-            game.runningCount = 0;
-            game.shoeCumulativeWinLoss = 0;
-            game.gameState = GameState::Started;
+            // startNewShoe() is the shared shoe boundary: it rebuilds + shuffles the shoe, starts a fresh shoe
+            // record, and runs resetShoeAnalytics() (shoeGeneration++, clears the bankroll/edge series, re-seeds the
+            // running count for the active style). This path used to hand-roll only part of that — it left the edge
+            // series and the recalibration signal untouched, so the Edge % readout and the Edge Over Time chart kept
+            // the previous shoe's drift instead of returning to baseline.
+            game.startNewShoe();
             game.nextRound();
         }
     }
