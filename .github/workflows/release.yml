@@ -1,0 +1,201 @@
+name: Release (Build & Publish)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  build-macos:
+    runs-on: macos-latest
+    env:
+      VCPKG_INSTALLATION_DIRECTORY: ${{ github.workspace }}/vcpkg
+      VCPKG_DEFAULT_TRIPLET: arm64-osx
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache vcpkg packages (arm64-osx)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed
+            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/packages
+            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/downloads
+          key: "${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-${{ github.sha }}"
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-
+
+      - name: Install vcpkg tool (uses binary cache via ensure-baseline)
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
+          cd "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
+          ./bootstrap-vcpkg.sh
+          ./vcpkg ensure-baseline
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -G "Unix Makefiles" \
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_INSTALLATION_DIRECTORY }}/scripts/buildsystems/vcpkg.cmake" \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Package macOS
+        run: |
+          APP_DIR="Blackjack2.app"
+          MACOS_DIR="$APP_DIR/Contents/MacOS"
+          RESOURCES_DIR="$APP_DIR/Contents/Resources"
+
+          mkdir -p "$MACOS_DIR"
+          mkdir -p "$RESOURCES_DIR/assets"
+
+          cp build/Blackjack2 "$MACOS_DIR/"
+          cp -R assets "$RESOURCES_DIR/assets"
+
+          mkdir -p "$APP_DIR/Contents/Frameworks"
+          vcpkg_lib="${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed/arm64-osx/lib"
+
+          cp -R "$vcpkg_lib"/SFML-*.framework "$APP_DIR/Contents/Frameworks/" || true
+
+          if [ -f "$vcpkg_lib/libfreetype.dylib" ]; then
+            cp "$vcpkg_lib/libfreetype.dylib" "$APP_DIR/Contents/Frameworks/"
+          fi
+          if [ -d "$vcpkg_lib/freetype.framework" ]; then
+            cp -R "$vcpkg_lib/freetype.framework" "$APP_DIR/Contents/Frameworks/"
+          fi
+
+          if [ -d "$APP_DIR/Contents/Frameworks" ]; then
+            install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/Blackjack2"
+
+            for fw in "$APP_DIR/Contents/Frameworks/"*.framework; do
+              if [ -f "$fw/$(basename $fw .framework)" ]; then
+                install_name_tool -add_rpath "@executable_path/../Frameworks" "$fw/$(basename $fw .framework)" || true
+              fi
+            done
+          fi
+
+          hdiutil create -volname "Blackjack2" -srcfolder "$APP_DIR" -ov -format UDZO "Blackjack2-macOS.dmg"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-build
+          path: Blackjack2-macOS.dmg
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    env:
+      VCPKG_INSTALLATION_DIRECTORY: ${{ github.workspace }}/vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache vcpkg packages (x64-windows)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed
+            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/packages
+            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/downloads
+          key: "${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-${{ github.sha }}"
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-
+
+      - name: Install vcpkg tool (uses binary cache via ensure-baseline)
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
+          cd "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
+          .\bootstrap-vcpkg.bat
+          .\vcpkg.exe ensure-baseline
+
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          $toolchain = Join-Path $env:VCPKG_INSTALLATION_DIRECTORY "scripts/buildsystems/vcpkg.cmake"
+          cmake -B build --toolchain $toolchain -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Package Windows
+        shell: pwsh
+        run: |
+          # Build outputs to build/Release under the MSVC generator.
+          $vcpkgBin = "$env:VCPKG_INSTALLATION_DIRECTORY/installed/x64-windows/bin"
+          Write-Host "Looking for DLLs in: $vcpkgBin"
+
+          if (-not (Test-Path -LiteralPath $vcpkgBin)) {
+              throw "Could not find vcpkg bin directory at $vcpkgBin"
+          }
+
+          $buildDir = "build/Release"
+          $pkgDir = "package"
+          New-Item -ItemType Directory -Path $pkgDir -Force
+
+          Copy-Item "$buildDir/Blackjack2.exe" $pkgDir
+          Copy-Item -Recurse assets "$pkgDir/assets"
+
+          Write-Host "Copying DLLs from: $vcpkgBin"
+          Get-ChildItem -Path $vcpkgBin -Filter "*.dll" | ForEach-Object {
+              Copy-Item $_.FullName "$pkgDir/" -Force
+              Write-Host "Copied: $($_.Name)"
+          }
+
+          Compress-Archive -Path "$pkgDir/*" -DestinationPath "Blackjack2-Windows.zip"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: Blackjack2-Windows.zip
+          if-no-files-found: error
+
+  release:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-build
+          path: dist/macos-build
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-build
+          path: dist/windows-build
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ secrets.RELEASE_REPO_OWNER }}/${{ secrets.RELEASE_REPO_NAME }}
+          token: ${{ secrets.RELEASE_REPO_TOKEN }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          files: |
+            dist/macos-build/Blackjack2-macOS.dmg
+            dist/windows-build/Blackjack2-Windows.zip
+          generate_release_notes: true

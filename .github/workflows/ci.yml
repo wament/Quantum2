@@ -1,0 +1,75 @@
+name: CI (Build & Test)
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Single-platform fast gate. Uses vcpkg so SFML is guaranteed to be 3.x,
+# matching the CMakeLists find_package(SFML 3.0 REQUIRED).
+jobs:
+  build-test-linux:
+    runs-on: ubuntu-latest
+    env:
+      VCPKG_INSTALLATION_DIRECTORY: ${{ github.workspace }}/vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-linux
+      LD_LIBRARY_PATH: '${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed/x64-linux/bin:${{ env.LD_LIBRARY_PATH }}'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install SFML system dependencies (for vcpkg's dynamic SFML)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon-x11-dev libxcursor-dev libxi-dev libxinerama-dev \
+            libgl1-mesa-dev libglw4-mesa-dev libglx-mesa0 \
+            libasound2-dev libalsa-oss2 \
+            libfreetype-dev libpng-dev
+
+      - name: Cache vcpkg packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed
+            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/packages
+            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/downloads
+          key: "${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-${{ github.sha }}"
+          restore-keys: |
+            ${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-
+
+      - name: Install vcpkg tool (uses binary cache via ensure-baseline)
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
+          cd "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
+          ./bootstrap-vcpkg.sh
+          ./vcpkg ensure-baseline
+
+      - name: Cache CMake build (Catch2 deps)
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/build
+          key: "${{ runner.os }}-cmake-${{ hashFiles('**/CMakeLists.txt', 'vcpkg.json') }}-${{ github.sha }}"
+          restore-keys: |
+            ${{ runner.os }}-cmake-${{ hashFiles('**/CMakeLists.txt', 'vcpkg.json') }}-
+
+      - name: Configure CMake
+        run: |
+          cmake -B build \
+            -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_INSTALLATION_DIRECTORY }}/scripts/buildsystems/vcpkg.cmake" \
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run tests (headless)
+        run: xvfb-run -a ctest --test-dir build --output-on-failure --timeout 300
