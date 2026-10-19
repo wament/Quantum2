@@ -1,5 +1,8 @@
 name: CI (Build & Test)
 
+env:
+  VCPKG_INSTALLATION_DIRECTORY: ${{ github.workspace }}/vcpkg
+
 on:
   push:
   pull_request:
@@ -17,9 +20,8 @@ jobs:
   build-test-linux:
     runs-on: ubuntu-latest
     env:
-      VCPKG_INSTALLATION_DIRECTORY: ${{ github.workspace }}/vcpkg
       VCPKG_DEFAULT_TRIPLET: x64-linux
-      LD_LIBRARY_PATH: '${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed/x64-linux/bin:${{ env.LD_LIBRARY_PATH }}'
+      LD_LIBRARY_PATH: '${{ github.workspace }}/vcpkg/installed/x64-linux/bin'
 
     steps:
       - name: Checkout
