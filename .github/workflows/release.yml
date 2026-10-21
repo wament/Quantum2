@@ -127,11 +127,13 @@ jobs:
         shell: pwsh
         run: |
           git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
-          # Run from the repo root so vcpkg finds ./vcpkg.json in the manifest.
-          .\bootstrap-vcpkg.bat
+          # Call bootstrap/binary by absolute path and run from the repo root so vcpkg
+          # finds ./vcpkg.json in the manifest.
+          $vcroot = $env:VCPKG_INSTALLATION_DIRECTORY
+          & "$vcroot/bootstrap-vcpkg.bat"
           # "install" is a no-op when packages are already present (restored from cache);
           # otherwise it builds/links only what changed for the current vcpkg.json baseline.
-          .\vcpkg.exe install
+          & "$vcroot/vcpkg.exe" install
 
       - name: Configure CMake
         shell: pwsh
