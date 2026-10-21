@@ -32,11 +32,14 @@ jobs:
       - name: Install SFML system dependencies (for vcpkg's dynamic SFML)
         run: |
           sudo apt-get update
+          # SFML's vcpkg port builds with Ninja and links these X11/GL/audio/system libs.
           sudo apt-get install -y \
-            libxkbcommon-x11-dev libxcursor-dev libxi-dev libxinerama-dev \
-            libgl1-mesa-dev \
+            libx11-dev libxkbcommon-x11-dev libxcursor-dev libxi-dev libxinerama-dev \
+            libxrandr-dev libgl1-mesa-dev \
             libasound2-dev \
-            libfreetype-dev libpng-dev
+            libfreetype-dev libpng-dev \
+            libudev-dev \
+            ninja-build
 
       - name: Cache vcpkg packages
         uses: actions/cache@v4
