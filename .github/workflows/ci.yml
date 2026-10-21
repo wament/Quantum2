@@ -34,8 +34,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             libxkbcommon-x11-dev libxcursor-dev libxi-dev libxinerama-dev \
-            libgl1-mesa-dev libglw4-mesa-dev libglx-mesa0 \
-            libasound2-dev libalsa-oss2 \
+            libgl1-mesa-dev \
+            libasound2-dev \
             libfreetype-dev libpng-dev
 
       - name: Cache vcpkg packages
