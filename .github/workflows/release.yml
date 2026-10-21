@@ -39,12 +39,14 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-
 
-      - name: Install vcpkg tool (uses binary cache via ensure-baseline)
+      - name: Install vcpkg tool (uses binary cache via install)
         run: |
           git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
-          cd "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
-          ./bootstrap-vcpkg.sh
-          ./vcpkg ensure-baseline
+          # Run from the repo root so vcpkg finds ./vcpkg.json in the manifest.
+          "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/bootstrap-vcpkg.sh"
+          # "install" is a no-op when packages are already present (restored from cache);
+          # otherwise it builds/links only what changed for the current vcpkg.json baseline.
+          "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/vcpkg" install
 
       - name: Configure CMake
         run: |
@@ -121,13 +123,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-
 
-      - name: Install vcpkg tool (uses binary cache via ensure-baseline)
+      - name: Install vcpkg tool (uses binary cache via install)
         shell: pwsh
         run: |
           git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
-          cd "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
+          # Run from the repo root so vcpkg finds ./vcpkg.json in the manifest.
           .\bootstrap-vcpkg.bat
-          .\vcpkg.exe ensure-baseline
+          # "install" is a no-op when packages are already present (restored from cache);
+          # otherwise it builds/links only what changed for the current vcpkg.json baseline.
+          .\vcpkg.exe install
 
       - name: Configure CMake
         shell: pwsh
