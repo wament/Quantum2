@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VCPKG_DEFAULT_TRIPLET: x64-linux
-      LD_LIBRARY_PATH: '${{ github.workspace }}/vcpkg/installed/x64-linux/bin'
+      LD_LIBRARY_PATH: '${{ github.workspace }}/vcpkg/installed/x64-linux/lib:${{ github.workspace }}/vcpkg/installed/x64-linux/bin'
 
     steps:
       - name: Checkout
@@ -41,25 +41,27 @@ jobs:
             libudev-dev \
             ninja-build
 
+      - name: Clone vcpkg tool
+        run: git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
+
       - name: Cache vcpkg packages
         uses: actions/cache@v4
         with:
           path: |
             ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed
-            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/packages
-            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/downloads
+            ${{ github.workspace }}/vcpkg/downloads
           key: "${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-${{ github.sha }}"
           restore-keys: |
             ${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-
 
       - name: Install vcpkg tool (uses binary cache via install)
         run: |
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
-          # Run from the repo root so vcpkg finds ./vcpkg.json in the manifest.
+          # Bootstrap the vcpkg binary from the clone, then install manifest packages.
+          # --x-install-root forces packages into <clone>/installed so the CMake toolchain
+          # (which reads VCPKG_INSTALLATION_DIRECTORY) finds them there. This is a no-op when
+          # packages are restored from cache; otherwise only changed ports are built.
           "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/bootstrap-vcpkg.sh"
-          # "install" is a no-op when packages are already present (restored from cache);
-          # otherwise it builds/links only what changed for the current vcpkg.json baseline.
-          "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/vcpkg" install
+          "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/vcpkg" install -x-install-root="${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed"
 
       - name: Cache CMake build (Catch2 deps)
         uses: actions/cache@v4
