@@ -78,7 +78,8 @@ jobs:
           APP="$STAGE/Blackjack2.app"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           cp "$EXE" "$APP/Contents/MacOS/Blackjack2"; cp -R assets "$APP/Contents/Resources/"
           cd "$STAGE"
-          zip -r "$PKG/Blackjack2-macOS.zip" Blackjack2.app
+          # cwd is dist/macOS-build/stage, so ../ resolves the output into dist/macOS-build.
+          zip -r "../Blackjack2-macOS.zip" Blackjack2.app
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
