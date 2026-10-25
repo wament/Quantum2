@@ -111,11 +111,20 @@ add_custom_command(TARGET Blackjack2 POST_BUILD
 
 include(FetchContent)
 
+# Keep the fetched Catch2 clone and its build tree small. A full Catch2 clone
+# carries a large nested .git, and Catch2's default test/example/doc builds
+# bloat BOTH compile time and the GitHub cache payload (making saves slow/unreliable).
 FetchContent_Declare(
     Catch2
     GIT_REPOSITORY https://github.com/catchorg/Catch2.git
     GIT_TAG v3.6.0
+    GIT_SHALLOW TRUE
 )
+
+set(CATCH_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(CATCH_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(CATCH_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+set(CATCH_INSTALL_DOCS OFF CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(Catch2)
 

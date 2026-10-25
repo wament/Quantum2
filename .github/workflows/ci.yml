@@ -81,7 +81,10 @@ jobs:
 
       - name: Configure CMake
         run: |
+          # Ninja is already installed above; it parallelizes and tracks incremental
+          # rebuilds far better than the default Unix Makefiles generator.
           cmake -B build \
+            -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_INSTALLATION_DIRECTORY }}/scripts/buildsystems/vcpkg.cmake" \
             -DCMAKE_BUILD_TYPE=Release
 
