@@ -38,7 +38,7 @@ jobs:
 
       - name: Clone vcpkg (only on a cache miss)
         run: |
-          if [ ! -f "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/bootstrap-vcpkg.sh" ]; then
+          if [ ! -f "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/scripts/buildsystems/vcpkg.cmake" ]; then
             git clone https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
           fi
 
@@ -65,24 +65,26 @@ jobs:
       - name: Build
         run: cmake --build build --parallel
 
-      - name: Package macOS (.dmg)
+      - name: Package macOS (.app -> .zip)
         run: |
           set -e
           EXE=$(find build -maxdepth 1 \( -name Blackjack2.exe -o -name 'Blackjack2' \) | head -n1)
           if [ -z "$EXE" ]; then echo "Blackjack2 not found under build/"; exit 1; fi
-          PKG="dist/macOS-build"; rm -rf "$PKG"; mkdir -p "$PKG"
-          cp "$EXE" "$PKG/Blackjack2"; cp -R assets "$PKG/assets"
-          APP="$PKG/Blackjack2.app"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          # Ship a .zip of the app bundle instead of a DMG: hdiutil create fails on GitHub's
+          # macOS runners with "Function not implemented" (filesystem ioctl unsupported).
+          PKG="dist/macOS-build"
+          STAGE="$PKG/stage"
+          rm -rf "$PKG"; mkdir -p "$PKG"
+          APP="$STAGE/Blackjack2.app"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
           cp "$EXE" "$APP/Contents/MacOS/Blackjack2"; cp -R assets "$APP/Contents/Resources/"
-          printf '#!/bin/sh\nexec "%s/Contents/MacOS/Blackjack2" "$@"\n' "$APP" > "$APP/Contents/MacOS/run.sh"
-          chmod +x "$APP/Contents/MacOS/Blackjack2" "$APP/Contents/MacOS/run.sh"
-          hdiutil create -volname Blackjack2 -srcfolder "$PKG" -ov -format udzw "Blackjack2-macOS.dmg"
+          cd "$STAGE"
+          zip -r "$PKG/Blackjack2-macOS.zip" Blackjack2.app
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-build
-          path: Blackjack2-macOS.dmg
+          path: dist/macOS-build/Blackjack2-macOS.zip
           if-no-files-found: error
 
   # Windows. Discover the exe dynamically so this works regardless of which generator
@@ -110,17 +112,21 @@ jobs:
         shell: pwsh
         run: |
           $vcroot = $env:VCPKG_INSTALLATION_DIRECTORY
-          if (-not (Test-Path -LiteralPath "$vcroot/bootstrap-vcpkg.sh")) {
+          if (-not (Test-Path -LiteralPath "$vcroot/scripts/buildsystems/vcpkg.cmake")) {
             git clone https://github.com/microsoft/vcpkg.git "$vcroot"
           }
 
       - name: Bootstrap vcpkg
         shell: pwsh
-        run: "& '$env:VCPKG_INSTALLATION_DIRECTORY/bootstrap-vcpkg.bat'"
+        run: |
+          $vcroot = $env:VCPKG_INSTALLATION_DIRECTORY
+          & "$vcroot/bootstrap-vcpkg.bat"
 
       - name: Install vcpkg packages
         shell: pwsh
-        run: "& '$env:VCPKG_INSTALLATION_DIRECTORY/vcpkg.exe' install --triplet x64-windows"
+        run: |
+          $vcroot = $env:VCPKG_INSTALLATION_DIRECTORY
+          & "$vcroot/vcpkg.exe" install --triplet x64-windows
 
       - name: Configure CMake
         shell: pwsh
@@ -182,7 +188,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           files: |
-            dist/macos-build/Blackjack2-macOS.dmg
+            dist/macos-build/Blackjack2-macOS.zip
             dist/windows-build/Blackjack2-Windows.zip
           generate_release_notes: true
 

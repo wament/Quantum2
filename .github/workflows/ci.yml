@@ -58,7 +58,7 @@ jobs:
 
       - name: Clone vcpkg (only on a cache miss)
         run: |
-          if [ ! -f "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/bootstrap-vcpkg.sh" ]; then
+          if [ ! -f "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/scripts/buildsystems/vcpkg.cmake" ]; then
             git clone https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
           fi
 
