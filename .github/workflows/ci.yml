@@ -1,8 +1,7 @@
 name: CI (Build & Test)
 
-env:
-  VCPKG_INSTALLATION_DIRECTORY: ${{ github.workspace }}/vcpkg
-
+# GITHUB_ACTIONS=true, so CMakeLists.txt routes through the vcpkg toolchain and
+# requires SFML 3.x (vcpkg provides it; the system package is only 2.6.1).
 on:
   push:
   pull_request:
@@ -14,62 +13,71 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Single-platform fast gate. Uses vcpkg so SFML is guaranteed to be 3.x,
-# matching the CMakeLists find_package(SFML 3.0 REQUIRED).
+env:
+  # Everything vcpkg-related lives here. We cache this whole directory (the clone
+  # + installed binaries) together with the CMake build tree. Crucially the cache
+  # key below does NOT include github.sha, so consecutive pushes reuse it exactly
+  # instead of creating a throwaway cache on every run.
+  VCPKG_INSTALLATION_DIRECTORY: ${{ github.workspace }}/vcpkg
+
 jobs:
   build-test-linux:
     runs-on: ubuntu-latest
     env:
       VCPKG_DEFAULT_TRIPLET: x64-linux
-      LD_LIBRARY_PATH: '${{ github.workspace }}/vcpkg/installed/x64-linux/lib:${{ github.workspace }}/vcpkg/installed/x64-linux/bin'
+      # Runtime linker path so the dynamic SFML tests find their .so files.
+      LD_LIBRARY_PATH: "${{ github.workspace }}/vcpkg/installed/x64-linux/lib:${{ github.workspace }}/vcpkg/installed/x64-linux/bin"
+      # Force software OpenGL so SFML windows open under headless Xvfb.
+      LIBGL_ALWAYS_SOFTWARE: "1"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Install SFML system dependencies (for vcpkg's dynamic SFML)
+      - name: Install system dependencies for dynamic SFML
         run: |
           sudo apt-get update
-          # SFML's vcpkg port builds with Ninja and links these X11/GL/audio/system libs.
           sudo apt-get install -y \
             libx11-dev libxkbcommon-x11-dev libxcursor-dev libxi-dev libxinerama-dev \
-            libxrandr-dev libgl1-mesa-dev \
-            libasound2-dev \
-            libfreetype-dev libpng-dev \
-            libudev-dev \
-            ninja-build
+            libxrandr-dev libgl1-mesa-dev libasound2-dev libudev-dev \
+            mesa-utils libgl1-mesa-dri xvfb ninja-build
 
-      - name: Clone vcpkg tool
-        run: git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
-
-      - name: Cache vcpkg packages
+      # ONE cache entry for BOTH vcpkg and the CMake build tree, keyed only on the
+      # dependency manifest (+ CMakeLists so a changed toolchain forces a clean
+      # rebuild). restore-keys lets a manifest change fall back onto the previous
+      # packages and rebuild only what changed.
+      - name: Cache vcpkg + build artifacts
         uses: actions/cache@v4
         with:
           path: |
-            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed
-            ${{ github.workspace }}/vcpkg/downloads
-          key: "${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-${{ github.sha }}"
+            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}
+            ${{ github.workspace }}/build
+          key: "${{ runner.os }}-${{ runner.arch }}-vcpkg-cmake-${{ hashFiles('**/vcpkg.json', 'CMakeLists.txt') }}"
           restore-keys: |
-            ${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-
+            ${{ runner.os }}-${{ runner.arch }}-vcpkg-cmake-
 
-      - name: Install vcpkg tool (uses binary cache via install)
+      - name: Clone vcpkg (only on a cache miss)
         run: |
-          # Bootstrap the vcpkg binary from the clone, then install manifest packages.
-          # --x-install-root forces packages into <clone>/installed so the CMake toolchain
-          # (which reads VCPKG_INSTALLATION_DIRECTORY) finds them there. This is a no-op when
-          # packages are restored from cache; otherwise only changed ports are built.
-          "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/bootstrap-vcpkg.sh"
-          "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/vcpkg" install -x-install-root="${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed"
+          if [ ! -f "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/bootstrap-vcpkg.sh" ]; then
+            git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
+          fi
 
-      - name: Cache CMake build (Catch2 deps)
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/build
-          key: "${{ runner.os }}-cmake-${{ hashFiles('**/CMakeLists.txt', 'vcpkg.json') }}-${{ github.sha }}"
-          restore-keys: |
-            ${{ runner.os }}-cmake-${{ hashFiles('**/CMakeLists.txt', 'vcpkg.json') }}-
+      - name: Pin vcpkg to a reproducible baseline (optional; set VCPKG_COMMIT_ID)
+        run: |
+          if [ -n "$VCPKG_COMMIT_ID" ]; then
+            git -C "${{ env.VCPKG_INSTALLATION_DIRECTORY }}" checkout "$VCPKG_COMMIT_ID"
+          fi
+
+      # Always re-bootstrap: fast, and it guarantees the vcpkg binary keeps its
+      # execute bit after a cache restore (a well-known actions/cache quirk).
+      - name: Bootstrap vcpkg
+        run: "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/bootstrap-vcpkg.sh"
+
+      - name: Install vcpkg packages
+        run: |
+          # "builtin-baseline" in vcpkg.json pins the registry commit here, so CI resolves
+          # the EXACT SAME SFML version as local dev (which uses the same manifest). No SHA duplication.
+          "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/vcpkg" install --triplet x64-linux
 
       - name: Configure CMake
         run: |

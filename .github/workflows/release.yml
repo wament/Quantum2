@@ -1,8 +1,5 @@
 name: Release (Build & Publish)
 
-env:
-  VCPKG_INSTALLATION_DIRECTORY: ${{ github.workspace }}/vcpkg
-
 on:
   push:
     tags:
@@ -15,86 +12,67 @@ concurrency:
   group: release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  VCPKG_INSTALLATION_DIRECTORY: ${{ github.workspace }}/vcpkg
+
 jobs:
 
+  # macOS. Triplet follows the runner arch (macos-latest can be X64 or ARM64);
+  # vcpkg triplets are lower-case, so map instead of hardcoding arm64-osx.
   build-macos:
     runs-on: macos-latest
     env:
-      VCPKG_DEFAULT_TRIPLET: arm64-osx
+      VCPKG_DEFAULT_TRIPLET: ${{ runner.arch == 'ARM64' && 'arm64-osx' || 'x64-osx' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Clone vcpkg tool
-        run: git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
-
-      - name: Cache vcpkg packages (arm64-osx)
+      - name: Cache vcpkg + build artifacts (shared key reuses across pushes)
         uses: actions/cache@v4
         with:
           path: |
-            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed
-            ${{ github.workspace }}/vcpkg/downloads
-          key: "${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-${{ github.sha }}"
+            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}
+            ${{ github.workspace }}/build
+          key: "${{ runner.os }}-${{ runner.arch }}-vcpkg-cmake-${{ hashFiles('**/vcpkg.json', 'CMakeLists.txt') }}"
           restore-keys: |
-            ${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-
+            ${{ runner.os }}-${{ runner.arch }}-vcpkg-cmake-
 
-      - name: Install vcpkg tool (uses binary cache via install)
+      - name: Clone vcpkg (only on a cache miss)
         run: |
-          # Bootstrap the vcpkg binary from the clone, then install manifest packages.
-          # --x-install-root forces packages into <clone>/installed so the CMake toolchain
-          # (which reads VCPKG_INSTALLATION_DIRECTORY) finds them there. This is a no-op when
-          # packages are restored from cache; otherwise only changed ports are built.
-          "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/bootstrap-vcpkg.sh"
-          "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/vcpkg" install -x-install-root="${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed"
+          if [ ! -f "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/bootstrap-vcpkg.sh" ]; then
+            git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
+          fi
+
+      # Re-bootstrap guarantees the vcpkg binary keeps its execute bit after a cache restore.
+      - name: Bootstrap vcpkg
+        run: "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/bootstrap-vcpkg.sh"
+
+      - name: Install vcpkg packages
+        run: |
+          "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/vcpkg" install --triplet "${{ env.VCPKG_DEFAULT_TRIPLET }}"
 
       - name: Configure CMake
         run: |
           cmake -B build \
-            -G "Unix Makefiles" \
             -DCMAKE_TOOLCHAIN_FILE="${{ env.VCPKG_INSTALLATION_DIRECTORY }}/scripts/buildsystems/vcpkg.cmake" \
             -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build --parallel
 
-      - name: Package macOS
+      - name: Package macOS (.dmg)
         run: |
-          APP_DIR="Blackjack2.app"
-          MACOS_DIR="$APP_DIR/Contents/MacOS"
-          RESOURCES_DIR="$APP_DIR/Contents/Resources"
-
-          mkdir -p "$MACOS_DIR"
-          mkdir -p "$RESOURCES_DIR/assets"
-
-          cp build/Blackjack2 "$MACOS_DIR/"
-          cp -R assets "$RESOURCES_DIR/assets"
-
-          mkdir -p "$APP_DIR/Contents/Frameworks"
-          vcpkg_lib="${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed/arm64-osx/lib"
-
-          cp -R "$vcpkg_lib"/SFML-*.framework "$APP_DIR/Contents/Frameworks/" || true
-
-          if [ -f "$vcpkg_lib/libfreetype.dylib" ]; then
-            cp "$vcpkg_lib/libfreetype.dylib" "$APP_DIR/Contents/Frameworks/"
-          fi
-          if [ -d "$vcpkg_lib/freetype.framework" ]; then
-            cp -R "$vcpkg_lib/freetype.framework" "$APP_DIR/Contents/Frameworks/"
-          fi
-
-          if [ -d "$APP_DIR/Contents/Frameworks" ]; then
-            install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/Blackjack2"
-
-            for fw in "$APP_DIR/Contents/Frameworks/"*.framework; do
-              if [ -f "$fw/$(basename $fw .framework)" ]; then
-                install_name_tool -add_rpath "@executable_path/../Frameworks" "$fw/$(basename $fw .framework)" || true
-              fi
-            done
-          fi
-
-          hdiutil create -volname "Blackjack2" -srcfolder "$APP_DIR" -ov -format UDZO "Blackjack2-macOS.dmg"
+          set -e
+          EXE=$(find build -maxdepth 1 \( -name Blackjack2.exe -o -name 'Blackjack2' \) | head -n1)
+          if [ -z "$EXE" ]; then echo "Blackjack2 not found under build/"; exit 1; fi
+          PKG="dist/macOS-build"; rm -rf "$PKG"; mkdir -p "$PKG"
+          cp "$EXE" "$PKG/Blackjack2"; cp -R assets "$PKG/assets"
+          APP="$PKG/Blackjack2.app"; mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp "$EXE" "$APP/Contents/MacOS/Blackjack2"; cp -R assets "$APP/Contents/Resources/"
+          printf '#!/bin/sh\nexec "%s/Contents/MacOS/Blackjack2" "$@"\n' "$APP" > "$APP/Contents/MacOS/run.sh"
+          chmod +x "$APP/Contents/MacOS/Blackjack2" "$APP/Contents/MacOS/run.sh"
+          hdiutil create -volname Blackjack2 -srcfolder "$PKG" -ov -format udzw "Blackjack2-macOS.dmg"
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4
@@ -103,6 +81,8 @@ jobs:
           path: Blackjack2-macOS.dmg
           if-no-files-found: error
 
+  # Windows. Discover the exe dynamically so this works regardless of which generator
+  # (Ninja is default on windows-latest and places it in build/, not build/Release).
   build-windows:
     runs-on: windows-latest
     env:
@@ -111,33 +91,32 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Clone vcpkg tool
-        shell: pwsh
-        run: git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
-
-      - name: Cache vcpkg packages (x64-windows)
+      - name: Cache vcpkg + build artifacts (shared key reuses across pushes)
         uses: actions/cache@v4
         with:
           path: |
-            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed
-            ${{ github.workspace }}/vcpkg/downloads
-          key: "${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-${{ github.sha }}"
+            ${{ env.VCPKG_INSTALLATION_DIRECTORY }}
+            ${{ github.workspace }}/build
+          key: "${{ runner.os }}-${{ runner.arch }}-vcpkg-cmake-${{ hashFiles('**/vcpkg.json', 'CMakeLists.txt') }}"
           restore-keys: |
-            ${{ runner.os }}-vcpkg-${{ hashFiles('**/vcpkg.json') }}-
+            ${{ runner.os }}-${{ runner.arch }}-vcpkg-cmake-
 
-      - name: Install vcpkg tool (uses binary cache via install)
+      - name: Clone vcpkg (only on a cache miss)
         shell: pwsh
         run: |
-          # Bootstrap the vcpkg binary from the clone, then install manifest packages.
-          # --x-install-root forces packages into <clone>/installed so the CMake toolchain
-          # (which reads VCPKG_INSTALLATION_DIRECTORY) finds them there. This is a no-op when
-          # packages are restored from cache; otherwise only changed ports are built.
           $vcroot = $env:VCPKG_INSTALLATION_DIRECTORY
-          & "$vcroot/bootstrap-vcpkg.bat"
-          & "$vcroot/vcpkg.exe" install -x-install-root "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/installed"
+          if (-not (Test-Path -LiteralPath "$vcroot/bootstrap-vcpkg.sh")) {
+            git clone --depth 1 https://github.com/microsoft/vcpkg.git "$vcroot"
+          }
+
+      - name: Bootstrap vcpkg
+        shell: pwsh
+        run: "& '$env:VCPKG_INSTALLATION_DIRECTORY/bootstrap-vcpkg.bat'"
+
+      - name: Install vcpkg packages
+        shell: pwsh
+        run: "& '$env:VCPKG_INSTALLATION_DIRECTORY/vcpkg.exe' install --triplet x64-windows"
 
       - name: Configure CMake
         shell: pwsh
@@ -146,32 +125,26 @@ jobs:
           cmake -B build --toolchain $toolchain -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --parallel
 
-      - name: Package Windows
+      - name: Package Windows (locate exe + copy DLLs + zip)
         shell: pwsh
         run: |
-          # Build outputs to build/Release under the MSVC generator.
+          $exe = Get-ChildItem -Recurse -Path build -Filter Blackjack2.exe | Select-Object -First 1
+          if (-not $exe) { throw "Blackjack2.exe not found under build/" }
+          Write-Host "Found: $($exe.FullName)"
           $vcpkgBin = "$env:VCPKG_INSTALLATION_DIRECTORY/installed/x64-windows/bin"
-          Write-Host "Looking for DLLs in: $vcpkgBin"
-
-          if (-not (Test-Path -LiteralPath $vcpkgBin)) {
-              throw "Could not find vcpkg bin directory at $vcpkgBin"
-          }
-
-          $buildDir = "build/Release"
-          $pkgDir = "package"
+          $pkgDir = "dist/windows-build"
+          if (Test-Path -LiteralPath $pkgDir) { Remove-Item -Recurse -Force $pkgDir }
           New-Item -ItemType Directory -Path $pkgDir -Force
-
-          Copy-Item "$buildDir/Blackjack2.exe" $pkgDir
-          Copy-Item -Recurse assets "$pkgDir/assets"
-
-          Write-Host "Copying DLLs from: $vcpkgBin"
-          Get-ChildItem -Path $vcpkgBin -Filter "*.dll" | ForEach-Object {
-              Copy-Item $_.FullName "$pkgDir/" -Force
-              Write-Host "Copied: $($_.Name)"
+          Copy-Item $exe.FullName -Destination $pkgDir -Force
+          Copy-Item -Recurse assets -Destination "$pkgDir/assets" -Force
+          if (Test-Path -LiteralPath $vcpkgBin) {
+            Get-ChildItem -Path $vcpkgBin -Filter *.dll | ForEach-Object {
+              Copy-Item $_.FullName -Destination $pkgDir -Force
+              Write-Host "Copied DLL: $($_.Name)"
+            }
           }
-
           Compress-Archive -Path "$pkgDir/*" -DestinationPath "Blackjack2-Windows.zip"
 
       - name: Upload Windows artifact
@@ -202,11 +175,10 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          repository: ${{ secrets.RELEASE_REPO_OWNER }}/${{ secrets.RELEASE_REPO_NAME }}
-          token: ${{ secrets.RELEASE_REPO_TOKEN }}
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           files: |
             dist/macos-build/Blackjack2-macOS.dmg
             dist/windows-build/Blackjack2-Windows.zip
           generate_release_notes: true
+
