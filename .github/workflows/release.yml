@@ -21,8 +21,6 @@ jobs:
   # vcpkg triplets are lower-case, so map instead of hardcoding arm64-osx.
   build-macos:
     runs-on: macos-latest
-    env:
-      VCPKG_DEFAULT_TRIPLET: ${{ runner.arch == 'ARM64' && 'arm64-osx' || 'x64-osx' }}
 
     steps:
       - name: Checkout
@@ -41,16 +39,22 @@ jobs:
       - name: Clone vcpkg (only on a cache miss)
         run: |
           if [ ! -f "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/bootstrap-vcpkg.sh" ]; then
-            git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
+            git clone https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
           fi
 
       # Re-bootstrap guarantees the vcpkg binary keeps its execute bit after a cache restore.
       - name: Bootstrap vcpkg
         run: "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/bootstrap-vcpkg.sh"
 
+      - name: Detect macOS architecture (x64 vs arm64)
+        id: mac-arch
+        shell: bash
+        run: |
+          if [ "$(uname -m)" = "arm64" ]; then echo "triplet=arm64-osx" >> "$GITHUB_OUTPUT"; else echo "triplet=x64-osx" >> "$GITHUB_OUTPUT"; fi
+
       - name: Install vcpkg packages
         run: |
-          "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/vcpkg" install --triplet "${{ env.VCPKG_DEFAULT_TRIPLET }}"
+          "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/vcpkg" install --triplet "${{ steps.mac-arch.outputs.triplet }}"
 
       - name: Configure CMake
         run: |
@@ -107,7 +111,7 @@ jobs:
         run: |
           $vcroot = $env:VCPKG_INSTALLATION_DIRECTORY
           if (-not (Test-Path -LiteralPath "$vcroot/bootstrap-vcpkg.sh")) {
-            git clone --depth 1 https://github.com/microsoft/vcpkg.git "$vcroot"
+            git clone https://github.com/microsoft/vcpkg.git "$vcroot"
           }
 
       - name: Bootstrap vcpkg

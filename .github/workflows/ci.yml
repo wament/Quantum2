@@ -59,7 +59,7 @@ jobs:
       - name: Clone vcpkg (only on a cache miss)
         run: |
           if [ ! -f "${{ env.VCPKG_INSTALLATION_DIRECTORY }}/bootstrap-vcpkg.sh" ]; then
-            git clone --depth 1 https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
+            git clone https://github.com/microsoft/vcpkg.git "${{ env.VCPKG_INSTALLATION_DIRECTORY }}"
           fi
 
       - name: Pin vcpkg to a reproducible baseline (optional; set VCPKG_COMMIT_ID)
