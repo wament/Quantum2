@@ -2,9 +2,15 @@ name: CI (Build & Test)
 
 # GITHUB_ACTIONS=true, so CMakeLists.txt routes through the vcpkg toolchain and
 # requires SFML 3.x (vcpkg provides it; the system package is only 2.6.1).
+# Trigger ONLY when you push a DEV tag, e.g.:
+#   git tag dev-hotfix-login && git push origin dev-hotfix-login
+# Regular `git push` commits and pull requests no longer run anything - that is what
+# stops automatic builds from eating your free-minute limit. Release tags (v*) are
+# handled separately by release.yml, so the two never overlap or double-run.
 on:
   push:
-  pull_request:
+    tags:
+      - 'dev-*'
 
 permissions:
   contents: read
