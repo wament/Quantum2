@@ -104,6 +104,8 @@ class Game
     // Table settings as they stand after the profile was applied at launch.
     int playerCountForTest() const { return playerCount; }
     int gameSpeedForTest() const { return static_cast<int>(gameSpeed); }
+    // Test-only: select the speed (AutoPlay makes every seat act on basic strategy via npcTakeTurn).
+    void setGameSpeedForTest(GameSpeed speed) { gameSpeed = speed; }
     int countingStyleForTest() const { return static_cast<int>(countingStyle); }
 
     // ---------------- Player Actions (public so the round-state machine and tests can drive them) ----
