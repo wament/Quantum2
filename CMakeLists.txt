@@ -98,7 +98,6 @@ target_sources(Blackjack2 PRIVATE
     src/InputHandler.cpp
     src/HandEvaluator.cpp
     src/Logger.cpp
-    src/ActionTree.cpp
 )
 
 # Copy assets to build output (for local testing)
@@ -144,7 +143,6 @@ add_executable(Blackjack2Tests
     tests/test_deck.cpp
     tests/test_hand.cpp
     tests/test_game.cpp
-    tests/test_action_tree.cpp
     tests/test_player.cpp
     tests/test_assets.cpp
     tests/test_split_aces.cpp
@@ -157,7 +155,6 @@ add_executable(Blackjack2Tests
     tests/test_blackjack_settlement.cpp
     tests/test_hud_layout.cpp
     tests/test_profile_settings.cpp
-    src/ActionTree.cpp
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)
@@ -165,7 +162,7 @@ target_include_directories(Blackjack2Tests PRIVATE include)
 # For tests, always use dynamic SFML (simpler with Catch2)
 if(GITHUB_BUILD OR CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
     find_package(SFML 3.0 REQUIRED COMPONENTS Graphics)
-target_link_libraries(Blackjack2Tests PRIVATE Catch2::Catch2WithMain SFML::Graphics)
+    target_link_libraries(Blackjack2Tests PRIVATE Catch2::Catch2WithMain SFML::Graphics)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_include_directories(Blackjack2Tests PRIVATE ${SFML_ROOT}/include)
     target_link_directories(Blackjack2Tests PRIVATE ${SFML_ROOT}/lib)
