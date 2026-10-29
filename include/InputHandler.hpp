@@ -33,6 +33,8 @@ private:
     // stopping at either end. A static member so it inherits InputHandler's friendship access to Game.
     static void cycleGameSpeed(Game &game, int direction);
 
+    void processTrainerEvents(const sf::Event& event);
+    void processTournamentEvents(const sf::Event& event);
     void processGameEvents(const sf::Event& event);
     void processPauseEvents(const sf::Event& event);
 };

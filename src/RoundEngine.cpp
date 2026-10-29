@@ -15,7 +15,7 @@ void RoundEngine::tick(float deltaTime, Game& game)
     game.tickTimer(game.hudState.afterShoeTimer, deltaTime);
 
     // Auto-play: auto-advance to new shoe after shoe delay
-    if (game.gameState == GameState::GameOver && game.gameSpeed == GameSpeed::AutoPlay)
+    if (game.gameState == GameState::GameOver && GameTiming::isAutoPlaying(game.gameSpeed))
     {
         if (game.hudState.afterShoeTimer <= 0.0f)
         {
@@ -31,7 +31,7 @@ void RoundEngine::tick(float deltaTime, Game& game)
     }
 
     // Auto-play: auto-bet with Kelly strategy
-    if (game.roundState == RoundState::PlaceBets && game.gameSpeed == GameSpeed::AutoPlay)
+    if (game.roundState == RoundState::PlaceBets && GameTiming::isAutoPlaying(game.gameSpeed))
     {
         float tc = game.activeTrueCount();
         int optimal = game.calculateOptimalBet(tc, GameConfig::KELLY_FRACTION, game.players[0].getBankroll(),
@@ -122,11 +122,14 @@ void RoundEngine::tick(float deltaTime, Game& game)
             }
         }
 
-        if (game.activePlayerIndex > 0 || game.gameSpeed == GameSpeed::AutoPlay)
+        if (game.activePlayerIndex > 0 || GameTiming::isAutoPlaying(game.gameSpeed))
         {
             // NPC pacing is taken from the single timing table (GameTiming), keyed by the selected speed, so
             // it can't drift apart from the dealer/feedback timings tuned in the same place.
-            game.npcActionDelay = GameTiming::npcActionDelay(game.gameSpeed);
+            if (game.gameSpeed == GameSpeed::Gamer)
+                game.npcActionDelay = GameTiming::gamerStepInterval(game.refreshRateHz);
+            else
+                game.npcActionDelay = GameTiming::npcActionDelay(game.gameSpeed);
 
             // Use timer to delay NPC actions
             game.npcActionTimer -= deltaTime;
@@ -148,7 +151,7 @@ void RoundEngine::tick(float deltaTime, Game& game)
         game.dealerTurn();
     }
 
-    if (game.roundState == RoundState::Cleanup && game.gameSpeed == GameSpeed::AutoPlay)
+    if (game.roundState == RoundState::Cleanup && GameTiming::isAutoPlaying(game.gameSpeed))
     {
         if (game.gameState != GameState::GameOver && game.hudState.afterHandTimer <= 0.0f)
         {

@@ -9,14 +9,18 @@ enum class AppMode
     Playing,
     Paused,
     ReplayHistory,
-    ReplayPlaying
+    ReplayPlaying,
+    StrategyTrainer,
+    Tournament
 };
 enum class MenuOption
 {
     PlayGame,
     PlayerCount,
     GameSpeed,
-    ReviewHistory
+    ReviewHistory,
+    StrategyTrainer,
+    Tournament
 };
 enum class PauseOption
 {
@@ -28,15 +32,22 @@ enum class PauseOption
 #include "BasicStrategy.hpp"
 #include "Deck.hpp"
 #include "Hand.hpp"
+#include "SideBet.hpp"
 #include "Player.hpp"
 #include "GameRecord.hpp"
 #include "HUD.hpp"
 // Forward-declared: unique_ptr<Replay> needs only an incomplete type here. Game's destructor is
 // defined in Game.cpp (which includes Replay.hpp) where the type is complete.
 class Replay;
+class StrategyTrainer;
+// Feature 9 (Tournament Mode): included fully (not just forward-declared) because Game.hpp exposes a public method
+// that takes `Tournament::TournamentConfig`; the header therefore needs the complete type. Tournament.hpp only pulls in
+// Deck/Hand/Player, which are already part of this include chain, so there is no new cycle.
+#include "Tournament.hpp"
 #include "GameRenderer.hpp"
 #include "InputHandler.hpp"
 #include "HandEvaluator.hpp"
+#include "SoundManager.hpp"
 
 enum class RoundState
 {
@@ -93,6 +104,9 @@ class Game
     int backgroundCountForTest() const { return backgroundRunningCount; }
     float hiLoTrueCountForTest() const { return hiLoTrueCount(); }
     const HUDState& hudStateForTest() const { return hudState; }
+    // Feature 1 (Side Bets): the round currently being built, so integration tests can assert each hand's side-bet
+    // kind/wager/payout without reaching into private state.
+    const RoundRecord& currentRoundRecordForTest() const { return currentRoundRecord; }
     int shoeGenerationForTest() const { return shoeGeneration; }
     // Drive the real shoe boundary (the same path the R key and auto-play advance take) from a test.
     void startNewShoeForTest() { startNewShoe(); }
@@ -106,7 +120,22 @@ class Game
     int gameSpeedForTest() const { return static_cast<int>(gameSpeed); }
     // Test-only: select the speed (AutoPlay makes every seat act on basic strategy via npcTakeTurn).
     void setGameSpeedForTest(GameSpeed speed) { gameSpeed = speed; }
+    // Refresh rate in Hz used by Gamer speed mode. Headless-safe default; detected from the monitor at full-mode startup
+    // and injectable here so pure-logic tests can assert refresh-rate derivation without an SFML window.
+    float refreshRateForTest() const { return refreshRateHz; }
+    void setRefreshRateForTest(float hz) { refreshRateHz = hz; }
     int countingStyleForTest() const { return static_cast<int>(countingStyle); }
+
+    // Feature 7 (Sound): expose SoundManager state so headless tests can assert the event->queue path without SFML.
+    size_t soundPendingForTest() const { return sound_.pendingSounds().size(); }
+    const std::vector<std::string>& soundQueueForTest() const { return sound_.pendingSounds(); }
+    int soundTotalPlayedForTest() const { return sound_.totalSoundsPlayed(); }
+    float soundVolumeForTest() const { return sound_.settings().soundVolume; }
+    float musicVolumeForTest() const { return sound_.settings().musicVolume; }
+    bool soundMutedForTest() const { return sound_.isMuted(); }
+    void setSoundVolumeForTest(float v) { sound_.setSoundVolume(v); }
+    void setMusicVolumeForTest(float v) { sound_.setMusicVolume(v); }
+    void setMutedForTest(bool m) { sound_.setMuted(m); }
 
     // ---------------- Player Actions (public so the round-state machine and tests can drive them) ----
 
@@ -116,11 +145,23 @@ class Game
     bool split();
     bool surrender();
 
+    // Feature 1 (Side Bets): place an optional side bet on the human seat's main hand before the deal. The payout is
+    // resolved later, inside deal() via resolveSideBets() — BEFORE any main-hand settlement — so this only records the
+    // choice (guarded by bankroll). Public + headless-safe: tests drive a full betting->deal cycle with it; the UI calls
+    // it from PlaceBets. A zero wager opts out regardless of kind.
+    void placeSideBet(SideBetKind kind, int wager);
+
     void run();
 
     // Click the count-style label ("Count (Hi-Lo)") to toggle between counting systems. Both are always
     // counted in the background; this swaps which buffer drives the active count and flips the style.
     void toggleCountingStyle();
+    // Feature 2 (Strategy Trainer): begin/restart a training session from the main menu. Guards against nullptr
+    // so headless construction (which skips building the trainer) never crashes.
+    void startTrainerSession(int deckCount = 6, int secondsPerSession = 0);
+    // Feature 9 (Tournament Mode): begin/restart a tournament from the main menu. Guards against nullptr so headless
+    // construction (which never builds the tournament) can't crash when the menu calls this; takes config or defaults.
+    void startTournamentSession(const Tournament::TournamentConfig& config = {});
     float deltaTime;
 
     friend class GameRenderer;
@@ -131,6 +172,13 @@ class Game
   private:
     AppMode appMode = AppMode::MainMenu;
     std::unique_ptr<Replay> replay;
+    // Feature 2 (Strategy Trainer): its own AppMode state machine. Constructed in the full mode only; headless
+    // tests drive the trainer directly. unique_ptr with an incomplete type is fine here (like Replay) because ~Game
+    // is defined out-of-line in Game.cpp, where StrategyTrainer.hpp is included.
+    std::unique_ptr<StrategyTrainer> trainer;
+    // Feature 9 (Tournament Mode): its own AppMode state machine, built in full mode only. unique_ptr with an incomplete
+    // type is fine here (like Replay/StrategyTrainer) because ~Game is defined out-of-line where Tournament.hpp loads.
+    std::unique_ptr<Tournament> tournament;
     GameRenderer renderer;
     InputHandler inputHandler;
     HandEvaluator evaluator;
@@ -151,9 +199,17 @@ class Game
     HUD hud;
     HUDState hudState;
 
+    // Sound & music (Feature 7). Default-constructed in every mode; buffers are only decoded by loadAssets(), which
+    // the headless constructor skips so unit tests never touch an audio device. Head-safe: playSound() just enqueues
+    // when assets aren't loaded, so Game event hooks can call it unconditionally from both full and headless paths.
+    SoundManager sound_;
+
     MenuOption menuSelection = MenuOption::PlayGame;
     PauseOption pauseSelection = PauseOption::Resume;
     GameSpeed gameSpeed = GameSpeed::Normal;
+    // Refresh rate in Hz for Gamer speed mode. Headless-safe default; detected from the monitor at full-mode startup and
+    // injectable via setRefreshRateForTest so pure-logic tests can assert refresh-rate derivation without an SFML window.
+    float refreshRateHz = GameTiming::DEFAULT_REFRESH_HZ;
     BasicStrategy::CountingStyle countingStyle = BasicStrategy::CountingStyle::REKO;
 
     // NPC action timing
@@ -182,6 +238,11 @@ class Game
 
     int initialBet = 0;
     int runningCount = 0;
+
+    // Feature 1 (Side Bets): the human seat's pending side-bet choice, consumed once by deal() when it applies + resolves
+    // every placed side bet. Mirrors how insurance is chosen then confirmed: this records intent until the round deals.
+    SideBetKind sideBetIntentKind_ = SideBetKind::None;
+    int sideBetIntentWager_ = 0;
     // Other counting system's running count, kept current every draw so toggling between systems is instant.
     int backgroundRunningCount = 0;
     float trueCount = 0;
@@ -282,6 +343,10 @@ class Game
     void confirmInsurance();
 
     void declineInsurance();
+
+    // Feature 1 (Side Bets): evaluate + bankroll every seat's side bet once all cards are known (called from deal()),
+    // BEFORE any main-hand settlement via evaluateHands(). Side bets pay out / lose independently of the main hand.
+    void resolveSideBets();
 
     // ---------------- Dealer ----------------
 

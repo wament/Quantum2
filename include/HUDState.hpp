@@ -1,5 +1,6 @@
 #pragma once
 #include "GameRecord.hpp"
+#include "SideBet.hpp"
 #include <string>
 #include <vector>
 
@@ -59,6 +60,19 @@ struct HUDState
 
     // True while it's the dealer's turn. The book advisor hides its action during this window.
     bool isDealerTurn = false;
+
+    // Sound & music status (Feature 7), populated from Game::sound_ in updateHUDState() so any UI/HUD layer has
+    // a single data source of truth to read. Volumes are in SFML's 0..100 units, matching the profile.
+    float soundVolume = 100.f;
+    float musicVolume = 60.f;
+    bool soundMuted = false;
+
+    // Side bets (Feature 1): the human seat's current-round side bet, read off the live hand in Game::updateHUDState so
+    // the HUD and betting-area renderer share one source of truth. Defaults mean "no side bet this round".
+    bool hasSideBet = false;
+    SideBetKind sideBetKind = SideBetKind::None;
+    int sideBetWager = 0;
+    int sideBetPayout = 0; // gross returned on a win (stake + winnings), 0 on a loss
 
     // End-of-round summary overlay
     std::vector<std::string> playerSummaries;

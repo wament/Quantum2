@@ -4,7 +4,9 @@ enum class GameSpeed
     Fast,
     Normal,
     Slow,
-    AutoPlay
+    AutoPlay,
+    Hyper,
+    Gamer
 };
 
 namespace GameTiming
@@ -14,6 +16,7 @@ constexpr float NPC_FAST = 0.3f;
 constexpr float NPC_NORMAL = 1.0f;
 constexpr float NPC_SLOW = 2.0f;
 constexpr float NPC_AUTOPLAY = 0.15f;
+constexpr float NPC_HYPER = 0.05f; // Hyper mode - near-instant NPC reactions, closest to the fastest the hardware can render
 
 constexpr float DEALER_START_DELAY = 0.5f;
 constexpr float DEALER_ACTION_DELAY = 0.5f;
@@ -21,6 +24,7 @@ constexpr float DEALER_ACTION_DELAY = 0.5f;
 // End-of-round feedback / overlay durations (seconds): how long per-hand results stay on screen.
 constexpr float SUMMARY_FAST_AUTOPLAY = 2.0f;
 constexpr float SUMMARY_NORMAL_SLOW = 5.0f;
+constexpr float SUMMARY_HYPER = 0.3f; // Hyper mode - result overlay flashes just long enough to read
 
 constexpr float AUTOPLAY_AFTER_HAND_DELAY = 1.0f; // hold between hands in AutoPlay
 constexpr float AUTOPLAY_AFTER_SHOE_DELAY = 3.0f; // hold before dealing the next shoe
@@ -37,6 +41,8 @@ inline float npcActionDelay(GameSpeed speed)
         return NPC_NORMAL;
     case GameSpeed::Slow:
         return NPC_SLOW;
+    case GameSpeed::Hyper:
+        return NPC_HYPER;
     }
     return NPC_NORMAL;
 }
@@ -47,12 +53,47 @@ inline float summaryDisplayTime(GameSpeed speed)
     case GameSpeed::Fast:
     case GameSpeed::AutoPlay:
         return SUMMARY_FAST_AUTOPLAY;
+    case GameSpeed::Hyper:
+        return SUMMARY_HYPER;
     default:
         return SUMMARY_NORMAL_SLOW;
     }
 }
 inline float afterHandWait(GameSpeed speed) { return (speed == GameSpeed::AutoPlay) ? AUTOPLAY_AFTER_HAND_DELAY : 0.0f; }
 inline float afterShoeWait(GameSpeed speed) { return (speed == GameSpeed::AutoPlay) ? AUTOPLAY_AFTER_SHOE_DELAY : 0.0f; }
+
+// Default monitor refresh rate (Hz) used when Gamer mode can't detect the real hardware value (no display or XRandr
+// unavailable). Set to this user's actual monitor rate (240Hz) so headless-safe logic stays fast out of the box.
+constexpr float DEFAULT_REFRESH_HZ = 240.0f;
+
+// Refresh-rate ("Gamer") mode derives its per-step timing from the monitor's refresh rate in Hz, so one gameplay step
+// advances per frame and speed scales with hardware (e.g. 144Hz -> ~7ms/step). Pure/headless-safe: it takes an explicit
+// Hz value because the monitor rate is a runtime graphics property detected by Game at startup (see setRefreshRateForTest)
+// rather than an SFML call in the logic layer. Rates of <=1Hz collapse to DEFAULT_REFRESH_HZ instead of exploding.
+inline float gamerStepInterval(float refreshRateHz)
+{
+    return (refreshRateHz > 1.0f) ? (1.0f / refreshRateHz) : DEFAULT_REFRESH_HZ;
+}
+
+// Per-card reveal pacing for the dealer turn. In the automated-fast tiers (Gamer refresh-rate-derived, Hyper fixed NPC
+// pace) the dealer reveals cards at the SAME speed players act, so a fast auto-play reads as one continuous deal rather
+// than players flashing by while the dealer drags along on a 0.5s beat. Every other speed keeps the fixed, watchable
+// DEALER_ACTION_DELAY beat so a casual player can follow each card. Reuses npcActionDelay/gamerStepInterval (the same
+// helpers the player path uses) so dealer and player pacing never drift apart.
+inline float dealerRevealInterval(GameSpeed speed, float refreshRateHz)
+{
+    if (speed == GameSpeed::Gamer)
+        return gamerStepInterval(refreshRateHz);
+    if (speed == GameSpeed::Hyper)
+        return npcActionDelay(speed);
+    return DEALER_ACTION_DELAY;
+}
+
+// A speed is "continuous autoplay": every seat acts on basic strategy without waiting for input - AutoPlay plus the
+// Hyper and refresh-rate Gamer tiers. Centralizing this means all state-machine autoplay gates stay consistent,
+// mirroring the single timing table that keys all pacing. (Hyper/Gamer differ from AutoPlay only in pacing, not in
+// automation.)
+inline bool isAutoPlaying(GameSpeed speed) { return speed == GameSpeed::AutoPlay || speed == GameSpeed::Gamer || speed == GameSpeed::Hyper; }
 } // namespace GameTiming
 
 namespace Constants
@@ -166,6 +207,31 @@ constexpr float SPLIT_SPREAD_Y = 80.f;
 
 // Persistence (fallback path if HOME is not set)
 constexpr const char* PLAYER_FILE_FALLBACK = "saves/player_profile.json";
+
+// Sound & music asset locations + defaults (Feature 7). Volumes use SFML's 0..100 float range so they map
+// directly onto sf::Sound::volume / sf::Music::setVolume with no conversion. Persisted as plain ints in the
+// profile so the schema stays free of any SFML dependency (mirrors preferredSpeed/preferredCountingStyle).
+namespace Sound
+{
+    constexpr const char* SOUND_DIR = "assets/sounds/";
+    constexpr const char* MUSIC_DIR = "assets/music/";
+
+    // Named effect clips, keyed by the event name Game plays. Kept in one place so the asset filenames, the
+    // known-events list (SoundManager) and every playSound() call site all agree — edit here, don't duplicate.
+    constexpr const char* EVENT_CARD = "card";
+    constexpr const char* EVENT_BET = "bet";
+    constexpr const char* EVENT_CHIP = "chip";
+    constexpr const char* EVENT_BLACKJACK = "blackjack";
+    constexpr const char* EVENT_WIN = "win";
+    constexpr const char* EVENT_LOSE = "lose";
+
+    // Music track played at the table and on menus.
+    constexpr const char* MUSIC_TRACK = "theme";
+
+    constexpr float DEFAULT_SOUND_VOLUME = 100.f;
+    constexpr float DEFAULT_MUSIC_VOLUME = 60.f;
+    constexpr bool DEFAULT_MUTED = false;
+} // namespace Sound
 } // namespace Constants
 
 // Gameplay configuration

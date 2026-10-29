@@ -8,7 +8,7 @@ This document outlines the next 5 features to add to Blackjack2, prioritized by 
 
 ## 1. UI Integration of Basic Strategy Advisor
 
-**Current State:** The basic strategy table exists in `Constants.hpp` and `Game::giveBasicStrategyAdvice()` returns the optimal move, but it only prints to console.
+**Current State:** The basic-strategy logic lives in `BasicStrategy.hpp`/`BasicStrategy.cpp`, and `Game::giveBasicStrategyAdvice()` still returns the optimal move. It now renders in-game as a Book-box verdict (green = correct, red = deviation) instead of printing to console, and both deviation count and wins-after-deviation are tracked in `PlayerStats`. **Status: largely implemented.**
 
 **Implementation:**
 - Modify `HUD` to display the strategy recommendation as a visual element (e.g., "Book: HIT" text or icon next to the player's hand).
@@ -25,7 +25,7 @@ This document outlines the next 5 features to add to Blackjack2, prioritized by 
 
 ## 2. Advanced Splitting Rules & Edge Cases
 
-**Current State:** Basic split functionality exists but lacks refinement for edge cases.
+**Current State:** Split aces (one card per hand) and re-split tens rules already exist (`test_split_aces.cpp`, `test_resplit_tens.cpp`). **Status: mostly implemented** — remaining work is exposing Double-After-Split / resplit toggles as configurable rules via `Constants.hpp`/`PlayerProfile`.
 
 **Implementation:**
 - **One-Card Aces:** When Aces are split, each new hand receives exactly one card (no hitting allowed)
@@ -40,7 +40,7 @@ This document outlines the next 5 features to add to Blackjack2, prioritized by 
 
 ## 3. Advanced Analytics Dashboard
 
-**Current State:** Basic win/loss stats exist, but the philosophical emphasis on variance and bankroll management suggests deeper analytics.
+**Current State:** A full per-shoe analytics system now exists (`ShoeAnalytics`, surfaced through HUD boxes/graphs): greatest hand/shoe/session records, variance (standard deviation), longest winning/losing streaks, a bankroll curve, edge tracking over time, and a bet-distribution histogram — persisted via profile history. **Status: engine implemented** — remaining is a dedicated dashboard screen with tabs and CSV/JSON export.
 
 **Implementation:**
 - **Session History:** Track and display greatest single-hand win/loss, greatest shoe win/loss, greatest session win/loss
@@ -56,7 +56,7 @@ This document outlines the next 5 features to add to Blackjack2, prioritized by 
 
 ## 4. Multi-Player / Table Simulation
 
-**Current State:** Single-player only.
+**Current State:** NPC opponents already exist — up to 3 seats (human + NPCs playing basic strategy), selectable at setup, plus an AutoPlay/fast-forward mode that advances every seat on basic strategy for statistical analysis. **Status: implemented.**
 
 **Implementation:**
 - Add 1-3 AI opponents that play basic strategy
@@ -72,7 +72,7 @@ This document outlines the next 5 features to add to Blackjack2, prioritized by 
 
 ## 5. Reko Counting System
 
-**Current State:** Hi-lo count only.
+**Current State:** The Reko counting system is now implemented (`BasicStrategy::calculateRekoValue`/`calculateRekoBet`, its own starting-offset and bet-pattern tables), selectable via the count-style toggle and labeled on the HUD alongside Hi-Lo. **Status: implemented.**
 
 **Implementation:**
 - Introduce the reko counting method.

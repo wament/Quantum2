@@ -9,6 +9,9 @@ void Hand::clear()
     cards.clear();
     finished = doubledDown = surrendered = split = splitAce = false;
     currentBet = insuranceBet = 0;
+    sideBetKind = SideBetKind::None;
+    sideBetWager = 0;
+    sideBetPayout = 0;
 }
 
 int Hand::getValue() const
@@ -101,6 +104,14 @@ int Hand::getBet() const { return currentBet; }
 void Hand::setInsuranceBet(int amount) { insuranceBet = amount; }
 
 int Hand::getInsuranceBet() const { return insuranceBet; }
+
+// Records the chosen side-bet kind + wager and clears any prior resolved payout so re-placing a bet starts clean.
+void Hand::setSideBet(SideBetKind kind, int wager)
+{
+    sideBetKind = kind;
+    sideBetWager = wager;
+    sideBetPayout = 0;
+}
 
 void Hand::setFinished(bool value) { finished = value; }
 

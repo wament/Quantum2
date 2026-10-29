@@ -1,20 +1,91 @@
 #include "Game.hpp"
 #include "BasicStrategy.hpp"
 #include "RoundEngine.hpp"
+#include "SideBet.hpp"
 
 #include <sstream>
 #include <stdexcept>
 #include <filesystem>
 #include <cmath>
 #include <algorithm>
+#include <cstdio>
+#include <cstdlib>
 
 #include "FontManager.hpp"
 #include "Logger.hpp"
 #include "Replay.hpp"
+#include "StrategyTrainer.hpp"
+#include "Tournament.hpp"
 
 // Defined here (Replay.hpp is included in this translation unit) so unique_ptr<Replay>'s member
 // destruction runs with a complete Replay type regardless of who destroys the Game.
 Game::~Game() {}
+
+// --- Refresh-rate ("Gamer") detection ---------------------------------------------------------------
+// This SFML build's sf::VideoMode exposes no public refresh-rate reader, so the monitor's rate is read straight from
+// the OS at startup (Linux/XRandr). Best-effort: falls back to GameTiming::DEFAULT_REFRESH_HZ when there's no display or
+// XRandr isn't available. The value is injected into Game so pure-logic Gamer timing stays headless-safe and testable.
+#if defined(__linux__) && !defined(__ANDROID__)
+namespace
+{
+    // Parse the refresh rate (Hz) from a single XRandr output line, taking the last floating-point number on it as the
+    // rate (modern xrandr appends it to the current-mode token, e.g. "1920x1080_144.00" or "@144").
+    float refreshHzFromCurrentLine(const std::string& line)
+    {
+        float last = 0.0f;
+        bool inNumber = false;
+        size_t start = 0;
+        for (size_t i = 0; i <= line.size(); ++i)
+        {
+            char c = static_cast<char>((i < line.size()) ? line[i] : ' ');
+            const bool digitOrDot = (c == '.') || (c >= '0' && c <= '9');
+            if (digitOrDot)
+            {
+                if (!inNumber)
+                {
+                    inNumber = true;
+                    start = i;
+                }
+            }
+            else if (inNumber)
+            {
+                inNumber = false;
+                last = std::strtof(line.c_str() + start, nullptr);
+            }
+        }
+        return last;
+    }
+
+    float detectMonitorRefreshHz()
+    {
+        FILE* pipe = popen("xrandr --query 2>/dev/null", "r");
+        if (!pipe)
+            return GameTiming::DEFAULT_REFRESH_HZ;
+
+        std::string output;
+        char buffer[512];
+        size_t read = 0;
+        while ((read = fread(buffer, 1, sizeof(buffer) - 1, pipe)) > 0)
+        {
+            buffer[read] = '\0';
+            output += buffer;
+        }
+        pclose(pipe);
+
+        // The active output's mode line is marked with 'current'; its refresh rate is the last float on that line.
+        std::istringstream stream(output);
+        std::string line;
+        while (std::getline(stream, line))
+        {
+            if (line.find("current") != std::string::npos)
+                return refreshHzFromCurrentLine(line);
+        }
+        return GameTiming::DEFAULT_REFRESH_HZ;
+    }
+}
+#else
+static float detectMonitorRefreshHz() { return GameTiming::DEFAULT_REFRESH_HZ; }
+#endif
 
 Game::Game()
     : window(
@@ -33,9 +104,29 @@ Game::Game()
     applySavedTableSettings();
     npcActionTimer = 0.0f;
     npcActionDelay = 1.0f;
+    // Gamer mode reads the monitor's refresh rate from hardware here (headless tests inject it via setRefreshRateForTest).
+    refreshRateHz = detectMonitorRefreshHz();
     loadAssets();
 
+    // Feature 7: wire up sound + music and restore the player's saved volumes/mute from the profile. Buffers are only
+    // decoded here (full mode); the headless constructor skips loadAssets() so unit tests never open an audio device.
+    sound_.registerAssetPaths(Constants::Sound::SOUND_DIR, Constants::Sound::MUSIC_DIR);
+    sound_.loadAssets();
+    {
+        const PlayerProfile sprof = players[0].getProfile();
+        SoundManager::Settings ss;
+        ss.soundVolume = static_cast<float>(sprof.preferredSoundVolume);
+        ss.musicVolume = static_cast<float>(sprof.preferredMusicVolume);
+        ss.muted = sprof.preferredMuted;
+        sound_.setSettings(ss);
+    }
+
     replay = std::make_unique<Replay>(window, cardTexture, FontManager::get());
+    // Feature 2 (Strategy Trainer): the mode's state machine. Built in full mode only; headless tests drive it directly.
+    trainer = std::make_unique<StrategyTrainer>();
+    // Feature 9 (Tournament Mode): its own AppMode state machine, built in full mode only; headless tests drive
+    // Tournament directly (see test_tournament_mode.cpp), so the window never needs one for them.
+    tournament = std::make_unique<Tournament>();
     auto profile = players[0].getProfile();
     replay->loadHistory(profile.getLongHistory());
     replay->setStartingBankroll(players[0].getBankroll());
@@ -84,6 +175,23 @@ void Game::run()
         update(deltaTime);
         renderer.draw(*this);
     }
+}
+
+// Feature 2 (Strategy Trainer): begin/restart a training session. Guards against nullptr so headless construction,
+// which never builds the trainer, can't crash when the menu calls this.
+void Game::startTrainerSession(int deckCount, int secondsPerSession)
+{
+    if (trainer)
+        trainer->startSession(deckCount, secondsPerSession);
+}
+
+// Feature 9 (Tournament Mode): begin/restart a tournament. Guards against nullptr so headless construction - which
+// never builds the tournament - can't crash when the menu calls this; on first entry it allocates the state machine.
+void Game::startTournamentSession(const Tournament::TournamentConfig& config)
+{
+    if (!tournament)
+        tournament = std::make_unique<Tournament>();
+    tournament->start(config);
 }
 
 void Game::startNewGame()
@@ -149,6 +257,8 @@ void Game::applySavedTableSettings()
     case GameSpeed::Normal:
     case GameSpeed::Slow:
     case GameSpeed::AutoPlay:
+    case GameSpeed::Hyper:
+    case GameSpeed::Gamer:
         gameSpeed = static_cast<GameSpeed>(profile.preferredSpeed);
         break;
     default:
@@ -180,6 +290,11 @@ void Game::rememberTableSettings()
     profile.preferredPlayerCount = playerCount;
     profile.preferredSpeed = static_cast<int>(gameSpeed);
     profile.preferredCountingStyle = static_cast<int>(countingStyle);
+    // Feature 7: persist sound + music prefs alongside the other table settings (called at every existing save point,
+    // so no extra I/O). Written as SFML-unit ints to mirror preferredSpeed.
+    profile.preferredSoundVolume = static_cast<int>(sound_.settings().soundVolume);
+    profile.preferredMusicVolume = static_cast<int>(sound_.settings().musicVolume);
+    profile.preferredMuted = sound_.isMuted();
     players[0].updateProfile(profile);
     players[0].saveProfile();
 }
@@ -293,6 +408,18 @@ void Game::update(float deltaTime)
         replay->update(deltaTime);
         return;
     }
+    // Feature 2 (Strategy Trainer): advance the trainer's own state machine and render it, then hand off.
+    if (appMode == AppMode::StrategyTrainer)
+    {
+        trainer->update(deltaTime);
+        return;
+    }
+    // Feature 9 (Tournament Mode): advance the tournament's own state machine and render it, then hand off.
+    if (appMode == AppMode::Tournament)
+    {
+        tournament->update(deltaTime);
+        return;
+    }
     if (appMode != AppMode::Playing)
         return;
 
@@ -318,6 +445,23 @@ void Game::updateHUDState()
 
     hudState.currentBet = players[0].hands[0].getBet();
 
+    // Feature 1 (Side Bets): surface the human seat's current-round side bet (choice + resolved payout) so the HUD and
+    // betting-area renderer read it from this single data source. Read off the live hand; defaults stay "no side bet".
+    if (!players.empty() && !players[0].hands.empty())
+    {
+        hudState.sideBetKind = players[0].hands[0].getSideBetKind();
+        hudState.sideBetWager = players[0].hands[0].getSideBetWager();
+        hudState.sideBetPayout = players[0].hands[0].getSideBetPayout();
+        hudState.hasSideBet = (hudState.sideBetKind != SideBetKind::None);
+    }
+    else
+    {
+        hudState.sideBetKind = SideBetKind::None;
+        hudState.sideBetWager = 0;
+        hudState.sideBetPayout = 0;
+        hudState.hasSideBet = false;
+    }
+
     // Populate all player bankrolls
     hudState.playerBankrolls.clear();
     for (auto& p : players)
@@ -341,6 +485,11 @@ void Game::updateHUDState()
 
     // Turn awareness so the book advisor can hide its action during the dealer's turn.
     hudState.isDealerTurn = (roundState == RoundState::DealerTurn);
+
+    // Feature 7: surface the current sound + music state so any HUD/renderer layer can read it from a single source.
+    hudState.soundVolume = sound_.settings().soundVolume;
+    hudState.musicVolume = sound_.settings().musicVolume;
+    hudState.soundMuted = sound_.isMuted();
 
     // The Book box has three states: while a verdict is pending after a completed action, show the book's letter as
     // green/red feedback; otherwise advise the live move only during the player's turn; hide on the dealer's turn.
@@ -814,6 +963,9 @@ void Game::confirmBet()
 
     initialBet = currentBet;
 
+    // Feature 7: a placed bet triggers the "bet" effect. Safe in headless mode (just enqueues when buffers are absent).
+    sound_.playSound(Constants::Sound::EVENT_BET);
+
     // Track bet stats
     PlayerStats& stats = getStats();
     stats.betsPlaced++;
@@ -885,7 +1037,7 @@ void Game::offerInsurance()
     }
 
     // Auto-decide for NPCs and auto-play human
-    if (activePlayerIndex > 0 || gameSpeed == GameSpeed::AutoPlay)
+    if (activePlayerIndex > 0 || GameTiming::isAutoPlaying(gameSpeed))
     {
         float tc = BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
         int maxIns = bet / 2;
@@ -922,6 +1074,78 @@ void Game::declineInsurance()
     advanceToNextInsurancePlayer();
 }
 
+// Feature 1 (Side Bets): place an optional side bet on the human seat's main hand before the deal. The payout is resolved
+// inside deal() (see resolveSideBets) — BEFORE any main-hand settlement — so this only records the choice. Guarded by the
+// human seat's bankroll; a zero wager opts out regardless of kind. When no player exists yet (tests set this before
+// startTestRound builds the seats), it just stores the intent so deterministic tests can drive a full betting->deal cycle.
+void Game::placeSideBet(SideBetKind kind, int wager)
+{
+    if (wager < 0)
+        return;
+    if (!players.empty() && players[0].getBankroll() < wager)
+    {
+        Logger::warn() << "Cannot place side bet of " << wager << "; bankroll is " << players[0].getBankroll() << ".";
+        return;
+    }
+    if (wager == 0)
+        kind = SideBetKind::None; // a zero-wager side bet means the player opted out, regardless of the chosen kind
+    sideBetIntentKind_ = kind;
+    sideBetIntentWager_ = wager;
+    // Reflect on the live main hand when it exists so HUD/renderer show the choice instantly while the player places it.
+    if (!players.empty() && !players[0].hands.empty())
+        players[0].hands[0].setSideBet(kind, wager);
+
+    // Feature 7: placing a bet triggers the "bet" effect. Safe in headless mode (just enqueues when buffers are absent).
+    sound_.playSound(Constants::Sound::EVENT_BET);
+}
+
+// Feature 1 (Side Bets): evaluate + bankroll every seat's side bet once all cards are known. Each side bet resolves against
+// the seat's two hand cards plus the dealer's up-card, and it pays out / loses INDEPENDENTLY of the main hand, so this runs
+// for all seats here — before evaluateHands() settles the main hands (deal() calls it right after the hole card).
+void Game::resolveSideBets()
+{
+    if (players.empty() || dealer.size() < 1)
+        return;
+
+    const Card& dealerUp = dealer.getCard(0);
+    for (size_t i = 0; i < players.size(); ++i)
+    {
+        auto& p = players[i];
+        Hand& hand = p.hands[0]; // the main hand carries the side bet; split hands do not in this mode
+        if (hand.getSideBetKind() == SideBetKind::None || hand.getSideBetWager() <= 0 || hand.size() < 2)
+            continue;
+
+        const Card& c0 = hand.getCard(0);
+        const Card& c1 = hand.getCard(1);
+        int wager = hand.getSideBetWager();
+        SideBetResult result = (hand.getSideBetKind() == SideBetKind::PerfectPairs)
+                                   ? SideBetEvaluator::perfectPairs(c0, c1)
+                                   : SideBetEvaluator::twentyOneThree(c0, c1, dealerUp);
+
+        PlayerStats& stats = p.getStats();
+        if (result.won())
+        {
+            // Net gain is wager * ratio. The stake was never removed at placement (placeBet only guards), so winning adds
+            // exactly the winnings here; gross payout for replay/analytics is stake returned + winnings.
+            p.winBet(wager * result.multiplier);
+            hand.setSideBetPayout(wager * (1 + result.multiplier));
+            stats.sideBetWins++;
+            stats.sideBetProfitSum += static_cast<long long>(wager) * result.multiplier;
+            Logger::info() << p.getName() << "'s side bet wins " << result.multiplier << ":1 on $" << wager
+                           << " (+" << (wager * result.multiplier) << ").";
+        }
+        else
+        {
+            // Nothing qualified: the whole side-bet wager is lost. Gross payout 0 => net -wager, matching the bankroll move.
+            p.loseBet(wager);
+            hand.setSideBetPayout(0);
+            stats.sideBetLosses++;
+            stats.sideBetProfitSum -= wager;
+            Logger::info() << p.getName() << "'s side bet of $" << wager << " lost.";
+        }
+    }
+}
+
 // Deck / Deal
 void Game::deal()
 {
@@ -941,6 +1165,18 @@ void Game::deal()
         }
     }
     dealCardToDealer(); // dealer's second card: the face-down hole card, revealed on the dealer's turn
+
+    // Feature 1 (Side Bets): apply the human seat's pending side-bet choice to its main hand and resolve every placed side
+    // bet now — after all cards are known but BEFORE any main-hand settlement. Side bets pay / lose independently of the main
+    // hand, so a natural blackjack still resolves its side bet immediately (the round then flows through the BJ or dealer path
+    // below). The intent is consumed here so it is never re-applied on the next round.
+    if (sideBetIntentWager_ > 0 && sideBetIntentKind_ != SideBetKind::None)
+    {
+        players[0].hands[0].setSideBet(sideBetIntentKind_, sideBetIntentWager_);
+        sideBetIntentKind_ = SideBetKind::None;
+        sideBetIntentWager_ = 0;
+    }
+    resolveSideBets();
 
     roundState = RoundState::PlayerTurn;
 
@@ -1098,6 +1334,10 @@ void Game::dealCardToPlayer(Hand& hand)
     Card card = deck.draw();
     afterDraw(card);
     hand.addCard(card);
+
+    // Feature 7: each dealt card triggers the "card" effect. Called for every draw in both full and headless modes;
+    // headless-safe because playSound() only enqueues when buffers aren't decoded yet.
+    sound_.playSound(Constants::Sound::EVENT_CARD);
 }
 
 void Game::dealCardToDealer()
@@ -1108,6 +1348,9 @@ void Game::dealCardToDealer()
     Card card = deck.draw();
     afterDraw(card);
     dealer.addCard(card);
+
+    // Feature 7: each dealt card triggers the "card" effect (see dealCardToPlayer above for rationale).
+    sound_.playSound(Constants::Sound::EVENT_CARD);
 }
 
 // Dealer
@@ -1136,9 +1379,10 @@ void Game::dealerTurn()
 
     if (!dealerTurnStarted)
     {
-        // Turn just began: arm the anticipation beat before the first card.
+        // Turn just began: arm the anticipation beat before the first card, paced for the current speed so a fast
+        // auto-play (Gamer/Hyper) reveals cards at the same rate players act instead of waiting on a fixed 0.5s beat.
         dealerTurnStarted = true;
-        dealerStartDelayTimer = GameTiming::DEALER_START_DELAY;
+        dealerStartDelayTimer = GameTiming::dealerRevealInterval(gameSpeed, refreshRateHz);
         return;
     }
     if (shouldHit)
@@ -1153,8 +1397,9 @@ void Game::dealerTurn()
 
         dealCardToDealer();
 
-        // Arm the beat before the next card so cards come out one at a time, not all at once.
-        dealerStartDelayTimer = GameTiming::DEALER_ACTION_DELAY;
+        // Arm the beat before the next card so cards come out one at a time, paced for speed (see dealerRevealInterval)
+        // so a fast auto-play keeps every reveal as quick as the last - not stuck on the fixed 0.5s beat.
+        dealerStartDelayTimer = GameTiming::dealerRevealInterval(gameSpeed, refreshRateHz);
         return;
     }
 
@@ -1214,7 +1459,7 @@ void Game::dealerTurn()
         currentShoeRecord = {};
         Logger::info() << "Shoe completed. Final shoe profit: " << shoeCumulativeWinLoss << ".";
 
-        if (gameSpeed == GameSpeed::AutoPlay)
+        if (GameTiming::isAutoPlaying(gameSpeed))
         {
             Logger::info() << "Auto-play: Starting a new shoe.";
             hudState.afterShoeTimer = GameTiming::afterShoeWait(gameSpeed);

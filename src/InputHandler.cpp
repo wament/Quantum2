@@ -5,6 +5,8 @@
 #include "Replay.hpp"
 #include "FontManager.hpp"
 #include "Logger.hpp"
+#include "StrategyTrainer.hpp"
+#include "Tournament.hpp"
 
 InputHandler::InputHandler(Game& game) : game(game) {}
 
@@ -30,6 +32,20 @@ void InputHandler::activateMainMenuOption(Game &game, MenuOption option)
         game.replay->loadHistory(profile.getLongHistory());
         game.replay->setStartingBankroll(game.players[0].getBankroll());
         game.appMode = AppMode::ReplayHistory;
+        break;
+    }
+    case MenuOption::StrategyTrainer:
+    {
+        Logger::info() << "Entering strategy trainer.";
+        game.startTrainerSession();
+        game.appMode = AppMode::StrategyTrainer;
+        break;
+    }
+    case MenuOption::Tournament:
+    {
+        Logger::info() << "Entering tournament mode.";
+        game.startTournamentSession();
+        game.appMode = AppMode::Tournament;
         break;
     }
     }
@@ -87,7 +103,13 @@ void InputHandler::navigateMenu(bool forward)
         case MenuOption::GameSpeed:
             game.menuSelection = MenuOption::ReviewHistory;
             break;
-        default: // ReviewHistory wraps to the top.
+        case MenuOption::ReviewHistory:
+            game.menuSelection = MenuOption::StrategyTrainer;
+            break;
+        case MenuOption::StrategyTrainer:
+            game.menuSelection = MenuOption::Tournament;
+            break;
+        default: // Tournament wraps to the top.
             game.menuSelection = MenuOption::PlayGame;
             break;
         }
@@ -97,9 +119,9 @@ void InputHandler::navigateMenu(bool forward)
         switch (game.menuSelection)
         {
         case MenuOption::PlayGame:
-            game.menuSelection = MenuOption::ReviewHistory;
+            game.menuSelection = MenuOption::Tournament; // wrap to the last option
             break;
-        default: // PlayerCount/GameSpeed/ReviewHistory step one option back.
+        default: // PlayerCount/GameSpeed/ReviewHistory/StrategyTrainer/Tournament step one option back.
             game.menuSelection = static_cast<MenuOption>(static_cast<int>(game.menuSelection) - 1);
             break;
         }
@@ -112,18 +134,18 @@ void InputHandler::navigateMenu(bool forward)
 // before modulo so wraparound works in both directions.
 void InputHandler::cycleGameSpeed(Game &game, int direction)
 {
-    constexpr const GameSpeed order[4] = {
-        GameSpeed::Fast, GameSpeed::Normal, GameSpeed::Slow, GameSpeed::AutoPlay};
+    constexpr const GameSpeed order[6] = {
+        GameSpeed::Fast, GameSpeed::Normal, GameSpeed::Slow, GameSpeed::AutoPlay, GameSpeed::Hyper, GameSpeed::Gamer};
 
     int idx = 0;
-    for (int i = 0; i < 4; ++i)
+    for (int i = 0; i < 6; ++i)
         if (order[i] == game.gameSpeed)
         {
             idx = i;
             break;
         }
 
-    idx = (idx + direction + 4) % 4;
+    idx = (idx + direction + 6) % 6;
 
     GameSpeed next = order[idx];
     if (game.gameSpeed != next)
@@ -135,6 +157,8 @@ void InputHandler::cycleGameSpeed(Game &game, int direction)
         case GameSpeed::Normal:    Logger::info() << "Game speed set to Normal."; break;
         case GameSpeed::Slow:      Logger::info() << "Game speed set to Slow."; break;
         case GameSpeed::AutoPlay:  Logger::info() << "Game speed set to AutoPlay."; break;
+        case GameSpeed::Hyper:     Logger::info() << "Game speed set to Hyper."; break;
+        case GameSpeed::Gamer:     Logger::info() << "Game speed set to Gamer."; break;
         }
     }
 }
@@ -195,6 +219,12 @@ void InputHandler::processEvents()
         case AppMode::Paused:
             processPauseEvents(event.value());
             break;
+        case AppMode::StrategyTrainer:
+            processTrainerEvents(event.value());
+            break;
+        case AppMode::Tournament:
+            processTournamentEvents(event.value());
+            break;
         case AppMode::ReplayHistory:
         case AppMode::ReplayPlaying:
         {
@@ -209,6 +239,56 @@ void InputHandler::processEvents()
             }
             break;
         }
+        }
+    }
+}
+
+// Feature 2 (Strategy Trainer): keyboard drives the trainer directly. H/S/D/P/Y/I choose the play to grade; Enter/Space starts or restarts a fresh shoe; Escape returns to the main menu. Grading uses submitAction(char) so no extra state-machine method is needed, and game.startTrainerSession() begins a new shoe.
+void InputHandler::processTrainerEvents(const sf::Event& event)
+{
+    auto pressed = event.getIf<sf::Event::KeyPressed>();
+    if (!pressed)
+        return;
+
+    switch (pressed->code)
+    {
+    case sf::Keyboard::Key::H: game.trainer->submitAction('H'); break;
+    case sf::Keyboard::Key::S: game.trainer->submitAction('S'); break;
+    case sf::Keyboard::Key::D: game.trainer->submitAction('D'); break;
+    case sf::Keyboard::Key::P: game.trainer->submitAction('P'); break;
+    case sf::Keyboard::Key::Y:
+    case sf::Keyboard::Key::R: game.trainer->submitAction('R'); break;
+    case sf::Keyboard::Key::Space:
+    case sf::Keyboard::Key::Enter:
+        game.startTrainerSession();
+        break;
+    case sf::Keyboard::Key::Escape:
+        Logger::info() << "Returned to main menu from the strategy trainer.";
+        game.appMode = AppMode::MainMenu;
+        game.menuSelection = MenuOption::PlayGame;
+        break;
+    }
+}
+
+// Feature 9 (Tournament Mode): keyboard drives the tournament. Enter/Space steps to the next round immediately (the mode
+// also auto-advances hands via Game::update); Escape returns to the main menu. Guards the shared tournament so headless
+// games - which never build it - can't crash when input is processed.
+void InputHandler::processTournamentEvents(const sf::Event& event)
+{
+    if (auto pressed = event.getIf<sf::Event::KeyPressed>())
+    {
+        switch (pressed->code)
+        {
+        case sf::Keyboard::Key::Enter:
+        case sf::Keyboard::Key::Space:
+            if (game.tournament)
+                game.tournament->playHand();
+            break;
+        case sf::Keyboard::Key::Escape:
+            Logger::info() << "Returned to main menu from tournament mode.";
+            game.appMode = AppMode::MainMenu;
+            game.menuSelection = MenuOption::PlayGame;
+            break;
         }
     }
 }
@@ -327,8 +407,8 @@ void InputHandler::processGameEvents(const sf::Event& event)
             game.pauseSelection = PauseOption::Resume;
         }
 
-        // In auto-play mode, player cannot take actions (except R and Escape handled above)
-        if (game.gameSpeed == GameSpeed::AutoPlay)
+        // In auto-play mode (AutoPlay or refresh-rate Gamer), player cannot take actions (except R and Escape handled above)
+        if (GameTiming::isAutoPlaying(game.gameSpeed))
             return;
 
         if (game.activePlayerIndex != 0)
@@ -356,6 +436,43 @@ void InputHandler::processGameEvents(const sf::Event& event)
             case sf::Keyboard::Key::Right:
                 game.confirmBet();
                 break;
+            case sf::Keyboard::Key::Z:
+            {
+                // Cycle the side-bet kind: Off -> Perfect Pairs -> 21+3 -> Off. Reads the live hand state that placeSideBet
+                // keeps updated, so the HUD/renderer reflect each change instantly during PlaceBets.
+                auto& p = game.players[0];
+                SideBetKind next;
+                switch (p.hands[0].getSideBetKind())
+                {
+                case SideBetKind::None:          next = SideBetKind::PerfectPairs; break;
+                case SideBetKind::PerfectPairs:  next = SideBetKind::TwentyOneThree; break;
+                default:                         next = SideBetKind::None; break; // 21+3 -> off
+                }
+                game.placeSideBet(next, (next == SideBetKind::None) ? 0 : p.hands[0].getSideBetWager());
+                Logger::info() << "Side bet type set to "
+                               << (next == SideBetKind::None ? std::string("off")
+                                   : (next == SideBetKind::PerfectPairs ? std::string("Perfect Pairs") : std::string("21+3")))
+                               << ".";
+                break;
+            }
+            case sf::Keyboard::Key::X: // increase the side-bet wager by a chip
+            {
+                auto& p = game.players[0];
+                int nextWager = p.hands[0].getSideBetWager() + 10;
+                if (p.getBankroll() < nextWager)
+                    nextWager = p.getBankroll(); // clamp to what the seat can afford
+                game.placeSideBet(p.hands[0].getSideBetKind(), nextWager);
+                break;
+            }
+            case sf::Keyboard::Key::V: // decrease the side-bet wager by a chip
+            {
+                auto& p = game.players[0];
+                int nextWager = p.hands[0].getSideBetWager() - 10;
+                if (nextWager < 0)
+                    nextWager = 0;
+                game.placeSideBet(p.hands[0].getSideBetKind(), nextWager);
+                break;
+            }
             default:
                 break;
             }

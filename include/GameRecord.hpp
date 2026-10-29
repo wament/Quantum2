@@ -8,6 +8,7 @@
 
 #include "Card.hpp"
 #include "Deck.hpp"
+#include "SideBet.hpp"
 
 struct DeviationRecord
 {
@@ -70,6 +71,13 @@ struct PlayerStats
     // Bet sizes placed, keyed by bet value -> frequency. This is the career copy kept in the saved profile; the
     // Feature 3 bet-distribution chart reads ShoeAnalytics::betDistribution, which restarts at every shoe.
     std::map<int, int> betDistribution;
+
+    // Side bets (Feature 1): career tallies written to the saved profile. Additive — older profiles load with these at
+    // their defaults (see Serialization.hpp from_json). "Win/Loss" counts a placed side bet that paid / was lost;
+    // profit sum is the net (winnings minus wagers) across every resolved side bet.
+    int sideBetWins = 0;
+    int sideBetLosses = 0;
+    long long sideBetProfitSum = 0;
 };
 
 // Per-shoe analytics: every number the HUD reports EXCEPT the bankroll, which is the only value that carries
@@ -123,6 +131,11 @@ struct HandOutcome
     bool insuranceTaken = false;   // whether insurance was taken
     int playerIndex = 0;           // which player this hand belongs to
     std::string playerName = "";   // human-readable seat name (William or an NPC)
+
+    // Feature 1 (Side Bets): the side bet attached to this hand, resolved independently of the main-hand payout above.
+    SideBetKind sideBetKind = SideBetKind::None;
+    int sideBetWager = 0;          // side-bet wager placed (0 when no side bet)
+    int sideBetPayout = 0;         // gross returned on a win (stake + winnings), 0 on a loss -> net is payout - wager
 };
 
 struct RoundRecord
@@ -157,7 +170,7 @@ inline int RoundRecord::totalWager() const
 {
     int sum = 0;
     for (const auto& hand : playerHands)
-        sum += hand.wager;
+        sum += hand.wager + hand.sideBetWager; // Feature 1: include the side-bet stake so net profit reflects it too.
     return sum;
 }
 
@@ -165,7 +178,7 @@ inline int RoundRecord::totalPayout() const
 {
     int sum = 0;
     for (const auto& hand : playerHands)
-        sum += hand.payout;
+        sum += hand.payout + hand.sideBetPayout; // Feature 1: include the side-bet payout so net profit reflects it too.
     return sum;
 }
 

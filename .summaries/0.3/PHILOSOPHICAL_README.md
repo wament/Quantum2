@@ -26,7 +26,7 @@ The advantage player does not "win" by luck. They win by *knowing more than the 
 
 Blackjack2 is designed as a **training and analysis environment** for advantage play. Its features are not arbitrary; each one serves the goal of making the invisible visible:
 
-- **Hi-Lo Card Counting**: The running and true count are displayed in real time, allowing the player to see the information that an advantage player must track. The software does not count for you — it *shows you what you should be counting*.
+- **Hi-Lo Card Counting**: The running and true count are displayed in real time, allowing the player to see the information that an advantage player must track. The software does not count for you — it *shows you what you should be counting*. A second system (Reko) is also available; switch between them with the count-style toggle.
 
 - **Kelly Criterion Betting**: The betting slider allows the player to explore the relationship between their edge and their bet size. The Kelly criterion is not just a formula; it is a philosophy of risk management that balances growth against ruin. By making this adjustable, the software invites the player to ask: *How much of my edge should I risk, and why?*
 

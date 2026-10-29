@@ -50,6 +50,12 @@ void HandEvaluator::evaluateHands()
             for (size_t c = 0; c < hand.size(); c++)
                 outcome.cards.push_back(hand.getCard(c));
 
+            // Feature 1 (Side Bets): record this hand's resolved side bet so replay/analytics can see it. Net contribution
+            // to a round is sideBetPayout - sideBetWager (folded into humanNet/playerNet below).
+            outcome.sideBetKind = hand.getSideBetKind();
+            outcome.sideBetWager = hand.getSideBetWager();
+            outcome.sideBetPayout = hand.getSideBetPayout();
+
             stats.handsFinished++;
             int payout = 0;
             // dealer.isBlackjack() is only true for the dealer's original two cards, so by the time the
@@ -228,6 +234,7 @@ void HandEvaluator::evaluateHands()
                 continue;
             int handProfit = outcome.payout - outcome.wager;
             playerNet += handProfit;
+            playerNet += outcome.sideBetPayout - outcome.sideBetWager; // Feature 1: side-bet net (independent of main-hand payout)
         } 
         if (playerNet > 0)
             oss << "Win +" << playerNet;
@@ -239,7 +246,8 @@ void HandEvaluator::evaluateHands()
     }
     // End-of-round summary display time and AutoPlay inter-hand hold both come from the single timing table
     // (GameTiming), keyed by speed. Non-AutoPlay speeds wait 0s between hands, so there is no artificial delay.
-    game.hudState.summaryTimer = GameTiming::summaryDisplayTime(game.gameSpeed);
+    // Gamer mode overrides this with its refresh-rate-derived interval instead of a fixed table value.
+    game.hudState.summaryTimer = (game.gameSpeed == GameSpeed::Gamer) ? GameTiming::gamerStepInterval(game.refreshRateHz) : GameTiming::summaryDisplayTime(game.gameSpeed);
     game.hudState.afterHandTimer = GameTiming::afterHandWait(game.gameSpeed);
 
     // The bankroll curve is YOUR profit and loss, so only seat 0's hands feed it. Summing every seat here used to
@@ -250,6 +258,7 @@ void HandEvaluator::evaluateHands()
         if (outcome.playerIndex != 0)
             continue;
         humanNet += outcome.payout - outcome.wager;
+        humanNet += outcome.sideBetPayout - outcome.sideBetWager; // Feature 1: side-bet net so the bankroll curve reflects it too
     }
 
     // Feature 3 analytics: extend the bankroll curve (your cumulative net profit) and sample the edge, one point

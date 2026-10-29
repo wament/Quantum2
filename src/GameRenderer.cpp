@@ -4,14 +4,23 @@
 #include "Constants.hpp"
 #include "Graphics.hpp"
 #include "Replay.hpp"
+#include "StrategyTrainer.hpp"
+#include "Tournament.hpp"
 #include "FontManager.hpp"
 
 #include <algorithm>
 
 void GameRenderer::draw(Game& game)
 {
-    game.window.clear();
-    game.window.draw(*game.backgroundSprite);
+    if (game.appMode == AppMode::StrategyTrainer)
+        game.window.clear(sf::Color(96, 0, 128)); // royal-purple training backdrop - no felt needed behind the text
+    else if (game.appMode == AppMode::Tournament)
+        game.window.clear(sf::Color(25, 32, 48)); // tournament slate backdrop; Tournament::draw() paints it itself
+    else
+    {
+        game.window.clear();
+        game.window.draw(*game.backgroundSprite);
+    }
 
     switch (game.appMode)
     {
@@ -26,14 +35,38 @@ void GameRenderer::draw(Game& game)
         game.updateHUDState();
         game.hud.update(game.hudState);
         game.hud.draw(game.window);
+        drawSideBet(game);
+        drawSoundStatus(game);
         drawSummaryOverlay(game);
+
+        // Feature 1 (Side Bets): while betting, remind the player how to place a side bet alongside the main-bet controls.
+        if (game.roundState == RoundState::PlaceBets)
+        {
+            sf::Text hint(FontManager::get(),
+                "Up/Down: set bet   Left: optimal   Right: confirm", 11.f);
+            hint.setFillColor(sf::Color(180, 180, 180));
+            hint.setPosition(sf::Vector2f(30.f, 478.f));
+            game.window.draw(hint);
+
+            sf::Text sideHint(FontManager::get(), "Z: side bet type   X/V: adjust side-bet wager", 11.f);
+            sideHint.setFillColor(sf::Color(255, 215, 0));
+            sideHint.setPosition(sf::Vector2f(30.f, 496.f));
+            game.window.draw(sideHint);
+        }
         break;
     case AppMode::Paused:
         drawGameTable(game);
         game.updateHUDState();
         game.hud.update(game.hudState);
         game.hud.draw(game.window);
+        drawSoundStatus(game);
         drawPauseMenu(game);
+        break;
+    case AppMode::StrategyTrainer:
+        game.trainer->draw(game.window);
+        break;
+    case AppMode::Tournament:
+        game.tournament->draw(game.window);
         break;
     case AppMode::ReplayHistory:
     case AppMode::ReplayPlaying:
@@ -53,6 +86,24 @@ void GameRenderer::drawGameTable(Game& game)
     drawDealer(game);
     drawPlayers(game, lanes);
     drawChips(game, lanes);
+}
+
+// Feature 7: thin sound-status indicator at the bottom-right corner so mute/volume state is visible without a panel.
+void GameRenderer::drawSoundStatus(Game &game) const
+{
+    const SoundManager::Settings s = game.sound_.settings();
+    std::string label = s.muted ? "Sound: Muted" : "Sound: On";
+
+    sf::Text text(FontManager::get());
+    text.setString(label);
+    text.setCharacterSize(14);
+    text.setFillColor(sf::Color::White);
+
+    const float x = static_cast<float>(Constants::WINDOW_WIDTH) - 96.f;
+    const float y = static_cast<float>(Constants::WINDOW_HEIGHT) - 26.f;
+    text.setPosition(sf::Vector2f{ x, y });
+
+    game.window.draw(text);
 }
 
 // Split hands fan up-and-to-the-right from each seat's betting circle; the vertical step keeps them from piling on
@@ -543,6 +594,43 @@ void GameRenderer::drawInsurance(Game& game)
     game.window.draw(text);
 }
 
+static std::string sideBetKindName(SideBetKind kind)
+{
+    switch (kind)
+    {
+    case SideBetKind::PerfectPairs:   return "Perfect Pairs";
+    case SideBetKind::TwentyOneThree: return "21+3";
+    default:                          return "None";
+    }
+}
+
+// Feature 1 (Side Bets): show the human seat's current round side bet in its betting area while it is active, plus the
+// resolved outcome once the round settles (DealerTurn/Cleanup). Reads hudState, which Game::updateHUDState populates off
+// the live hand. Only drawn when a side bet was actually placed this round.
+void GameRenderer::drawSideBet(Game& game)
+{
+    if (!game.hudState.hasSideBet || game.players.empty())
+        return;
+
+    const auto pos = getPlayerPosition(game, 0, game.players.size());
+    float x = Constants::PLAYER_X + pos.x + Constants::CARD_WIDTH / 2.f - 45.f;
+    float y = Constants::PLAYER_Y + pos.y + Constants::CARD_HEIGHT + 96.f;
+
+    std::string label = "Side Bet: " + sideBetKindName(game.hudState.sideBetKind) + " $" + std::to_string(game.hudState.sideBetWager);
+    if (game.roundState == RoundState::DealerTurn || game.roundState == RoundState::Cleanup)
+    {
+        int net = game.hudState.sideBetPayout - game.hudState.sideBetWager; // gross payout - stake == net on the bankroll
+        if (net < 0)
+            net = -net;
+        label += (net >= 0 ? "  WON +" : "  LOST ") + std::to_string(net);
+    }
+
+    sf::Text text(FontManager::get(), label, 12.f);
+    text.setFillColor(sf::Color(255, 215, 0));
+    text.setPosition(sf::Vector2f(x, y));
+    game.window.draw(text);
+}
+
 void GameRenderer::drawSummaryOverlay(Game& game)
 {
     if (game.hudState.playerSummaries.empty() || game.hudState.summaryTimer <= 0.0f)
@@ -697,6 +785,12 @@ void GameRenderer::drawMainMenu(Game& game)
             case GameSpeed::AutoPlay:
                 speedLabel += "AutoPlay";
                 break;
+            case GameSpeed::Hyper:
+                speedLabel += "Hyper";
+                break;
+            case GameSpeed::Gamer:
+                speedLabel += "Gamer";
+                break;
             }
             speedLabel += " (Left/Right)";
             label = speedLabel;
@@ -704,6 +798,12 @@ void GameRenderer::drawMainMenu(Game& game)
         }
         case MenuOption::ReviewHistory:
             label = "Review History";
+            break;
+        case MenuOption::StrategyTrainer:
+            label = "Practice Basic Strategy (S/T/D/P/Y)";
+            break;
+        case MenuOption::Tournament:
+            label = "Tournament Mode";
             break;
         }
 
@@ -713,7 +813,7 @@ void GameRenderer::drawMainMenu(Game& game)
 
     sf::Text instr(FontManager::get(), "Up/Down: navigate  Enter: select  Esc: quit", 14);
     instr.setFillColor(sf::Color(140, 140, 140));
-    instr.setPosition(sf::Vector2f(cx, 400.0f));
+    instr.setPosition(sf::Vector2f(cx, 470.0f));
     game.window.draw(instr);
 }
 

@@ -3,6 +3,7 @@
 #include <vector>
 #include <cstddef>
 #include "Card.hpp"
+#include "SideBet.hpp"
 
 class Hand
 {
@@ -39,6 +40,16 @@ class Hand
     void setInsuranceBet(int amount);
     [[nodiscard]] int getInsuranceBet() const;
 
+    // Side bet (Feature 1): the optional side bet placed on this hand before the deal. setSideBet records the chosen
+    // kind + wager and clears any previously resolved payout; the payout is written by Game::resolveSideBets after the
+    // cards are known, then copied into HandOutcome for replay/analytics. Side bets resolve independently of the main
+    // hand's win/loss (FEATURES.md: "evaluate side bets before main-hand resolution").
+    void setSideBet(SideBetKind kind, int wager);
+    [[nodiscard]] SideBetKind getSideBetKind() const { return sideBetKind; }
+    [[nodiscard]] int getSideBetWager() const { return sideBetWager; }
+    [[nodiscard]] int getSideBetPayout() const { return sideBetPayout; } // gross returned (stake+winnings) on a win, 0 on a loss
+    void setSideBetPayout(int payout) { sideBetPayout = payout; }
+
     void setFinished(bool value);
     [[nodiscard]] bool isFinished() const;
 
@@ -62,4 +73,11 @@ class Hand
 
     int currentBet = 0;
     int insuranceBet = 0;
+
+    // Feature 1 (Side Bets): the chosen kind + wager, and the resolved gross payout. All three are zeroed by clear()
+    // so a fresh round never carries a stale side bet onto a new hand.
+    SideBetKind sideBetKind = SideBetKind::None;
+    int sideBetWager = 0;
+    int sideBetPayout = 0;
+
 };

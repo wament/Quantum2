@@ -27,6 +27,13 @@ class PlayerProfile
     int preferredSpeed = static_cast<int>(GameSpeed::Normal);
     int preferredCountingStyle = 1;  // BasicStrategy::CountingStyle::REKO
 
+    // Sound & music volume prefs (Feature 7), stored as plain ints in SFML's 0..100 units so the schema stays free of
+    // any SFML dependency (mirrors preferredSpeed/preferredCountingStyle). Optional with defaults on load, so profiles
+    // saved before sound settings existed keep loading unchanged.
+    int preferredSoundVolume = 100;
+    int preferredMusicVolume = 60;
+    bool preferredMuted = false;
+
     const std::string& getName() const;
     int getBankroll() const;
     void setBankroll(int amount);

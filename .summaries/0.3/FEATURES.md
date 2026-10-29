@@ -53,7 +53,7 @@ This document outlines 10 new features to enhance Blackjack2, with detailed impl
 **Files to Modify:**
 - `include/Hand.hpp` / `src/Hand.cpp` - Side bet evaluation helpers
 - `include/Game.hpp` / `src/Game.cpp` - Betting flow, side bet placement
-- `include/PlayerStats.hpp` - Side bet statistics
+- `include/GameRecord.hpp` - Side bet statistics
 - `include/GameRenderer.hpp` / `src/GameRenderer.cpp` - Side bet UI
 - `include/HUDState.hpp` - Side bet display data
 
@@ -86,7 +86,7 @@ This document outlines 10 new features to enhance Blackjack2, with detailed impl
 - `include/Game.hpp` / `src/Game.cpp` - New app mode, event handling
 - `include/StrategyTrainer.hpp` / `src/StrategyTrainer.cpp` - New class
 - `include/GameRenderer.hpp` / `src/GameRenderer.cpp` - Trainer UI
-- `include/PlayerStats.hpp` - Trainer session stats
+- `include/GameRecord.hpp` - Trainer session stats
 
 **Estimated Effort:** Medium (2-3 days)
 
@@ -151,7 +151,7 @@ This document outlines 10 new features to enhance Blackjack2, with detailed impl
 **Files to Modify:**
 - `include/Game.hpp` / `src/Game.cpp` - New app mode
 - `include/StatsDashboard.hpp` / `src/StatsDashboard.cpp` - New class
-- `include/PlayerStats.hpp` - Additional stat categories
+- `include/GameRecord.hpp` - Additional stat categories
 - `include/GameRenderer.hpp` / `src/GameRenderer.cpp` - Chart rendering
 - `include/Serialization.hpp` - CSV/JSON export
 
@@ -206,7 +206,7 @@ This document outlines 10 new features to enhance Blackjack2, with detailed impl
 
 ### 6. Additional Card Counting Systems
 
-**Overview:** Beyond the current Hi-Lo system, add support for other popular counting systems to give serious players more tools.
+**Overview:** Beyond the current Hi-Lo and Reko systems (Reko is already implemented), add support for other popular counting systems — KO, Wong Halves, and Omega II — to give serious players more tools.
 
 **Counting Systems to Add:**
 

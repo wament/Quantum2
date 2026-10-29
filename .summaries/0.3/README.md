@@ -117,8 +117,8 @@ Blackjack2/
 - Insurance and split support
 - Replay history of all hands
 - Session and shoe win/loss tracking
-- Configurable game speed (Fast/Normal/Slow)
+- Configurable game speed (Fast / Normal / Slow / AutoPlay; AutoPlay advances every seat on basic strategy for analysis)
 
 ## CI/CD
 
-GitHub Actions builds release binaries for Windows (ZIP) and macOS (DMG) on tagged releases (`v*`).
+GitHub Actions builds release **zips** for both Windows and macOS on tagged releases (`v*`) — the macOS build ships a `.zip` of the app bundle rather than a DMG (hdiutil is unreliable on GitHub runners).

@@ -98,6 +98,10 @@ target_sources(Blackjack2 PRIVATE
     src/InputHandler.cpp
     src/HandEvaluator.cpp
     src/Logger.cpp
+    src/SoundManager.cpp
+    src/SideBet.cpp
+    src/StrategyTrainer.cpp
+    src/Tournament.cpp
 )
 
 # Copy assets to build output (for local testing)
@@ -139,6 +143,10 @@ add_executable(Blackjack2Tests
     src/InputHandler.cpp
     src/HandEvaluator.cpp
     src/Logger.cpp
+    src/SoundManager.cpp
+    src/SideBet.cpp
+    src/StrategyTrainer.cpp
+    src/Tournament.cpp
     tests/test_card.cpp
     tests/test_deck.cpp
     tests/test_hand.cpp
@@ -155,6 +163,12 @@ add_executable(Blackjack2Tests
     tests/test_blackjack_settlement.cpp
     tests/test_hud_layout.cpp
     tests/test_profile_settings.cpp
+    tests/test_sound_manager.cpp
+    tests/test_side_bets.cpp
+    tests/test_side_bet_round.cpp
+    tests/test_strategy_trainer.cpp
+    tests/test_tournament_mode.cpp
+    tests/test_gamer_speed.cpp
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)
@@ -162,7 +176,10 @@ target_include_directories(Blackjack2Tests PRIVATE include)
 # For tests, always use dynamic SFML (simpler with Catch2)
 if(GITHUB_BUILD OR CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
     find_package(SFML 3.0 REQUIRED COMPONENTS Graphics)
-    target_link_libraries(Blackjack2Tests PRIVATE Catch2::Catch2WithMain SFML::Graphics)
+    # Feature 7: SoundManager.cpp is now linked into the test binary (it uses sf::SoundBuffer/sf::Sound), so the tests
+    # target needs SFML::Audio too. Loading buffers/decoding files needs no display or audio device, so headless ctest
+    # stays safe. This is the one required deviation from "tests link only Graphics" for this feature.
+    target_link_libraries(Blackjack2Tests PRIVATE Catch2::Catch2WithMain SFML::Graphics SFML::Audio)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_include_directories(Blackjack2Tests PRIVATE ${SFML_ROOT}/include)
     target_link_directories(Blackjack2Tests PRIVATE ${SFML_ROOT}/lib)
@@ -172,7 +189,10 @@ elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_CXX_COMPILER_ID STREQUAL "
     )
 else()
     find_package(SFML 3.0 REQUIRED COMPONENTS Graphics)
-    target_link_libraries(Blackjack2Tests PRIVATE Catch2::Catch2WithMain SFML::Graphics)
+    # Feature 7: SoundManager.cpp is now linked into the test binary (it uses sf::SoundBuffer/sf::Sound), so the tests
+    # target needs SFML::Audio too. Loading buffers/decoding files needs no display or audio device, so headless ctest
+    # stays safe. This is the one required deviation from "tests link only Graphics" for this feature.
+    target_link_libraries(Blackjack2Tests PRIVATE Catch2::Catch2WithMain SFML::Graphics SFML::Audio)
 endif()
 
 include(CTest)

@@ -15,6 +15,8 @@ inline const std::vector<MainMenuItem> &mainMenuItems()
         {MenuOption::PlayerCount,   260.f},
         {MenuOption::GameSpeed,     300.f},
         {MenuOption::ReviewHistory, 340.f},
+        {MenuOption::StrategyTrainer, 380.f},
+        {MenuOption::Tournament, 420.f},
     };
     return items;
 }
@@ -71,7 +73,11 @@ private:
     // Shared table-draw (dealer + players + chips) used by both Playing and Paused.
     void drawGameTable(Game &game);
     void drawDeck(Game &game);
+    // Feature 7: thin sound-status indicator (bottom-right corner) so mute/volume state is visible without a settings
+    // panel. Pure presentation; reads game.sound_ through the Game friend link.
+    void drawSoundStatus(Game &game) const;
     void drawInsurance(Game &game);
+    void drawSideBet(Game &game);
     void drawMenuItem(Game &game, const std::string &label, bool selected, float y, bool hovered = false);
     void drawMainMenu(Game &game);
     void drawPauseMenu(Game &game);

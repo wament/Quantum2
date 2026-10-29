@@ -62,7 +62,10 @@ inline void to_json(json& j, const PlayerStats& s)
         {"handProfitCount", s.handProfitCount},
         {"handProfitSum", s.handProfitSum},
         {"handProfitSumSq", s.handProfitSumSq},
-        {"betDistribution", s.betDistribution}
+        {"betDistribution", s.betDistribution},
+        {"sideBetWins", s.sideBetWins},
+        {"sideBetLosses", s.sideBetLosses},
+        {"sideBetProfitSum", s.sideBetProfitSum}
     };
 }
 
@@ -93,6 +96,10 @@ inline void from_json(const json& j, PlayerStats& s)
     s.handProfitSumSq = j.value("handProfitSumSq", (long long)0);
     // Backward compatible: older profiles have no bet histogram yet.
     s.betDistribution = j.value("betDistribution", std::map<int, int>{});
+    // Feature 1 (Side Bets): additive — older profiles lack these fields and fall back to the struct defaults.
+    s.sideBetWins = j.value("sideBetWins", int{0});
+    s.sideBetLosses = j.value("sideBetLosses", int{0});
+    s.sideBetProfitSum = j.value("sideBetProfitSum", (long long)0);
 }
 
 // HandOutcome serialization
@@ -107,7 +114,10 @@ inline void to_json(json& j, const HandOutcome& h)
         {"surrendered", h.surrendered},
         {"insuranceBet", h.insuranceBet},
         {"insuranceTaken", h.insuranceTaken},
-        {"playerName", h.playerName}
+        {"playerName", h.playerName},
+        {"sideBetKind", static_cast<int>(h.sideBetKind)},
+        {"sideBetWager", h.sideBetWager},
+        {"sideBetPayout", h.sideBetPayout}
     };
 }
 
@@ -124,6 +134,10 @@ inline void from_json(const json& j, HandOutcome& h)
     if (j.contains("playerName"))
         j.at("playerName").get_to(h.playerName);
     // else defaults to "" for backward compatibility with existing saves
+    // Feature 1 (Side Bets): additive — older round records lack these and fall back to the struct defaults.
+    h.sideBetKind = static_cast<SideBetKind>(j.value("sideBetKind", int{0}));
+    h.sideBetWager = j.value("sideBetWager", int{0});
+    h.sideBetPayout = j.value("sideBetPayout", int{0});
 }
 
 // RoundRecord serialization
@@ -183,7 +197,10 @@ inline void to_json(json& j, const PlayerProfile& p)
         {"longHistory", p.longHistory},
         {"preferredPlayerCount", p.preferredPlayerCount},
         {"preferredSpeed", p.preferredSpeed},
-        {"preferredCountingStyle", p.preferredCountingStyle}
+        {"preferredCountingStyle", p.preferredCountingStyle},
+        {"preferredSoundVolume", p.preferredSoundVolume},
+        {"preferredMusicVolume", p.preferredMusicVolume},
+        {"preferredMuted", p.preferredMuted}
     };
 }
 
@@ -197,4 +214,9 @@ inline void from_json(const json& j, PlayerProfile& p)
     p.preferredPlayerCount = j.value("preferredPlayerCount", GameConfig::DEFAULT_PLAYER_COUNT);
     p.preferredSpeed = j.value("preferredSpeed", static_cast<int>(GameSpeed::Normal));
     p.preferredCountingStyle = j.value("preferredCountingStyle", 1);
+    // Backward compatible: profiles saved before sound settings existed fall back to sensible defaults, so existing
+    // saved profiles keep loading unchanged (additive schema — see CONTEXT.md §4 / §6). Defaults match Constants::Sound.
+    p.preferredSoundVolume = j.value("preferredSoundVolume", 100);
+    p.preferredMusicVolume = j.value("preferredMusicVolume", 60);
+    p.preferredMuted = j.value("preferredMuted", false);
 }
