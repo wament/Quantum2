@@ -102,6 +102,9 @@ target_sources(Blackjack2 PRIVATE
     src/SideBet.cpp
     src/StrategyTrainer.cpp
     src/Tournament.cpp
+    src/Achievement.cpp
+    src/GameRules.cpp
+    src/StatsDashboard.cpp
 )
 
 # Copy assets to build output (for local testing)
@@ -147,6 +150,9 @@ add_executable(Blackjack2Tests
     src/SideBet.cpp
     src/StrategyTrainer.cpp
     src/Tournament.cpp
+    src/Achievement.cpp
+    src/GameRules.cpp
+    src/StatsDashboard.cpp
     tests/test_card.cpp
     tests/test_deck.cpp
     tests/test_hand.cpp
@@ -168,7 +174,10 @@ add_executable(Blackjack2Tests
     tests/test_side_bet_round.cpp
     tests/test_strategy_trainer.cpp
     tests/test_tournament_mode.cpp
+    tests/test_achievements.cpp
     tests/test_gamer_speed.cpp
+    tests/test_game_rules.cpp
+    tests/test_stats_dashboard.cpp
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)

@@ -111,10 +111,12 @@ void RoundEngine::tick(float deltaTime, Game& game)
             game.dealCardToPlayer(p.hands[p.currentHand]);
             if (p.hands[p.currentHand].isSplitAce())
             {
-                // Re-split only when permitted and another split slot is open
-                bool canResplit = Constants::RESPLIT_ACES_ALLOWED &&
+                // Re-split only when permitted and another split slot is open. Feature 3 (Custom Game Rules): the resplit-aces
+                // flag and max-hand cap come from the live ruleset (RoundEngine is a friend of Game), so in-game rule edits
+                // affect re-split eligibility immediately; defaults preserve current behaviour.
+                bool canResplit = game.gameRules_.resplitAcesAllowed &&
                                   p.hands[p.currentHand].canSplit() &&
-                                  p.hands.size() < Constants::MAX_SPLIT_HANDS;
+                                  p.hands.size() < game.gameRules_.maxSplitHands;
                 if (!canResplit)
                 {
                     p.hands[p.currentHand].setFinished(true);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "GameRules.hpp"
+
 namespace BasicStrategy
 {
     enum class CountingStyle
@@ -11,6 +13,11 @@ namespace BasicStrategy
     const char* countingStyleName(CountingStyle style);
 
     char getRecommendedAction(int playerValue,int dealerUpValue,bool hasAce,bool isPair,int pairValue);
+
+    // Feature 3 (Custom Game Rules): rules-aware advisor. Identical decision tables to the plain overload, but the
+    // double-after-split ('M' pairs) and surrender gates read from `rules` instead of compile-time Constants. The plain
+    // overload above delegates here with default rules so every existing advisor test keeps passing unchanged.
+    char getRecommendedAction(const GameRules& rules,int playerValue,int dealerUpValue,bool hasAce,bool isPair,int pairValue);
 
     int calculateKellyBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet);
 

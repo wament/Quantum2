@@ -202,6 +202,13 @@ inline void to_json(json& j, const PlayerProfile& p)
         {"preferredMusicVolume", p.preferredMusicVolume},
         {"preferredMuted", p.preferredMuted}
     };
+    // Feature 5 (Achievement System): additive schema — persist the unlocked-achievement ids only when at least one is
+    // owned, so a profile saved before achievements existed keeps serializing with no such key (and still loads).
+    if (!p.unlockedAchievementIds.empty())
+        j["unlockedAchievementIds"] = p.unlockedAchievementIds;
+    // Feature 3 (Custom Game Rules): persist the player's table rules as a nested object. Written unconditionally so it
+    // round-trips; additive on load (see from_json) so profiles saved before custom rules existed still load unchanged.
+    j["gameRules"] = p.gameRules;
 }
 
 inline void from_json(const json& j, PlayerProfile& p)
@@ -219,4 +226,11 @@ inline void from_json(const json& j, PlayerProfile& p)
     p.preferredSoundVolume = j.value("preferredSoundVolume", 100);
     p.preferredMusicVolume = j.value("preferredMusicVolume", 60);
     p.preferredMuted = j.value("preferredMuted", false);
+    // Feature 5 (Achievement System): additive — profiles saved before achievements existed have no such key and fall back
+    // to an empty list, so they keep loading unchanged.
+    p.unlockedAchievementIds = j.value("unlockedAchievementIds", std::vector<int>{});
+    // Feature 3 (Custom Game Rules): additive — profiles saved before custom rules existed have no "gameRules" key, so
+    // the struct keeps its default values and loads unchanged (the nested GameRules hooks fall back field-by-field too).
+    if (j.contains("gameRules"))
+        j.at("gameRules").get_to(p.gameRules);
 }

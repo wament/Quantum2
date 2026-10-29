@@ -17,6 +17,9 @@ inline const std::vector<MainMenuItem> &mainMenuItems()
         {MenuOption::ReviewHistory, 340.f},
         {MenuOption::StrategyTrainer, 380.f},
         {MenuOption::Tournament, 420.f},
+        {MenuOption::Achievements, 460.f},
+        {MenuOption::GameRules, 500.f},
+        {MenuOption::Statistics, 540.f},
     };
     return items;
 }
@@ -82,5 +85,13 @@ private:
     void drawMainMenu(Game &game);
     void drawPauseMenu(Game &game);
     void drawSummaryOverlay(Game &game);
+    // Feature 5 (Achievement System): browse-only list of every achievement with its unlocked/locked state, and a brief
+    // popup for the most recently unlocked one during play. Pure presentation reading game.achievementManager_.
+    void drawAchievementList(Game &game);
+    void drawPendingAchievement(Game &game);
+    // Feature 3 (Custom Game Rules): render the configurable-table-rules panel — each editable rule on its own row with the
+    // live value, the selected row highlighted. Pure presentation; reads game.gameRules_ + the shared gameRuleRows()/
+    // gameRuleDescription() helpers through the Game friend link.
+    void drawGameRules(Game &game);
     sf::Vector2f getPlayerPosition(Game &game, size_t playerIndex, size_t totalPlayers) const;
 };

@@ -3,7 +3,7 @@
 Grounded execution of `.summaries/0.3/FEATURES.md`. Order sequenced by effort + dependency. Each feature: logic-first (headless-tested) THEN UI. Statuses in `CONTEXT.md` §5 are the live tracker.
 
 ## Shared setup before features 1-6 (one-time)
-- Confirm §6 decisions #1 (counting approach) and #2 (custom-rules scope).
+- Confirm §6 decisions #1 (counting approach, **deferred/Skipped — Feature 6 frozen**) and #2 (custom-rules scope).
 - Decide deliverable shape (§6 #3): new files under `include/`+`src/` with mirrored `tests/*.cpp`, existing module naming.
 
 ---
@@ -39,6 +39,8 @@ Grounded execution of `.summaries/0.3/FEATURES.md`. Order sequenced by effort + 
 - Test: feed synthetic round history -> assert computed win-rates, bust/bj frequency, chart data arrays.
 
 ## 6. Additional Counting (KO/WongHalves/Omega II) — Med-High (3-4d)
+
+> **⏸️ SKIPPED / DEFERRED (2026-10-29).** Feature work frozen; not implemented. Hi-Lo + Reko remain the only counting systems. Do NOT re-attempt without an explicit revive decision — see CONTEXT.md §5 status row #6 and §6 #1. The bullets below are retained for reference if/when revived.
 - Extend `BasicStrategy::CountingStyle`; add per-system value tables + true-count handling (KO unbalanced = no TC). (§6 #1: extend dispatch.)
 - Modify: `Game`, count display/selector in `HUDState`/`GameRenderer`, profile save. Reuse the existing two-buffer toggle model.
 - Test: each system's running/true count on a fixed deck sequence; assert KO stays unbalanced, others balanced.

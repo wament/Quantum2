@@ -6,6 +6,9 @@
 #include "Replay.hpp"
 #include "StrategyTrainer.hpp"
 #include "Tournament.hpp"
+// Feature 4 (Statistics Dashboard): drawn via game.statsDashboard->draw(); the renderer needs the complete type, just as
+// it already fully-includes Replay/StrategyTrainer/Tournament above.
+#include "StatsDashboard.hpp"
 #include "FontManager.hpp"
 
 #include <algorithm>
@@ -16,6 +19,12 @@ void GameRenderer::draw(Game& game)
         game.window.clear(sf::Color(96, 0, 128)); // royal-purple training backdrop - no felt needed behind the text
     else if (game.appMode == AppMode::Tournament)
         game.window.clear(sf::Color(25, 32, 48)); // tournament slate backdrop; Tournament::draw() paints it itself
+    else if (game.appMode == AppMode::Achievements)
+        game.window.clear(sf::Color(18, 28, 24)); // dark-slate backdrop for the achievements list; nothing else draws behind it
+    else if (game.appMode == AppMode::GameRules)
+        game.window.clear(sf::Color(30, 30, 40)); // rules-config backdrop; drawGameRules() paints its own text on top
+    else if (game.appMode == AppMode::StatsDashboard)
+        game.window.clear(sf::Color(15, 22, 30)); // deep-teal dashboard backdrop; StatsDashboard::draw() paints it itself
     else
     {
         game.window.clear();
@@ -38,6 +47,8 @@ void GameRenderer::draw(Game& game)
         drawSideBet(game);
         drawSoundStatus(game);
         drawSummaryOverlay(game);
+        // Feature 5: brief popup for the most recently unlocked achievement (set by Game at settlement). No-op when none.
+        drawPendingAchievement(game);
 
         // Feature 1 (Side Bets): while betting, remind the player how to place a side bet alongside the main-bet controls.
         if (game.roundState == RoundState::PlaceBets)
@@ -68,6 +79,16 @@ void GameRenderer::draw(Game& game)
     case AppMode::Tournament:
         game.tournament->draw(game.window);
         break;
+    case AppMode::Achievements:
+        drawAchievementList(game);
+        break;
+    case AppMode::GameRules:
+        drawGameRules(game);
+        break;
+    case AppMode::StatsDashboard:
+        if (game.statsDashboard)
+            game.statsDashboard->draw(game.window);
+        break;
     case AppMode::ReplayHistory:
     case AppMode::ReplayPlaying:
         game.replay->draw();
@@ -75,6 +96,67 @@ void GameRenderer::draw(Game& game)
     }
 
     game.window.display();
+}
+
+// Feature 5 (Achievement System): render the full achievement list — each entry shows its unlocked/locked state plus name and
+// description. Pure presentation; reads game.achievementManager_ through the shared Game friend link, exactly like drawSoundStatus
+// reads sound_. The Escape-to-menu control lives in InputHandler::processAchievementEvents.
+void GameRenderer::drawAchievementList(Game &game)
+{
+    const auto& defs = game.achievementManager_.all();
+    const float w = static_cast<float>(game.window.getSize().x);
+    const float h = static_cast<float>(game.window.getSize().y);
+    const float cx = w / 2.0f;
+
+    sf::Text title(FontManager::get(), "ACHIEVEMENTS", 34);
+    title.setFillColor(sf::Color(255, 215, 0));
+    const auto tb = title.getLocalBounds();
+    title.setOrigin(sf::Vector2f(tb.size.x / 2.0f, 0));
+    title.setPosition(sf::Vector2f(cx, 40.f));
+    game.window.draw(title);
+
+    float y = 96.f;
+    const float rowH = 60.f;   // state + name line and a description line per achievement
+    for (const auto& def : defs)
+    {
+        sf::Text state(FontManager::get(), def.unlocked ? "[X]" : "[ ]", 22);
+        state.setFillColor(def.unlocked ? sf::Color(103, 255, 103) : sf::Color(160, 160, 160));
+        state.setPosition(sf::Vector2f(cx - 224.f, y));
+        game.window.draw(state);
+
+        sf::Text name(FontManager::get(), def.name, 20);
+        name.setFillColor(def.unlocked ? sf::Color::White : sf::Color(190, 190, 190));
+        name.setPosition(sf::Vector2f(cx - 184.f, y));
+        game.window.draw(name);
+
+        sf::Text desc(FontManager::get(), def.description, 14);
+        desc.setFillColor(sf::Color(160, 160, 160));
+        desc.setPosition(sf::Vector2f(cx - 184.f, y + 26.f));
+        game.window.draw(desc);
+
+        y += rowH;
+    }
+
+    sf::Text hint(FontManager::get(), "Esc: back", 14);
+    hint.setFillColor(sf::Color(140, 140, 140));
+    hint.setPosition(sf::Vector2f(cx, h - 28.f));
+    game.window.draw(hint);
+}
+
+// Feature 5: brief popup for the most recently unlocked achievement during play. Shown only while HUDState has a name set
+// (Game sets it at settlement and clears it next round); drawn just above the end-of-round summary line.
+void GameRenderer::drawPendingAchievement(Game &game)
+{
+    if (game.hudState.pendingAchievementName.empty())
+        return;
+
+    const float w = static_cast<float>(game.window.getSize().x);
+    sf::Text banner(FontManager::get(), std::string("NEW! ") + game.hudState.pendingAchievementName, 18);
+    banner.setFillColor(sf::Color(255, 215, 0));
+    const auto bb = banner.getLocalBounds();
+    banner.setOrigin(sf::Vector2f(bb.size.x / 2.0f, 0));
+    banner.setPosition(sf::Vector2f(w / 2.0f, 452.f));
+    game.window.draw(banner);
 }
 
 // Shared table-draw for Playing and Paused states (dealer + players + chips).
@@ -805,6 +887,15 @@ void GameRenderer::drawMainMenu(Game& game)
         case MenuOption::Tournament:
             label = "Tournament Mode";
             break;
+        case MenuOption::Achievements:
+            label = "Achievements";
+            break;
+        case MenuOption::GameRules:
+            label = "Custom Game Rules (Up/Dn, Left/Rt, Esc)";
+            break;
+        case MenuOption::Statistics:
+            label = "Statistics Dashboard";
+            break;
         }
 
         bool hovered = (i == hoveredIndex);
@@ -814,6 +905,49 @@ void GameRenderer::drawMainMenu(Game& game)
     sf::Text instr(FontManager::get(), "Up/Down: navigate  Enter: select  Esc: quit", 14);
     instr.setFillColor(sf::Color(140, 140, 140));
     instr.setPosition(sf::Vector2f(cx, 470.0f));
+    game.window.draw(instr);
+}
+
+// Feature 3 (Custom Game Rules): render the in-game rules-config panel. Each editable rule is one row — label on the left,
+// current value on the right — with the selected row highlighted. Pure presentation: it reads the live gameRules_ plus the
+// shared gameRuleRows()/gameRuleDescription() helpers through the Game friend link. Navigation and editing live in
+// Game::update(); Escape persists there via rememberTableSettings().
+void GameRenderer::drawGameRules(Game &game)
+{
+    const float w = static_cast<float>(game.window.getSize().x);
+    const float h = static_cast<float>(game.window.getSize().y);
+    const float cx = w / 2.0f;
+
+    sf::Text title(FontManager::get(), "Custom Game Rules", 36);
+    title.setFillColor(sf::Color(255, 215, 0));
+    {
+        sf::FloatRect tb = title.getLocalBounds();
+        title.setOrigin(sf::Vector2f(tb.size.x / 2.0f, 0));
+    }
+    title.setPosition(sf::Vector2f(cx, h * 0.12f));
+    game.window.draw(title);
+
+    const auto& rows = gameRuleRows();
+    const float startY = h * 0.30f;
+    const float spacing = 46.f;
+    for (size_t i = 0; i < rows.size(); ++i)
+    {
+        bool selected = (static_cast<int>(i) == game.gameRulesSelectedRow);
+        std::string lineText = std::string(selected ? "> " : "  ") + rows[i].label + "   "
+            + gameRuleDescription(game.gameRules_, rows[i].id);
+        sf::Text line(FontManager::get(), lineText, 24);
+        line.setFillColor(selected ? sf::Color(255, 255, 255) : sf::Color(200, 200, 200));
+        line.setPosition(sf::Vector2f(cx, startY + i * spacing));
+        game.window.draw(line);
+    }
+
+    sf::Text instr(FontManager::get(), "Up/Down: select   Left/Right: change   Esc: done", 14);
+    instr.setFillColor(sf::Color(140, 140, 140));
+    {
+        sf::FloatRect ib = instr.getLocalBounds();
+        instr.setOrigin(sf::Vector2f(ib.size.x / 2.0f, 0));
+    }
+    instr.setPosition(sf::Vector2f(cx, h * 0.78f));
     game.window.draw(instr);
 }
 

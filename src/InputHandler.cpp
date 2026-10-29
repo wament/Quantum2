@@ -7,6 +7,9 @@
 #include "Logger.hpp"
 #include "StrategyTrainer.hpp"
 #include "Tournament.hpp"
+// Feature 4 (Statistics Dashboard): included here so activateMainMenuOption can start it and processStatsDashboardEvents can
+// drive its tab switching. Pure-logic + no new include cycle.
+#include "StatsDashboard.hpp"
 
 InputHandler::InputHandler(Game& game) : game(game) {}
 
@@ -48,6 +51,26 @@ void InputHandler::activateMainMenuOption(Game &game, MenuOption option)
         game.appMode = AppMode::Tournament;
         break;
     }
+    case MenuOption::Achievements:
+    {
+        Logger::info() << "Entering achievements.";
+        game.appMode = AppMode::Achievements;
+        break;
+    }
+    case MenuOption::GameRules:
+    {
+        Logger::info() << "Entering custom game rules.";
+        game.appMode = AppMode::GameRules;
+        game.gameRulesSelectedRow = 0;
+        break;
+    }
+    case MenuOption::Statistics:
+    {
+        Logger::info() << "Entering statistics dashboard.";
+        game.startStatsSession();
+        game.appMode = AppMode::StatsDashboard;
+        break;
+    }
     }
 }
 
@@ -77,6 +100,8 @@ void InputHandler::activatePauseOption(Game &game, PauseOption option)
 
         PlayerProfile profile = game.players[0].getProfile();
         profile.addShoeRecord(game.currentShoeRecord);
+        // Feature 5: stamp the current unlocked-achievement ids onto the profile too, so exiting cleanly persists them.
+        game.achievementManager_.persistUnlockedTo(profile.unlockedAchievementIds);
         game.players[0].updateProfile(profile);
         game.players[0].saveProfile();
         game.appMode = AppMode::MainMenu;
@@ -196,7 +221,10 @@ void InputHandler::processEvents()
         if (event->is<sf::Event::Closed>())
         {
             Logger::info("=== Closing game ===");
-            game.players[0].updateProfile(game.players[0].getProfile());
+            PlayerProfile closeProfile = game.players[0].getProfile();
+            // Feature 5: stamp the current unlocked-achievement ids before saving on exit.
+            game.achievementManager_.persistUnlockedTo(closeProfile.unlockedAchievementIds);
+            game.players[0].updateProfile(closeProfile);
             game.players[0].saveProfile();
             game.window.close();
             return;
@@ -224,6 +252,12 @@ void InputHandler::processEvents()
             break;
         case AppMode::Tournament:
             processTournamentEvents(event.value());
+            break;
+        case AppMode::StatsDashboard:
+            processStatsDashboardEvents(event.value());
+            break;
+        case AppMode::Achievements:
+            processAchievementEvents(event.value());
             break;
         case AppMode::ReplayHistory:
         case AppMode::ReplayPlaying:
@@ -289,6 +323,47 @@ void InputHandler::processTournamentEvents(const sf::Event& event)
             game.appMode = AppMode::MainMenu;
             game.menuSelection = MenuOption::PlayGame;
             break;
+        }
+    }
+}
+
+// Feature 4 (Statistics Dashboard): keyboard drives the tabbed browse view. Left/Right cycle tabs (advanceTab); Escape
+// returns to the main menu. Guards the shared dashboard so headless games - which never build it - can't crash when input
+// is processed, mirroring processTournamentEvents().
+void InputHandler::processStatsDashboardEvents(const sf::Event& event)
+{
+    if (auto pressed = event.getIf<sf::Event::KeyPressed>())
+    {
+        switch (pressed->code)
+        {
+        case sf::Keyboard::Key::Left:
+            if (game.statsDashboard)
+                game.statsDashboard->prevTabForTest();
+            break;
+        case sf::Keyboard::Key::Right:
+            if (game.statsDashboard)
+                game.statsDashboard->nextTabForTest();
+            break;
+        case sf::Keyboard::Key::Escape:
+            Logger::info() << "Returned to main menu from the statistics dashboard.";
+            game.appMode = AppMode::MainMenu;
+            game.menuSelection = MenuOption::PlayGame;
+            break;
+        }
+    }
+}
+
+// Feature 5 (Achievement System): the achievements list is a read-only view. There are no live controls beyond returning to
+// the main menu with Escape, so this mirrors processTrainerEvents()'s escape path only.
+void InputHandler::processAchievementEvents(const sf::Event& event)
+{
+    if (auto pressed = event.getIf<sf::Event::KeyPressed>())
+    {
+        if (pressed->code == sf::Keyboard::Key::Escape)
+        {
+            Logger::info() << "Returned to main menu from the achievements list.";
+            game.appMode = AppMode::MainMenu;
+            game.menuSelection = MenuOption::PlayGame;
         }
     }
 }

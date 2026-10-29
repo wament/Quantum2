@@ -16,6 +16,10 @@
 #include "Replay.hpp"
 #include "StrategyTrainer.hpp"
 #include "Tournament.hpp"
+// Feature 4 (Statistics Dashboard): included fully here so Game's out-of-line destructor destroys the unique_ptr with a
+// complete type, and startStatsSession() can seed the dashboard from the player's history + career stats. Pure-logic + no
+// new include cycle (pulls only GameRecord/SFML, already in this chain).
+#include "StatsDashboard.hpp"
 
 // Defined here (Replay.hpp is included in this translation unit) so unique_ptr<Replay>'s member
 // destruction runs with a complete Replay type regardless of who destroys the Game.
@@ -87,6 +91,25 @@ namespace
 static float detectMonitorRefreshHz() { return GameTiming::DEFAULT_REFRESH_HZ; }
 #endif
 
+namespace
+{
+    // Feature 5 (Achievement System): given a list of just-unlocked achievement ids, set the HUD popup to the
+    // highest-priority one (first in definition order). Uses only the public AchievementManager API + Achievement fields,
+    // so it needs no friendship and is safe at either call site.
+    void setPendingUnlocked(const AchievementManager& mgr, const std::vector<Achievement::Id>& newly, std::string& pending)
+    {
+        if (newly.empty())
+            return;
+        for (const auto& def : mgr.all())
+            for (auto id : newly)
+                if (def.id == id)
+                {
+                    pending = def.name;
+                    return;
+                }
+    }
+}
+
 Game::Game()
     : window(
           sf::VideoMode({Constants::WINDOW_WIDTH, Constants::WINDOW_HEIGHT}), Constants::WINDOW_TITLE),
@@ -127,9 +150,14 @@ Game::Game()
     // Feature 9 (Tournament Mode): its own AppMode state machine, built in full mode only; headless tests drive
     // Tournament directly (see test_tournament_mode.cpp), so the window never needs one for them.
     tournament = std::make_unique<Tournament>();
+    // Feature 4 (Statistics Dashboard): its own AppMode state machine, built in full mode only; headless tests drive it
+    // directly (see test_stats_dashboard.cpp). Data is seeded on entry via startStatsSession().
+    statsDashboard = std::make_unique<StatsDashboard>();
     auto profile = players[0].getProfile();
     replay->loadHistory(profile.getLongHistory());
     replay->setStartingBankroll(players[0].getBankroll());
+    // Feature 5: restore previously-unlocked achievements from the profile (additive — empty for new/legacy profiles).
+    achievementManager_.loadUnlockedFrom(profile.unlockedAchievementIds);
     Logger::info(R"(
 
 =========================================================
@@ -194,6 +222,28 @@ void Game::startTournamentSession(const Tournament::TournamentConfig& config)
     tournament->start(config);
 }
 
+// Feature 4 (Statistics Dashboard): begin/restart the dashboard from the main menu. Guards against nullptr so headless
+// construction (which never builds the dashboard) can't crash when the menu calls this; on first entry it seeds the
+// dashboard by flattening every shoe's rounds into one history list and pairing it with the player's career stats.
+void Game::startStatsSession()
+{
+    if (!statsDashboard)
+        statsDashboard = std::make_unique<StatsDashboard>();
+
+    // Flatten completed-shoe history from the profile plus any rounds played in the current (in-progress) shoe, into one
+    // round-history list — exactly what the dashboard feeds on. Reading through getProfile().getLongHistory() keeps this
+    // additive to existing persistence; nothing is rewritten here.
+    std::vector<RoundRecord> rounds;
+    const auto& longHistory = players[0].getProfile().getLongHistory();
+    for (const auto& shoe : longHistory)
+        for (const auto& round : shoe.rounds)
+            rounds.push_back(round);
+    for (const auto& round : currentShoeRecord.rounds)
+        rounds.push_back(round);
+
+    statsDashboard->feed(players[0].getStats(), rounds);
+}
+
 void Game::startNewGame()
 {
     Logger::info("Starting new game");
@@ -218,7 +268,7 @@ void Game::startNewGame()
 
     auto profile = players[0].getProfile();
 
-    deck.create(Constants::NUM_DECKS);
+    deck.create(gameRules_.numDecks);
     deck.shuffle();
     currentShoeRecord.initialDeck = deck.getCards();
     currentShoeRecord.rounds.clear();
@@ -277,6 +327,10 @@ void Game::applySavedTableSettings()
         break;
     }
 
+    // Feature 3 (Custom Game Rules): restore the saved table rules. The profile's GameRules already carries defaults for
+    // legacy files, so this is a clean no-op unless the player previously changed a rule and it was persisted additively.
+    gameRules_ = profile.gameRules;
+
     Logger::info() << "Restored table settings: " << playerCount << " players, "
                    << BasicStrategy::countingStyleName(countingStyle) << " counting.";
 }
@@ -295,6 +349,9 @@ void Game::rememberTableSettings()
     profile.preferredSoundVolume = static_cast<int>(sound_.settings().soundVolume);
     profile.preferredMusicVolume = static_cast<int>(sound_.settings().musicVolume);
     profile.preferredMuted = sound_.isMuted();
+    // Feature 3 (Custom Game Rules): stamp the live table rules onto the profile so they survive the session, written on
+    // every existing save point (no extra I/O). Additive schema: unchanged for profiles saved before custom rules.
+    profile.gameRules = gameRules_;
     players[0].updateProfile(profile);
     players[0].saveProfile();
 }
@@ -322,6 +379,10 @@ void Game::resetShoeAnalytics()
 
     shoeCumulativeWinLoss = 0;
     gameState = GameState::Started;
+
+    // Feature 5: a new shoe begins — resolve the finished shoe's end-of-shoe achievements (Deviation Free / Comeback King /
+    // Perfect Shoe / Kelly Master) via onNewShoe(), which then resets every per-shoe counter for this fresh shoe.
+    setPendingUnlocked(achievementManager_, achievementManager_.onNewShoe(), hudState.pendingAchievementName);
 }
 
 void Game::startNewShoe()
@@ -329,11 +390,41 @@ void Game::startNewShoe()
     // A fresh, full shoe plus the shared analytics reset. Used by the R key at end of shoe and by auto-play's
     // auto-advance; the mid-shoe reshuffle (handleEmptyDeck) reuses resetShoeAnalytics() but keeps its partially
     // dealt cards, and startNewGame() resets a whole session rather than just a shoe.
-    deck.create(Constants::NUM_DECKS);
+    deck.create(gameRules_.numDecks);
     deck.shuffle();
     currentShoeRecord = {};
     currentShoeRecord.initialDeck = deck.getCards();
     resetShoeAnalytics();
+}
+
+// Feature 5 (Achievement System): feed one settled round's human-seat outcome into the achievement engine and surface any
+// just-unlocked popup. The human seat is index 0; a split yields multiple seat-0 outcomes on the record, so their signals
+// are OR'd. True count comes straight from the settled round; bankroll is read live. Shoe-end achievements resolve in
+// resetShoeAnalytics() via onNewShoe(), not here.
+void Game::recordHandAchievements(const RoundRecord& round)
+{
+    AchievementManager::HandEvent e;
+    int bet = 0;
+    int seat0Outcomes = 0;
+    for (const auto& h : round.playerHands)
+    {
+        if (h.playerIndex != 0)
+            continue;
+        ++seat0Outcomes;
+        const Hand hand(h.cards);
+        e.isBlackjack = e.isBlackjack || hand.isBlackjack();
+        e.busted = e.busted || hand.getValue() > 21;
+        e.wonAny = e.wonAny || h.won;
+        bet += h.wager;
+    }
+    e.splitHand = seat0Outcomes > 1;                 // a split produces more than one seat-0 outcome on the record
+    e.followedStrategy = (deviationsThisRound_ == 0); // whole round matched basic strategy if no deviation was logged
+    e.bet = bet;
+    e.bankrollAfter = players.empty() ? 0.0f : static_cast<float>(players[0].getBankroll());
+    e.positiveTrueCount = round.trueCount > 0.0f;
+
+    std::vector<Achievement::Id> newly = achievementManager_.recordHand(e);
+    setPendingUnlocked(achievementManager_, newly, hudState.pendingAchievementName);
 }
 
 void Game::setPlayerCount(int count)
@@ -396,6 +487,8 @@ void Game::nextRound()
     advisorAction = 0;
     roundState = RoundState::PlaceBets;
     activePlayerIndex = 0;
+    // Feature 5: a fresh round starts with no deviations yet recorded for it.
+    deviationsThisRound_ = 0;
 }
 // Events
 void Game::update(float deltaTime)
@@ -419,6 +512,42 @@ void Game::update(float deltaTime)
     {
         tournament->update(deltaTime);
         return;
+    }
+    // Feature 4 (Statistics Dashboard): advance the dashboard's own state machine (tab pacing), then hand off to rendering.
+    // Mirroring the other modes' early-return wiring so it never reaches the Playing path below. Tab switching is driven by
+    // InputHandler::processStatsDashboardEvents; update() only exists for AppMode parity with Tournament / StrategyTrainer.
+    if (appMode == AppMode::StatsDashboard)
+    {
+        statsDashboard->update(deltaTime);
+        return;
+    }
+    // Feature 3 (Custom Game Rules): in-game rules-config panel — its own small state machine mirroring the other modes'
+    // early-return wiring. Arrow keys move the highlight; Left/Right edit the selected rule via applyGameRuleEdit (editing
+    // gameRules_ live); Escape persists and returns to the main menu. Rendering is GameRenderer's job when appMode matches.
+    if (appMode == AppMode::GameRules)
+    {
+        const int rowCount = static_cast<int>(gameRuleRows().size());
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up))
+        {
+            if (gameRulesSelectedRow > 0) --gameRulesSelectedRow;
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Down))
+        {
+            if (gameRulesSelectedRow < rowCount - 1) ++gameRulesSelectedRow;
+        }
+        const bool rightHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right);
+        const bool leftHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left);
+        if (rightHeld || leftHeld)
+        {
+            if (gameRulesSelectedRow >= 0 && gameRulesSelectedRow < rowCount)
+                applyGameRuleEdit(gameRules_, gameRuleRows()[gameRulesSelectedRow].id, rightHeld);
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Escape))
+        {
+            rememberTableSettings(); // persist any rule changes before leaving the panel
+            appMode = AppMode::MainMenu;
+            menuSelection = MenuOption::PlayGame;
+        }
     }
     if (appMode != AppMode::Playing)
         return;
@@ -704,6 +833,14 @@ bool Game::doubleDown()
         return false;
     }
 
+    // Feature 3 (Custom Game Rules): double-after-split. A hand produced by splitting may not be doubled when the rule
+    // disallows it. Default rules keep DAS on, so existing play is unchanged; this only refuses under "DAS off".
+    if (hand.isSplit() && !gameRules_.doublesAfterSplitAllowed)
+    {
+        Logger::warn() << p.getName() << " tried to double down but double-after-split is off.";
+        return false;
+    }
+
     if (!hand.canDouble())
     {
         Logger::warn() << p.getName() << " tried to double down but hand cannot double (not 2 cards).";
@@ -747,9 +884,9 @@ bool Game::split()
         return false;
     }
 
-    if (p.hands.size() >= Constants::MAX_SPLIT_HANDS)
+    if (p.hands.size() >= gameRules_.maxSplitHands)
     {
-        Logger::warn() << p.getName() << " tried to split but has reached max split hands (" << Constants::MAX_SPLIT_HANDS << ").";
+        Logger::warn() << p.getName() << " tried to split but has reached max split hands (" << gameRules_.maxSplitHands << ").";
         return false;
     }
 
@@ -759,13 +896,13 @@ bool Game::split()
         return false;
     }
 
-    // RESPLIT_TENS_ALLOWED gates re-splitting ten-value pairs only: an ordinary initial split of tens is always
+    // gameRules_.resplitTentsAllowed gates re-splitting ten-value pairs only: an ordinary initial split of tens is always
     // permitted. A hand that was itself produced by splitting a previous one (isSplit()) is being re-split here;
     // an untouched deal hand has isSplit() == false and splits freely regardless of the flag.
     if (p.hands[handIndex].isSplit() &&
-        p.hands[handIndex].getCard(0).getBlackjackValue() == 10 && !Constants::RESPLIT_TENS_ALLOWED)
+        p.hands[handIndex].getCard(0).getBlackjackValue() == 10 && !gameRules_.resplitTentsAllowed)
     {
-        Logger::warn() << p.getName() << " tried to re-split tens but RESPLIT_TENS_ALLOWED is off.";
+        Logger::warn() << p.getName() << " tried to re-split tens but resplit-ten is off.";
         return false;
     }
 
@@ -822,6 +959,22 @@ bool Game::surrender()
         return false;
     }
 
+    // Feature 3 (Custom Game Rules): surrender is governed by the active surrender type. None disables it entirely; Early
+    // offers it only when the dealer's up-card is an Ace or ten-value card (the classic early-surrender scenario);
+    // Late / Hit-or-Stand keep the historical "first two cards" behaviour. Reads the live rule so in-game edits apply now.
+    if (!gameRules_.surrenderEnabled())
+    {
+        Logger::warn() << p.getName() << " tried to surrender but surrender is off.";
+        return false;
+    }
+    int dealerUpValue = dealer.getDealerUpCard().getBlackjackValue();
+    bool dealerUpIsAceOrTen = (dealerUpValue == 1 || dealerUpValue >= 10);
+    if (gameRules_.surrenderType == SurrenderType::Early && !dealerUpIsAceOrTen)
+    {
+        Logger::warn() << p.getName() << " tried to surrender but early surrender is only offered vs an Ace or ten.";
+        return false;
+    }
+
     logStrategyDeviation('R');
     Logger::info() << p.getName() << " surrenders. Loses half their bet.";
 
@@ -851,6 +1004,9 @@ void Game::logStrategyDeviation(char actionTaken)
     // for this shoe (shoe_ is zeroed at every boundary). NPC play used to be tallied into the human's accuracy.
     PlayerStats& stats = p.getStats();
     stats.strategyTotal++;
+    // Feature 5: count this round's human-seat deviations so recordHandAchievements() can feed strategy-adherence checks.
+    if (activePlayerIndex == 0 && actionTaken != correct)
+        deviationsThisRound_++;
     if (activePlayerIndex == 0)
         shoe_.strategyTotal++;
 
@@ -905,7 +1061,7 @@ char Game::giveBasicStrategyAdvice(Hand& playerHand, Hand& dealerHand)
                       playerHand.getCard(1).getBlackjackValue();
     int pairValue = isPair ? playerHand.getCard(0).getBlackjackValue() : 0;
 
-    return BasicStrategy::getRecommendedAction(playerValue, dealerUpValue, hasAce, isPair, pairValue);
+    return BasicStrategy::getRecommendedAction(gameRules_, playerValue, dealerUpValue, hasAce, isPair, pairValue);
 }
 
 size_t Game::getGlobalHandIndexForPlayer(size_t playerIdx, size_t handIdx)
@@ -1372,10 +1528,18 @@ void Game::dealerTurn()
     bool doNotDraw = !anyUnresolved;
 
     // Should the dealer draw another card right now? Hit below soft-17 / hard-17, but never when every
-    // player hand is already resolved (a standing-only dealer draws no cards).
-    bool shouldHit = ((dealer.getValue() < Constants::DEALER_STAND ||
-                       (dealer.getValue() == Constants::DEALER_STAND && dealer.isSoft())) &&
-                      !doNotDraw);
+    // player hand is already resolved (a standing-only dealer draws no cards). Soft-17 behaviour is a configurable
+    // rule: default rules keep the historical H17 rule (dealer hits a soft 17); flipping dealerStandsOnSoft17 makes it
+    // stand on every 17, soft or hard. Reads the live rule so in-game edits take effect immediately.
+    bool standsAt17 = (dealer.getValue() >= Constants::DEALER_STAND);
+    bool shouldHit;
+    if (!standsAt17)
+        shouldHit = true;                          // value < 17 -> always draw
+    else if (dealer.isSoft())
+        shouldHit = !gameRules_.dealerStandsOnSoft17;   // soft 17: stand only when the rule requires it
+    else
+        shouldHit = false;                         // hard >= 17 -> stand
+    shouldHit = shouldHit && !doNotDraw;
 
     if (!dealerTurnStarted)
     {

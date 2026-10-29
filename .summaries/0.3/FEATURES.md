@@ -13,7 +13,7 @@ This document outlines 10 new features to enhance Blackjack2, with detailed impl
 | 3 | Custom Game Rules | Configuration |
 | 4 | Statistics Dashboard | Analytics |
 | 5 | Achievement System | Engagement |
-| 6 | Additional Card Counting Systems | Strategy |
+| 6 | Additional Card Counting Systems ⏸️ [SKIPPED] | Strategy |
 | 7 | Sound Effects & Music | Polish |
 | 8 | Animated Card Dealing | Polish |
 | 9 | Tournament Mode | Gameplay |
@@ -204,7 +204,9 @@ This document outlines 10 new features to enhance Blackjack2, with detailed impl
 
 ---
 
-### 6. Additional Card Counting Systems
+### 6. Additional Card Counting Systems ⏸️ [SKIPPED / DEFERRED]
+
+> **Status (2026-10-29):** SKIPPED. Feature work frozen; not implemented. Hi-Lo + Reko remain the only counting systems. The spec below is retained for reference if/when revived — do NOT re-implement without an explicit revive decision (see CONTEXT.md §5 status row #6 and §6 #1).
 
 **Overview:** Beyond the current Hi-Lo and Reko systems (Reko is already implemented), add support for other popular counting systems — KO, Wong Halves, and Omega II — to give serious players more tools.
 
@@ -286,7 +288,7 @@ This document outlines 10 new features to enhance Blackjack2, with detailed impl
 4. **Achievement System** (engagement, moderate effort)
 5. **Custom Game Rules** (replay variety, strategic depth)
 6. **Statistics Dashboard** (analytics for serious players)
-7. **Additional Card Counting Systems** (depth for counters)
+7. **Additional Card Counting Systems — ⏸️ SKIPPED (deferred)** (depth for counters)
 8. **Animated Card Dealing** (visual polish)
 9. **Tournament Mode** (new gameplay variant)
 10. **Multiplayer Networking** (highest complexity, highest reward)

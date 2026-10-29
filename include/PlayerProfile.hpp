@@ -6,6 +6,7 @@
 
 #include "Constants.hpp"
 #include "GameRecord.hpp"
+#include "GameRules.hpp"
 
 using json = nlohmann::json;
 
@@ -33,6 +34,16 @@ class PlayerProfile
     int preferredSoundVolume = 100;
     int preferredMusicVolume = 60;
     bool preferredMuted = false;
+
+    // Feature 5 (Achievement System): the ids of achievements this player has unlocked, persisted as plain ints (see
+    // Achievement::toInt/fromInt). Optional with an empty default on load, so profiles saved before achievements existed
+    // keep loading unchanged — additive schema, exactly like the sound settings above.
+    std::vector<int> unlockedAchievementIds;
+
+    // Feature 3 (Custom Game Rules): the player's preferred table rules. Stored as a self-contained nested object so
+    // the schema stays additive — profiles saved before custom rules existed have no such key and keep their default
+    // struct on load. Mirrors how sound settings + achievements ride along additively on the same profile save path.
+    GameRules gameRules;
 
     const std::string& getName() const;
     int getBankroll() const;

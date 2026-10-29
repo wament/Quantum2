@@ -1,0 +1,344 @@
+#include <catch2/catch_all.hpp>
+#include <Constants.hpp>
+#include <Card.hpp>
+#include <Game.hpp>
+#include <RoundEngine.hpp>
+#include <BasicStrategy.hpp>
+#include <PlayerProfile.hpp>
+#include <Serialization.hpp>
+
+#include <filesystem>
+#include <fstream>
+
+using namespace Constants;
+namespace fs = std::filesystem;
+
+// ---------------------------------------------------------------------------
+// Custom Game Rules (Feature 3). Every case drives the real Game round-state
+// machine headlessly (Game game(true) + setDeck -> startTestRound -> public
+// actions), reading outcomes through *ForTest() accessors, exactly like the
+// split-aces / settlement tests. Each rule is its own clause so a regression in
+// one rule cannot hide another.
+// ---------------------------------------------------------------------------
+
+namespace
+{
+    Card card(int value, Suit suit)
+    {
+        Card c;
+        c.value = value;
+        c.suit = suit;
+        return c;
+    }
+
+    // One frame of the shared state machine. deltaTime is irrelevant to the split/hit/stand logic itself.
+    void tickOnce(Game& game)
+    {
+        RoundEngine engine;
+        engine.tick(0.0f, game);
+    }
+
+    // Drive frames until the round leaves PlayerTurn/DealerTurn (settled). A large dt advances the dealer-turn pacing
+    // timers every frame so cards are dealt one at a time and the round actually completes under headless control.
+    void settleRound(Game& game)
+    {
+        RoundEngine engine;
+        game.deltaTime = 100.0f;
+        for (int i = 0; i < 80 &&
+             (game.roundStateForTest() == RoundState::PlayerTurn ||
+              game.roundStateForTest() == RoundState::DealerTurn); ++i)
+        {
+            engine.tick(100.0f, game);
+        }
+    }
+
+    fs::path tempProfile(const std::string& name)
+    {
+        return fs::temp_directory_path() / ("bj_rules_test_" + name + ".json");
+    }
+} // namespace
+
+// ---- Soft 17 ---------------------------------------------------------------
+
+// The historical H17 rule: the dealer hits a soft 17. Default rules keep this, so the dealer draws at least one extra
+// card off its A+6 and only then stands (hard 17) once it reaches a standing total.
+TEST_CASE("Dealer hits a soft 17 under default rules", "[GameRules][Soft17]")
+{
+    Game game(true);
+    // Deal order: human 10 + 8 (hard 18, forces the dealer to play), dealer up 6, hole Ace -> soft 17, then a ten-value
+    // card for the dealer's required extra draw.
+    game.setDeck({card(10, Suit::Spades),   card(6, Suit::Hearts),
+                  card(8, Suit::Clubs),     card(1, Suit::Diamonds),
+                  card(10, Suit::Hearts),   card(2, Suit::Clubs)});
+    game.startTestRound();
+    game.stand(); // human stands on hard 18 -> unresolved -> the dealer must play its own rule
+    settleRound(game);
+
+    CHECK(game.testDealer().size() > 2); // drew at least one card off the soft 17
+}
+
+// Flipping the rule makes the dealer stand on a soft 17: it keeps exactly two cards and never draws.
+TEST_CASE("Dealer stands on a soft 17 when the rule requires it", "[GameRules][Soft17]")
+{
+    Game game(true);
+    GameRules rules;
+    rules.dealerStandsOnSoft17 = true;
+    game.setGameRulesForTest(rules);
+
+    game.setDeck({card(10, Suit::Spades),   card(6, Suit::Hearts),
+                  card(8, Suit::Clubs),     card(1, Suit::Diamonds)});
+    game.startTestRound();
+    game.stand();
+    settleRound(game);
+
+    CHECK(game.testDealer().size() == 2);
+    CHECK(game.testDealer().getValue() == 17);
+    CHECK(game.testDealer().isSoft()); // still a soft 17, untouched
+}
+
+// ---- Resplit aces ------------------------------------------------------------
+
+TEST_CASE("Aces can be re-split when resplit-aces is allowed", "[GameRules][ResplitAces]")
+{
+    Game game(true);
+    GameRules rules;
+    rules.resplitAcesAllowed = true;
+    game.setGameRulesForTest(rules);
+
+    // Two aces, then an ace as the first hand's draw so it stays re-split eligible.
+    game.setDeck({card(1, Suit::Spades),  card(7, Suit::Hearts),
+                  card(1, Suit::Hearts),   card(6, Suit::Diamonds),
+                  card(1, Suit::Clubs),    card(1, Suit::Diamonds)});
+    game.startTestRound();
+
+    CHECK(game.split()); // AA -> two aces
+    tickOnce(game);      // first ace draws an Ace -> still open (re-split eligible)
+    CHECK(game.testPlayer(0).hands[0].isSplitAce());
+    CHECK(!game.testPlayer(0).hands[0].isFinished());
+
+    CHECK(game.split()); // re-split -> three aces
+    CHECK(game.testPlayer(0).hands.size() == 3);
+}
+
+TEST_CASE("Aces cannot be re-split when resplit-aces is disallowed", "[GameRules][ResplitAces]")
+{
+    Game game(true);
+    GameRules rules;
+    rules.resplitAcesAllowed = false;
+    game.setGameRulesForTest(rules);
+
+    // Two aces, then a non-ace as the first hand's draw.
+    game.setDeck({card(1, Suit::Spades),  card(7, Suit::Hearts),
+                  card(1, Suit::Hearts),   card(6, Suit::Diamonds),
+                  card(2, Suit::Clubs)});
+    game.startTestRound();
+
+    CHECK(game.split()); // AA -> two single-card ace hands
+    tickOnce(game);      // first ace draws one card; with resplit off it is forced to stand (cannot re-split)
+
+    auto& p = game.testPlayer(0);
+    CHECK(p.hands.size() == 2);              // no re-split happened
+    CHECK(p.hands[0].size() == 2);           // original ace + the one permitted card
+    CHECK(p.hands[0].isFinished());          // cannot draw/re-split again -> finished here
+}
+
+// ---- Double after split ------------------------------------------------------
+
+TEST_CASE("A split hand can be doubled when double-after-split is allowed", "[GameRules][DAS]")
+{
+    Game game(true);
+    GameRules rules;
+    rules.doublesAfterSplitAllowed = true;
+    game.setGameRulesForTest(rules);
+
+    // Pair of 5s, dealer up non-ace; filler gives the split hand its card then the double-down's extra card.
+    game.setDeck({card(5, Suit::Spades),  card(6, Suit::Hearts),
+                  card(5, Suit::Clubs),   card(1, Suit::Diamonds),
+                  card(3, Suit::Hearts),  card(4, Suit::Clubs)});
+    game.startTestRound();
+
+    CHECK(game.split()); // pair of 5s -> two hands (size 1 each)
+    tickOnce(game);      // first split hand draws one card -> size 2, ready to act
+    CHECK(game.testPlayer(0).hands[0].size() == 2);
+
+    CHECK(game.doubleDown());            // DAS allowed -> double proceeds
+    CHECK(game.testHand(0, 0).size() == 3); // doubled: one extra card dealt and the hand is finished
+}
+
+TEST_CASE("A split hand cannot be doubled when double-after-split is disallowed", "[GameRules][DAS]")
+{
+    Game game(true);
+    GameRules rules;
+    rules.doublesAfterSplitAllowed = false;
+    game.setGameRulesForTest(rules);
+
+    // Pair of 5s, dealer up non-ace; one filler card lets the split hand reach size 2 (so canDouble is true).
+    game.setDeck({card(5, Suit::Spades),  card(6, Suit::Hearts),
+                  card(5, Suit::Clubs),   card(1, Suit::Diamonds),
+                  card(3, Suit::Hearts)});
+    game.startTestRound();
+
+    CHECK(game.split());
+    tickOnce(game);
+    CHECK(game.testPlayer(0).hands[0].size() == 2);
+
+    CHECK_FALSE(game.doubleDown());      // DAS off -> refused, no extra card dealt
+    CHECK(game.testHand(0, 0).size() == 2);
+}
+
+// ---- Surrender types ---------------------------------------------------------
+
+TEST_CASE("Surrender is refused entirely when the type is None", "[GameRules][Surrender]")
+{
+    Game game(true);
+    GameRules rules;
+    rules.surrenderType = SurrenderType::None;
+    game.setGameRulesForTest(rules);
+
+    game.setDeck({card(5, Suit::Spades),  card(6, Suit::Hearts),
+                  card(6, Suit::Clubs),   card(1, Suit::Diamonds)});
+    game.startTestRound();
+
+    CHECK_FALSE(game.surrender()); // surrender disabled by the rule
+}
+
+TEST_CASE("Surrender is offered on the first two cards under Late rules", "[GameRules][Surrender]")
+{
+    Game game(true);
+    GameRules rules;
+    rules.surrenderType = SurrenderType::Late;
+    game.setGameRulesForTest(rules);
+
+    game.setDeck({card(5, Suit::Spades),  card(6, Suit::Hearts),
+                  card(6, Suit::Clubs),   card(1, Suit::Diamonds)});
+    game.startTestRound();
+
+    CHECK(game.surrender()); // allowed on the first two cards
+}
+
+TEST_CASE("Early surrender is only offered when the dealer shows an Ace or ten-value", "[GameRules][Surrender]")
+{
+    // Dealer up-card is a 6 (not Ace/ten) -> early surrender refused.
+    Game game(true);
+    GameRules rules;
+    rules.surrenderType = SurrenderType::Early;
+    game.setGameRulesForTest(rules);
+
+    game.setDeck({card(5, Suit::Spades),  card(6, Suit::Hearts),
+                  card(6, Suit::Clubs),   card(1, Suit::Diamonds)});
+    game.startTestRound();
+
+    CHECK_FALSE(game.surrender());
+
+    // Dealer up-card is a King (ten-value) -> early surrender allowed.
+    Game g2(true);
+    GameRules rules2;
+    rules2.surrenderType = SurrenderType::Early;
+    g2.setGameRulesForTest(rules2);
+
+    g2.setDeck({card(5, Suit::Spades),  card(13, Suit::Hearts),
+                card(6, Suit::Clubs),   card(1, Suit::Diamonds)});
+    g2.startTestRound();
+
+    CHECK(g2.surrender());
+}
+
+// ---- Configurable deck count -------------------------------------------------
+
+TEST_CASE("A configurable deck count rebuilds the shoe with that many decks", "[GameRules][DeckCount]")
+{
+    Game game(true);
+    GameRules rules;
+    rules.numDecks = 2;
+    game.setGameRulesForTest(rules);
+
+    // startNewShoe() calls Deck::create(numDecks) then shuffle(), and shuffle() inserts one cut card.
+    game.startNewShoeForTest();
+    CHECK(game.deckSizeForTest() == rules.numDecks * 52 + 1);
+}
+
+// ---- Advisor threading (CONTEXT.md §6 #2) ------------------------------------
+
+TEST_CASE("Advisor offers surrender only when surrender is enabled", "[GameRules][Advisor]")
+{
+    GameRules on; // default Late -> enabled
+    CHECK(BasicStrategy::getRecommendedAction(on, /*playerValue=*/16, /*dealerUp=*/10, /*hasAce=*/false,
+                                              /*isPair=*/false, 0) == 'R');
+
+    GameRules off; // surrender disabled -> falls through to the hard-hand advice (hit) instead of offering surrender
+    off.surrenderType = SurrenderType::None;
+    CHECK(BasicStrategy::getRecommendedAction(off, 16, 10, false, false, 0) == 'H');
+}
+
+TEST_CASE("Advisor splits a double-after-split pair only when DAS is allowed", "[GameRules][Advisor]")
+{
+    GameRules on; // default DAS true -> 'M' pair (3,3) suggests split ('P')
+    CHECK(BasicStrategy::getRecommendedAction(on, /*pair 3 = value 6*/ 6, /*dealerUp=*/2, false, true, 3) == 'P');
+
+    GameRules off; // DAS off -> the same 'M' pair becomes a hit ('H')
+    off.doublesAfterSplitAllowed = false;
+    CHECK(BasicStrategy::getRecommendedAction(off, 6, 2, false, true, 3) == 'H');
+}
+
+// ---- Persistence (additive JSON schema) --------------------------------------
+
+TEST_CASE("Custom game rules survive a profile save/load round trip", "[GameRules][Persistence]")
+{
+    const fs::path path = tempProfile("roundtrip");
+
+    {
+        PlayerProfile p("William");
+        GameRules r;
+        r.numDecks = 4;
+        r.dealerStandsOnSoft17 = true;
+        r.doublesAfterSplitAllowed = false;
+        r.resplitAcesAllowed = false;
+        r.surrenderType = SurrenderType::Early;
+        p.gameRules = r;
+        p.save(path.string());
+    }
+
+    const PlayerProfile loaded = PlayerProfile::load(path.string());
+    CHECK(loaded.gameRules.numDecks == 4);
+    CHECK(loaded.gameRules.dealerStandsOnSoft17 == true);
+    CHECK(loaded.gameRules.doublesAfterSplitAllowed == false);
+    CHECK(loaded.gameRules.resplitAcesAllowed == false);
+    CHECK(loaded.gameRules.surrenderType == SurrenderType::Early);
+
+    fs::remove(path);
+}
+
+// Profiles written before custom rules existed carry no "gameRules" key; loading them must fall back to the default
+// struct (which mirrors the compile-time Constants) rather than throwing or discarding the rest of the profile.
+TEST_CASE("Profiles saved before custom rules existed still load with defaults", "[GameRules][Persistence]")
+{
+    const fs::path path = tempProfile("legacy");
+
+    {
+        PlayerProfile fresh("William");
+        fresh.setBankroll(4321);
+        fresh.save(path.string()); // a real save, which now also writes a "gameRules" object
+    }
+
+    {
+        std::fstream rw(path);
+        json j;
+        rw >> j;
+        rw.close();
+
+        j.erase("gameRules"); // simulate an old profile that predates custom rules
+
+        std::ofstream out(path);
+        out << j.dump(2);
+    }
+
+    const PlayerProfile loaded = PlayerProfile::load(path.string());
+    CHECK(loaded.getBankroll() == 4321);
+    CHECK(loaded.gameRules.numDecks == NUM_DECKS);            // default deck count preserved
+    CHECK(loaded.gameRules.dealerStandsOnSoft17 == false);    // default H17 behaviour preserved
+    CHECK(loaded.gameRules.doublesAfterSplitAllowed == DOUBLE_AFTER_SPLIT_ALLOWED);
+    CHECK(loaded.gameRules.resplitAcesAllowed == RESPLIT_ACES_ALLOWED);
+    CHECK(loaded.gameRules.surrenderType == SurrenderType::Late);
+
+    fs::remove(path);
+}

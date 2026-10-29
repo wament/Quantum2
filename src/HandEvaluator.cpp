@@ -276,7 +276,13 @@ void HandEvaluator::evaluateHands()
     Logger::info() << "Round complete. Net: " << (humanNet >= 0 ? "+" : "") << humanNet
                    << ". Bankroll: " << game.players[0].getBankroll() << ".";
 
+    // Feature 5: feed this settled round into the achievement engine (sets a HUD popup for any just-unlocked achievement)
+    // before persisting. Persistence stays additive — the manager's unlocked set rides along on the same profile save path.
+    game.recordHandAchievements(game.currentRoundRecord);
+
     PlayerProfile profile = game.players[0].getProfile();
+    // Feature 5: stamp the current unlocked-achievement ids onto the profile so they survive (additive schema).
+    game.achievementManager_.persistUnlockedTo(profile.unlockedAchievementIds);
     profile.addRoundRecord(game.currentRoundRecord);
     game.players[0].updateProfile(profile);
     game.players[0].saveProfile();

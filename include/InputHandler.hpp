@@ -35,6 +35,10 @@ private:
 
     void processTrainerEvents(const sf::Event& event);
     void processTournamentEvents(const sf::Event& event);
+    // Feature 4 (Statistics Dashboard): browse-only tabbed view. Left/Right cycle the tabs; Escape returns to the main menu.
+    void processStatsDashboardEvents(const sf::Event& event);
+    // Feature 5 (Achievement System): browse-only list view. Escape returns to the main menu; nothing else is driven here.
+    void processAchievementEvents(const sf::Event& event);
     void processGameEvents(const sf::Event& event);
     void processPauseEvents(const sf::Event& event);
 };

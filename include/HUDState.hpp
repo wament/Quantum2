@@ -78,6 +78,10 @@ struct HUDState
     std::vector<std::string> playerSummaries;
     float summaryTimer = 0.0f;
 
+    // Feature 5 (Achievement System): name of the most recently unlocked achievement, set by Game when an unlock fires so
+    // HUDState/GameRenderer can surface a brief popup. Empty means "no notification pending". Cleared after it is shown.
+    std::string pendingAchievementName;
+
     // Auto-play timers (0 means no wait)
     float afterHandTimer = 0.0f;
     float afterShoeTimer = 0.0f;

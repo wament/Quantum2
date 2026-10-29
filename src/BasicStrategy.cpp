@@ -89,6 +89,12 @@ namespace BasicStrategy
 
     char getRecommendedAction(int playerValue, int dealerUpValue, bool hasAce, bool isPair, int pairValue)
     {
+        // Legacy signature: advise with the default table rules so existing callers/tests behave exactly as before.
+        return getRecommendedAction(GameRules{}, playerValue, dealerUpValue, hasAce, isPair, pairValue);
+    }
+
+    char getRecommendedAction(const GameRules& rules, int playerValue, int dealerUpValue, bool hasAce, bool isPair, int pairValue)
+    {
         if (dealerUpValue < 2 || dealerUpValue > 11)
             return playerValue >= 17 ? 'S' : 'H';
 
@@ -127,7 +133,8 @@ namespace BasicStrategy
                 if (result == 'Y')
                     return 'P';
                 if (result == 'M')
-                    if (Constants::DOUBLE_AFTER_SPLIT_ALLOWED)
+                    // 'M' = split if double-after-split is allowed, else hit. Reads the live rule, not a compile-time constant.
+                    if (rules.doublesAfterSplitAllowed)
                         return 'P';
                     else
                         return 'H';
@@ -135,8 +142,8 @@ namespace BasicStrategy
             }
         }
 
-        // Surrender check for 15 and 16
-        if (dealerIdx >= 0 && dealerIdx < 10)
+        // Surrender check for 15 and 16 — only offered when surrender is enabled by the active rules.
+        if (rules.surrenderEnabled() && dealerIdx >= 0 && dealerIdx < 10)
         {
             if (playerValue == 15 && SURRENDER[0][dealerIdx] != ' ')
                 return SURRENDER[0][dealerIdx];
