@@ -1,0 +1,196 @@
+# CONTEXT — Blackjack2 REFACTOR (reference for the next person)
+
+**Purpose:** Self-contained audit + state for the *refinement* pass over the feature work described in `.summaries/0.3/CONTEXT.md`, `ACTION_PLAN.md`, and `FEATURES.md`. It establishes which files are too big, where code is repeated or duplicated, what is already centralized (so we do NOT touch it), and the hard conventions a refactor must preserve. This supersedes earlier refactor notes for this refinement; read first at the start of every window that edits code here.
+
+**Last updated:** 2026-10-30.
+**Owner of truth for feature behavior:** `.summaries/0.3/CONTEXT.md` (the live project context). This file is the *refactor-specific* overlay only — it does not re-explain game rules; it narrows "what may change" and points at concrete duplication.
+
+---
+
+## 0. How to use this file (read before acting)
+
+1. Read `.summaries/0.3/CONTEXT.md` first for architecture + testing contract; then `ACTION_PLAN_refactor.md` for the per-file execution order.
+2. Confirm any §6 decision affects your scope — see §3 below.
+3. After finishing an increment, update §3 findings plus §4/§5 status so the next window inherits accurate state.
+
+### Truncation workaround — do this from the beginning
+The file reader truncates at ~47k characters / 2000 lines **regardless of line count**. Files with long single-line entries drop their tail once the char cap is hit (that is why numbered items in `CONTEXT.md` §5 vanished mid-sentence). Workarounds used to build this audit, and what the next window should reuse:
+
+- **Page with bounded ranges.** Always read large files via `start_line`/`end_line` chunks so no important section lands past the cap. Prefer a handful of tight ranges over one full-file dump.
+- **Prefer searches over dumps.** For structural questions (function layout, duplicated blocks) use `search_codebase` / `grep -nE` and read only matched spans — never pull whole files just to eyeball them.
+- **Write short lines in these docs themselves.** Keep bullet/comment lines under ~100 chars so char-based truncation here cannot drop critical content either. This file follows that rule on purpose.
+
+### Conventions a refactor MUST preserve (non-negotiable)
+Inherited from `CONTEXT.md` §3-§4 and re-stated because they constrain *how* we shrink code:
+
+- **Mode dispatch stays enum-driven.** Extend `AppMode`; each mode keeps its own state machine mirroring Replay/Pause wiring. A refactor must NOT replace this with ad-hoc booleans or free switches that bypass it.
+- **Headless-first testing.** New/changed *logic* is tested headless via `Game(bool headless)` + `setDeck(...)` and read through the `*ForTest()` accessors before any UI touches it. Presentation-only changes follow the same Graphics-only rule (test binary links only `SFML::Graphics`).
+- **Tests must be registered.** New test files go in `tests/*.cpp` AND are added to the `Blackjack2Tests` target in `CMakeLists.txt`, or they never run. This applies to new helpers extracted during a refactor too.
+- **Additive JSON schema.** Persistence (`Serialization.hpp`) keeps every field optional with a default; old profiles must still load. Refactors touching the profile must keep this true and re-run the "old profile loads" check.
+- **Narrow custom-rules threading (§6 #2).** `GameRules` stays a narrowly-scoped `const GameRules&` into advisor/dealer/UI. Do not widen its blast radius while refactoring.
+
+---
+
+## 1. §6 decisions — do they affect this refactor? (yes, all three)
+
+`CONTEXT.md` §6 lists three standing decisions. All three constrain this refinement:
+
+- **§6 #1 Counting approach is deferred/skipped (Feature 6 frozen).** Hi-Lo + Reko only; KO / WongHalves / Omega II were never implemented and must stay unimplemented. If a refactor touches `BasicStrategy.{hpp,cpp}` or any counting path, the Hi-Lo/Reko dispatch and Hi-Lo true-count calibration are **behavior-preserving** — do not revive Feature 6.
+- **§6 #2 Custom-rules scope is narrowly-scoped.** `GameRules` stays a narrow `const GameRules&` into advisor/dealer/UI. Refactors that reorder rule access must preserve the narrow threading, not widen it.
+- **§6 #3 Deliverable shape = new `include/` + `src/` files with mirrored `tests/*.cpp`, existing module naming.** For a refactor this means: keep extracted code inside the same module/naming layout where possible; if extraction creates new files, follow naming conventions and register their tests under `Blackjack2Tests`. No ad-hoc modules.
+
+---
+
+## 2. Audit baseline — file sizes vs the "under 800 lines" target
+
+Measured with `wc -l`; sorted by size (largest first). **Three source files exceed 800 lines** and are the primary targets; two are close under it and worth trimming.
+
+| File | Lines | Over 800? | Why it is big / what to look at |
+|---|---|---|---|
+| `src/Game.cpp` | 1727 | YES (way over) | Mode dispatch guards + `updateHUDState()` field-only body + betting/settlement/analytics all in one class. Largest single target. |
+| `src/GameRenderer.cpp` | 1202 | YES | Dual mode-dispatch (backdrop if/else-if **and** draw switch); 17 `draw*` methods; per-mode overlays. |
+| `src/Replay.cpp` | 901 | YES | Split from `ReplayView.cpp`; shared layout/time helpers unextracted. See §5 review queue. |
+| `src/HUD.cpp` | 755 | near | `draw()` alone is ~368 lines (288-656); many tiny Rect getters + StatBox building. |
+| `src/InputHandler.cpp` | 736 | near | 8 per-mode `process*Events` methods; repeated "Escape -> main menu" block. **See §4 #1.** |
+| `src/ReplayView.cpp` | 583 | — | Presentation half of Replay (see §5 review queue). |
+| `include/Game.hpp` | 461 | — | Mostly `*ForTest()` accessors + includes; structural, not a priority. Review only. |
+| `include/Constants.hpp` | 301 | — | Dual timing namespaces + verbose per-constant prose. **See §4 #5.** |
+| `include/Serialization.hpp` | 236 | — | Repeated additive-schema comment boilerplate. **See §4 #6.** |
+
+Other notable sizes (review, not primary targets): `src/StatsDashboard.cpp` 342, `src/Player.cpp` 289, `src/BasicStrategy.cpp` 281, `src/HandEvaluator.cpp` 355, `include/Replay.hpp` 256, `include/GameRecord.hpp` 220, `tests/test_game.cpp` 513.
+
+### Targets by the three lenses you named
+- **Newest classes (git add date 2026-10-29 / 30):** `Achievement.{hpp,cpp}`, `SoundManager.{hpp,cpp}`, `CardAnimation.{hpp,cpp}`, `StatsDashboard.{hpp,cpp}`, `GameRules.{hpp,cpp}`, `Tournament.cpp`. These are the "new features with overlap" — review for shared responsibility (see §5).
+- **Largest classes:** Game(1727), GameRenderer(1202), Replay(901), HUD(755), InputHandler(736) — all in §4.
+- **Oldest classes (git add date 2026-07-28):** `Card.{hpp,cpp}`, `Deck.{hpp,cpp}`, `Player.cpp`, plus `HUDState.hpp` (10-30), `HandEvaluator.cpp`. Review for dead code left behind as features were layered on top.
+
+---
+
+## 3. Concrete duplication / refactor findings (the per-file detail)
+
+Each item gives before -> after, a test strategy, and gotchas. Line numbers are grounded from this audit.
+
+### #1 InputHandler — repeated "Escape -> main menu" + 8 near-identical process* methods
+`InputHandler.cpp` defines one method per mode: `processTrainerEvents`(300), `processTournamentEvents`(346), `processStatsDashboardEvents`(369), `processAchievementEvents`(394), `processRulesEvents`(414), `processMenuEvents`(450), `processGameEvents`(520), `processPauseEvents`(692). Each follows the same skeleton (extract event type -> guard -> switch on `pressed->code` -> Escape handling).
+
+**The duplication to kill:** the "Escape returns to menu" block appears literally **5 times**, identical except for one log string — at 336-337, 358-359, 384-385, 400-401, 442-444. `grep -rn "Returned to main menu" src/` returns **5**. Each pair is:
+
+```cpp
+Logger::info() << "Returned to main menu from the <mode>.";   // only this line differs
+game.appMode = AppMode::MainMenu;
+game.menuSelection = MenuOption::PlayGame;
+```
+
+- **Before:** 5 copies of those three statements sprinkled across handlers.
+- **After:** one `InputHandler::returnToMainMenu(game, "<mode>")` helper (declared near the other `process*` methods in `InputHandler.hpp`) that each handler calls on Escape. Collapses ~15 lines to a single call; keeps the mode name via the string arg so the log line still differs per mode.
+- **Test:** headless — drive each mode's handler with an Escape event and assert `appMode == AppMode::MainMenu` + `menuSelection == MenuOption::PlayGame`. Pure logic, no UI needed.
+- **Status: DONE (Phase 0).** Collapsed to one `InputHandler::returnToMainMenu(game, "<mode>")` call per handler; kept the mode string arg so log lines still differ. Rules keeps its separate `rememberTableSettings()` persist call. Added `Game::getAppModeForTest()` + exposed the five Escape-handlers publicly (navigateMenu precedent) for testing. New test registered in CMakeLists.txt. All 231 tests green; commit `567ad71`.
+
+**Note the strength to preserve:** list-style menus already share single-source helpers — `applyMenuRowSelection` is a template in `InputHandler.hpp:44`, and `getHoveredMenuItemIndex` / `activateMainMenuOption` are defined once. The mode handlers *reuse* these rather than re-implementing them. Do not "fix" that working pattern; only add the Escape helper.
+
+### #2 Game::update() — 6 repetitive early-return mode guards
+`src/Game.cpp:569-620` contains six `if (appMode == ...) { ...; return; }` blocks: MainMenu returns; ReplayPlaying/History hands off to `replay->update(dt)`; and Trainer / Tournament / StatsDashboard each do the identical `mode->update(dt); return;`; GameRules runs inline held-key logic.
+
+- **Before:** a growing wall of `if (appMode == X)` guards, one per added mode. This is exactly the anti-pattern §6 warns against when it drifts toward ad-hoc booleans — but here the fix is a *clean* dispatch table that keeps enum-driven dispatch.
+- **After:** a small table mapping `AppMode -> std::function<void(float)>` (or a single clean switch) so adding a mode is one row, not a new guard. GameRules' inline logic stays as its own updater entry.
+- **Test:** headless — set each mode via the accessor path and assert the right handler ran (Trainer advances `trainer`, StatsDashboard advances `statsDashboard`). Keep it behind `*ForTest()` so no UI is required.
+
+### #3 Game::updateHUDState() — a field-only body (~170 lines, starts at line 638)
+Lines 638 through ~720+ are almost entirely `hudState.field = value;` assignments with little logic — exactly the "large variable assignment, not much logic" pattern. It covers betting/side-bet, all-player bankrolls, counting, card-remaining, advisor hint, and shoe-analytics readouts.
+
+- **Before:** one ~170-line method of flat field assignments (plus an `if/else` for side-bet and Reko true-count).
+- **After:** split into per-concern helpers the caller reads naturally — e.g. `syncBetAndSideBet()`, `syncCounting()`, `shoeAnalyticsReadout()` — each ~15-30 lines of assignments with a clear header. The public method becomes obvious composition; reviewers/tests can target one concern at a time. Refactor only (no value changes).
+- **Test:** existing `hudStateForTest()` consumers must still produce identical values; add/adjust assertions in `test_hud_layout.cpp` to lock the new split.
+
+### #4 GameRenderer::draw() — dual mode-dispatch collapses to one table
+The top-level draw has a backdrop if/else-if chain (lines 19-27) **and** a separate dispatch switch (line 35+) calling `drawMainMenu`, `drawGameTable`, `drawInsurance`, `drawSideBet`, `drawSoundStatus`, `drawSummaryOverlay`, `drawPendingAchievement`, etc. GameRenderer owns **17** `draw*` methods total (`grep -cE '::draw[A-Z]' src/GameRenderer.cpp` = 17).
+
+- **Before:** two separate mode switches that must both stay in sync whenever a mode's backdrop color or draw fn changes — adding a mode means editing *both* chains (this is how backdrops drift out of sync).
+- **After:** one `AppMode -> {sf::Color backdrop, draw_fn}` table consumed by draw(). One place per mode; adding a mode is one row. Keeps the "renderer consumes a presentation module" pattern (Trainer/Tournament/StatsDashboard/Achievements still call their own `->draw(window)`).
+- **Test:** graphics-only smoke — assert each known mode clears to its documented backdrop color and reaches its draw fn. GameRenderer.cpp compiles into `Blackjack2Tests`, so keep it Graphics-only (no Audio/Network).
+
+### #5 Constants.hpp — dual timing namespaces + verbose per-constant prose
+`Constants.hpp:301`. There is a top-level `namespace GameTiming{...}` (lines 12-99+, NPC delays, deal pacing, summary durations, refresh-rate "Gamer" logic) nested inside/near the main `Constants` block with a further `namespace Hud`. Each constant carries a multi-line rationale comment.
+
+- **Before:** two timing namespaces doing overlapping jobs plus long explanatory comments per line (some ~10 lines each).
+- **After:** one timing namespace; keep all functional values unchanged, trim prose to one short sentence, and move deep rationale into a trailing `// why` note only where non-obvious. Behavior-preserving: no value moves or drops.
+- **Test:** nothing changes in behavior; rely on existing timing tests (`test_gamer_speed.cpp`, `test_deal_animation_speed.cpp`) as the regression guard.
+
+### #6 Serialization.hpp — repeated additive-schema comment boilerplate
+`Serialization.hpp:236`. The additive-schema pattern (`j.value("field", <default>)`) is already *functionally* correct and must stay (old profiles keep loading). But there are **8** near-identical explanatory comments ("additive — older profiles lack these fields and fall back to the struct default") next to field loads.
+
+- **Before:** 8 repetitive comment blocks repeating the same schema rule per field.
+- **After:** standardize to a short `// additive: defaults keep old profiles loading` (or fold once into a file-header note) and trim each occurrence. Documentation bloat, not logic — do NOT change how fields are read.
+- **Test:** re-run the profile-load regression (`test_profile_settings.cpp`) to prove the schema stayed additive.
+
+---
+
+## 4. Already centralized — DO NOT touch (and verify no bypass exists)
+
+Not everything big is a duplication target. Two things are already correct; a refactor should confirm they stay that way:
+
+- **`Game::resetShoeAnalytics()` (`src/Game.cpp:432`) is the single shoe-boundary choke point.** It bumps `shoeGeneration`, zeroes `ShoeAnalytics shoe_`, and re-seeds counts — only bankroll carries across a shoe. Do NOT introduce a second reset path. Verify no new code zeroes shoe state without going through this function (CONTEXT §5 already confirms this is the one choke point).
+- **List-style menu sharing** (`applyMenuRowSelection` template, `getHoveredMenuItemIndex`, `activateMainMenuOption`) — a single source reused by every mode handler (see #1). Preserve; extend via it.
+
+---
+
+## 5. Feature-overlap review queue (not forced consolidations)
+
+These are real overlaps to look at, but each needs judgment before changing — listed explicitly so the next window does the trade-off deliberately instead of guessing:
+
+- **HUD.drawCharts() vs StatsDashboard chart rendering.** `HUD::drawCharts()` (657) + anonymous-namespace `drawLineChart` (524) render a bankroll curve + edge-over-time from `hudState.bankrollSeries` / `shoeAnalytics`. `StatsDashboard` also computes and renders the same kind of bankroll/edge series. Decide: share one chart renderer, or clearly separate "in-game micro readout (HUD)" from "full analytics dashboard (StatsDashboard)". Review item — do not merge blindly.
+- **SoundManager vs CardAnimation.** Both are "renderer-injected presentation modules" per CONTEXT §5, but they are structurally different (SoundManager = pImpl + event queue; CardAnimation = pure tween math). Only unify behind a base if a common shape genuinely emerges — do not force one.
+- **Replay.cpp(901) vs ReplayView.cpp(583).** State machine + serialization vs presentation. If shared layout/time helpers exist in both, extract them into one place; otherwise leave the split (it is a clean separation of concerns).
+- **Achievements vs StatsDashboard.** Both derive aggregates from round history / `PlayerStats` (win-rate vs win streaks). Confirm they read the same underlying data through one accessor rather than re-deriving it twice.
+- **Stat-aggregation unification (broadens the item above — REVIEW, larger change).** Four subsystems independently derive tallies from round history / `RoundRecord`: (1) `PlayerStats` in `GameRecord.hpp`, persisted career stats; (2) `ShoeAnalytics`, live per-shoe counters centralized at `resetShoeAnalytics()` (already correct — do NOT re-tally here); (3) `AchievementManager` career counters (`careerHands_`, `careerBlackjacks_`, ...); (4) `StatsDashboard::ComputedStats` (win-rate / bj-bust frequency / per-round profit / bankroll series), recomputed from round history via `feed()`. The consolidation target is a **single aggregation function over round history** that all four read, instead of each re-deriving its own. This is cross-cutting and touches persisted + live data, so it is a deliberate follow-up (like §7 #8), not a shrink-now phase — sequence it after the phases with the full suite guarding behavior.
+- **Already clean — do NOT re-scan these (verified this pass):** `SoundManager.cpp` maps events to files via a data-driven table (`knownEvents()` vector at line 45, looped at 67-70/113-114) — no if/else chain. `Tournament.cpp` delegates betting/settling to `Player::placeBet` / `Player::settle` + RoundEngine ("RoundEngine's same rule", "game's own settlement primitive") — it does NOT duplicate the core path. `BasicStrategy` handles Hi-Lo vs Reko via compact switch branches (lines 247-249) and Feature 6 is frozen anyway. Nothing to gain by re-examining these.
+
+---
+
+## 6. Status / how to use this file
+
+**Completed refactor phases (verified green before each commit):**
+- **Phase 0 — InputHandler `returnToMainMenu` helper.** Finding #1 done. Collapsed the 5 duplicated "Escape -> main menu" blocks into one helper; added a `getAppModeForTest()` accessor + new test in `tests/test_input_return_to_main_menu.cpp`. Commit `567ad71`.
+- **Phase 6 — HUD panel-geometry builder.** Finding #7 done. Folded the three near-identical `<panel>.bounds()` getters into one `computePanels()` lookup (`struct Panels{left,right,bottom}`); named getters stay as thin delegators. Commit `0d45de5`.
+
+At the start of each window: read this file, then `ACTION_PLAN_refactor.md`, and confirm any §6 decision affects scope (see §1). After an increment, update §3/§7 findings with what changed plus §4-§5 status so the next window inherits accurate state. Verification gate for every phase is in `ACTION_PLAN_refactor.md` ("Verification").
+
+---
+
+## 7. Second-pass missed opportunities (additional findings)
+
+A follow-up scan for items not yet in §3. Each is listed with before -> after and a test note; the actionable ones become phases below.
+
+### #7 HUD panel-geometry getters — three near-identical Rect builders
+`HUD.cpp` exposes `chartPaneBounds()(692)`, `leftPanelBounds()(721)`, `rightPanelBounds()(726)`, `bottomPanelBounds()(731)` and `layoutLeftPanels()(746)`. Each recomputes a tiny `sf::Rect<float>` from the same shared panel constants; together they are scattered geometry helpers that inflate HUD.cpp (755 lines).
+
+- **Before:** four public getters + a layout method, each a ~5-line Rect builder spread across the bottom of the file.
+- **After:** one `computePanels()` helper returning a small `struct Panels { left, right, bottom; }` with chart-pane bounds derived from it. The three getters become thin one-liners delegating to it (public names kept for API stability).
+- **Test:** graphics-only — assert the returned panel Rects still match pre-refactor values (`test_hud_layout.cpp` already reads these bounds).
+- **Status: DONE (Phase 6).** Real code had thin `m_XPanel.bounds()` delegations (not constant-based builders); folded all three into one `computePanels()` returning `struct Panels{left,right,bottom}`, with left/right/bottomPanelBounds as thin one-liners. chartPaneBounds kept separate (distinct derived-chart-rect concern). Public getter names unchanged; test_hud_layout.cpp still green. Commit `0d45de5`.
+
+### #8 Game.cpp is a splittable god-class (FOLLOW-UP, beyond this refactor)
+Beyond `update()` and `updateHUDState()`, `Game.cpp:1727` owns clearly separable concerns that could each become its own class later. Confirmed regions from the function inventory:
+
+- Session lifecycle: `startNewGame()(320)`, `startTrainerSession()(210)`, `startTournamentSession()(218)`, `startStatsSession()(228)`.
+- Table-settings persistence: `applySavedTableSettings()(366)`, `rememberTableSettings()(411)`.
+- Settlement/aftermath: `recordHandAchievements()(477)` and the settle path that feeds stats/analytics.
+
+- **Before:** one class owns dispatch + betting + settlement + analytics + session lifecycle + persistence hooks. It grows by ~20 lines per feature (hence 1727).
+- **After (future):** extract `Betting`, `Settlement`/`HandResult`, and a `SessionLifecycle` helper as focused classes that Game composes — Game.cpp drops well under 800 on its own.
+- **Why it is NOT in the phases:** this is a large structural change requiring new test scaffolding and careful ownership moves. Do it *after* the behavior-preserving phases, guarded by the full suite staying green. Not a "shrink now" step; flagged so the next window can sequence it deliberately.
+
+### #9 Repeated test scaffolding (REVIEW, do not force)
+`startTestRound()` is called **60 times** across `tests/*.cpp`; many tests also build an identical `Game(bool)` + `setDeck(...)` + `startTestRound()` preamble. Extracting a shared fixture could cut boilerplate — but test readability favors explicit setup, so this is a judgment call: only consolidate if a clean, named helper (e.g. `makeSeededGame(vector<Card>)`) improves clarity without hiding what a test does.
+
+### #10 HandEvaluator::evaluateHands() — repeated case+logger block (third pass, exhaustive scan)
+`HandEvaluator.cpp:355` evaluateHands() `switch(result)` lines 68-92 has three near-identical cases (Surrender/Lose/Win), each doing a stats counter increment, an `if(pIdx == 0){roundLost|roundWon = true;}` flag assignment, and a nearly identical logger line ("surrendered"/"lost"/"won hand …"). Push is the odd one out.
+- **Before:** ~3 duplicated case+logger blocks in the settlement switch.
+- **After:** build ONE outcome log string from `result` after the switch (a small result->verb mapping), keep the tiny per-result counter/flag deltas, then emit a single `if(pIdx==0){flag}` + one Logger call. Collapse only the repeated logging structure — never change which counter/flag each result sets.
+- **Test:** existing `test_blackjack_settlement.cpp` must stay green (it locks outcomes/payouts); log output byte-for-byte identical. Behavior-preserving; settlement semantics unchanged.
+
+### #11 StatsDashboard::toCsv() — one os<< line per metric (third pass, exhaustive scan)
+`StatsDashboard.cpp:342` toCsv() repeats one `os << "metric," << computed_.field << "\n"` line per field (~14 times). Values are mixed types, so a pure key/value table is awkward but small lambdas work.
+- **Before:** ~14 hand-written metric lines.
+- **After:** a small lambda list (`{name, [](){ return value; }}`) or typed helpers driving one loop. Export format only — no game behavior impact.
+- **Test:** lock the exact CSV (headers + row order + `round_index,net_profit,cumulative_bankroll` detail block) in a new/existing test so drift is caught. Byte-for-byte identical output; no logic change.
