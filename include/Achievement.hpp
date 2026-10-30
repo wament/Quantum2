@@ -81,11 +81,12 @@ class AchievementManager
     }
     int totalAchievements() const { return static_cast<int>(definitions_.size()); }
 
-    // Career tallies the manager keeps (useful for the achievements list view and tests).
-    int careerHands() const { return careerHands_; }
-    int careerBlackjacks() const { return careerBlackjacks_; }
-    int careerSplitWins() const { return careerSplitWins_; }
-    int perfectStreak() const { return perfectStreak_; }
+    // Career tallies the manager keeps (useful for the achievements list view and tests). Grouped behind the accessors below,
+    // which read from CareerProgress_ so their names/types/values stay unchanged for callers/tests.
+    int careerHands() const { return career_.hands; }
+    int careerBlackjacks() const { return career_.blackjacks; }
+    int careerSplitWins() const { return career_.splitWins; }
+    int perfectStreak() const { return career_.perfectStreak; }
 
     // Stamp the manager's currently-unlocked set into a profile field; load it back. Round-trips as plain ints so the
     // JSON stays additive — profiles saved before achievements existed simply contribute an empty list here.
@@ -99,26 +100,38 @@ class AchievementManager
     std::vector<Achievement> definitions_;
     std::map<Achievement::Id, bool> unlocked_;
 
-    // Career progress (accumulates across shoes; never reset by onNewShoe()).
-    int careerHands_ = 0;
-    int careerBlackjacks_ = 0;
-    int careerSplitWins_ = 0;
-    int perfectStreak_ = 0;   // consecutive strategy-following hands, ever (spans shoes)
+    // Career progress (accumulates across shoes; never reset by onNewShoe()). Grouped so the four tallies travel together as
+    // one unit instead of being scattered (Phase 4 refactor).
+    struct CareerProgress {
+        int hands = 0;
+        int blackjacks = 0;
+        int splitWins = 0;
+        int perfectStreak = 0;   // consecutive strategy-following hands, ever (spans shoes)
+    };
 
-    // Per-shoe progress (reset in resetPerShoe()).
-    int shoeHands_ = 0;
-    int shoeBlackjacks_ = 0;
-    int shoeSplitWins_ = 0;
-    int positiveCountStreak_ = 0;   // consecutive hands with true count > 0 this shoe
-    bool anyDeviationThisShoe_ = false;
-    bool kellyFullAllShoe_ = true;  // stays true only while every fed hand was full Kelly
-    int kellyHands_ = 0;            // number of hands told full-kelly (so an empty shoe can't "win")
+    CareerProgress career_;
+
+    // Per-shoe progress counters/flags, reset in resetPerShoe() each shoe boundary. Grouped as one unit (Phase 4).
+    struct ShoeProgress {
+        int hands = 0;
+        int blackjacks = 0;
+        int splitWins = 0;
+        int positiveCountStreak = 0;   // consecutive hands with true count > 0 this shoe
+        bool anyDeviationThisShoe = false;
+        bool kellyFullAllShoe = true;  // stays true only while every fed hand was full Kelly
+        int kellyHands = 0;            // number of hands told full-kelly (so an empty shoe can't "win")
+        bool anyBustThisShoe = false;
+    };
+
+    ShoeProgress shoe_;
+
+    // Bankroll swing tracking for Comeback King. Deliberately kept across the shoe boundary (not inside ShoeProgress) so it can
+    // measure a worst-to-recovered dip that spans shoes; only the seed flag + start/low/high/last are carried over here.
     bool bankrollSeeded_ = false;
     float shoeBankrollStart_ = 0.0f;
     float shoeBankrollLow_ = 0.0f;
     float shoeBankrollHigh_ = 0.0f;
     float shoeLastBankroll_ = 0.0f;
-    bool anyBustThisShoe_ = false;
 
     void resetPerShoe();
 };

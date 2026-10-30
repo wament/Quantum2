@@ -53,16 +53,16 @@ void AchievementManager::unlock(Achievement::Id id, std::vector<Achievement::Id>
 
 void AchievementManager::resetPerShoe()
 {
-    shoeHands_ = 0;
-    shoeBlackjacks_ = 0;
-    shoeSplitWins_ = 0;
-    positiveCountStreak_ = 0;
-    anyDeviationThisShoe_ = false;
-    kellyFullAllShoe_ = true;
-    kellyHands_ = 0;
+    shoe_.hands = 0;
+    shoe_.blackjacks = 0;
+    shoe_.splitWins = 0;
+    shoe_.positiveCountStreak = 0;
+    shoe_.anyDeviationThisShoe = false;
+    shoe_.kellyFullAllShoe = true;
+    shoe_.kellyHands = 0;
     // Bankroll swing tracking (seed flag + start/low/high/last) is deliberately kept across the boundary so Comeback King
     // can measure a worst-to-recovered dip that spans shoes; career counters and permanent achievements are untouched here.
-    anyBustThisShoe_ = false;
+    shoe_.anyBustThisShoe = false;
 }
 
 std::vector<Achievement::Id> AchievementManager::recordHand(const HandEvent& e)
@@ -70,26 +70,26 @@ std::vector<Achievement::Id> AchievementManager::recordHand(const HandEvent& e)
     std::vector<Achievement::Id> newlyUnlocked;
 
     // Career counters advance on every real hand.
-    careerHands_++;
-    perfectStreak_ = e.followedStrategy ? perfectStreak_ + 1 : 0;
+    career_.hands++;
+    career_.perfectStreak = e.followedStrategy ? career_.perfectStreak + 1 : 0;
     if (e.isBlackjack)
-        careerBlackjacks_++;
+        career_.blackjacks++;
     if (e.splitHand && e.wonAny)
-        careerSplitWins_++;
+        career_.splitWins++;
 
     // Per-shoe counters. A non-full-kelly hand permanently breaks the "entire shoe full Kelly" condition for this shoe.
-    shoeHands_++;
+    shoe_.hands++;
     if (e.isBlackjack)
-        shoeBlackjacks_++;
+        shoe_.blackjacks++;
     if (e.splitHand && e.wonAny)
-        shoeSplitWins_++;
-    positiveCountStreak_ = e.positiveTrueCount ? positiveCountStreak_ + 1 : 0;
+        shoe_.splitWins++;
+    shoe_.positiveCountStreak = e.positiveTrueCount ? shoe_.positiveCountStreak + 1 : 0;
     if (!e.followedStrategy)
-        anyDeviationThisShoe_ = true;
+        shoe_.anyDeviationThisShoe = true;
     if (e.busted)
-        anyBustThisShoe_ = true;
+        shoe_.anyBustThisShoe = true;
     if (!e.kellyFull)
-        kellyFullAllShoe_ = false;
+        shoe_.kellyFullAllShoe = false;
 
     // Bankroll tracking for per-shoe swing achievements. Seed the baseline on the first hand of the shoe.
     if (!bankrollSeeded_)
@@ -104,17 +104,17 @@ std::vector<Achievement::Id> AchievementManager::recordHand(const HandEvent& e)
     shoeLastBankroll_ = e.bankrollAfter;
 
     // ---- Inline (per-hand) career unlocks ----
-    if (careerHands_ == 1) unlock(Achievement::Id::FirstDeal, newlyUnlocked);
-    if (careerBlackjacks_ >= 1) unlock(Achievement::Id::Natural21, newlyUnlocked);
-    if (careerSplitWins_ >= 1) unlock(Achievement::Id::SplitSuccess, newlyUnlocked);
+    if (career_.hands == 1) unlock(Achievement::Id::FirstDeal, newlyUnlocked);
+    if (career_.blackjacks >= 1) unlock(Achievement::Id::Natural21, newlyUnlocked);
+    if (career_.splitWins >= 1) unlock(Achievement::Id::SplitSuccess, newlyUnlocked);
     if (e.bet > 0 && e.bankrollAfter > 0.0f && static_cast<double>(e.bet) >= kBigBetRatio * e.bankrollAfter)
         unlock(Achievement::Id::BigBet, newlyUnlocked);
-    if (perfectStreak_ >= kTextbookStreak) unlock(Achievement::Id::TextbookPlayer, newlyUnlocked);
+    if (career_.perfectStreak >= kTextbookStreak) unlock(Achievement::Id::TextbookPlayer, newlyUnlocked);
 
     // ---- Inline (per-hand) per-shoe unlocks ----
-    if (positiveCountStreak_ >= kCountStreak) unlock(Achievement::Id::CountersEdge, newlyUnlocked);
-    if (shoeBlackjacks_ >= kStreakBjs) unlock(Achievement::Id::BlackJackStreak, newlyUnlocked);
-    if (shoeSplitWins_ >= kSplitTotal) unlock(Achievement::Id::SplitMaster, newlyUnlocked);
+    if (shoe_.positiveCountStreak >= kCountStreak) unlock(Achievement::Id::CountersEdge, newlyUnlocked);
+    if (shoe_.blackjacks >= kStreakBjs) unlock(Achievement::Id::BlackJackStreak, newlyUnlocked);
+    if (shoe_.splitWins >= kSplitTotal) unlock(Achievement::Id::SplitMaster, newlyUnlocked);
 
     return newlyUnlocked;
 }
@@ -124,13 +124,13 @@ std::vector<Achievement::Id> AchievementManager::onNewShoe()
     std::vector<Achievement::Id> newlyUnlocked;
 
     // Resolve the conditions that only make sense once a shoe has actually been played, using its accumulated progress.
-    if (shoeHands_ > 0)
+    if (shoe_.hands > 0)
     {
-        if (!anyDeviationThisShoe_)
+        if (!shoe_.anyDeviationThisShoe)
             unlock(Achievement::Id::DeviationFree, newlyUnlocked);
-        if (kellyFullAllShoe_)
+        if (shoe_.kellyFullAllShoe)
             unlock(Achievement::Id::KellyMaster, newlyUnlocked);
-        if (!anyBustThisShoe_ && shoeLastBankroll_ > shoeBankrollStart_)
+        if (!shoe_.anyBustThisShoe && shoeLastBankroll_ > shoeBankrollStart_)
             unlock(Achievement::Id::PerfectShoe, newlyUnlocked);
 
         // Comeback King: was down at least the threshold from the start, then recovered at least the threshold above
