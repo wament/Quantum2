@@ -152,6 +152,7 @@ These are real overlaps to look at, but each needs judgment before changing — 
 **Completed refactor phases (verified green before each commit):**
 - **Phase 0 — InputHandler `returnToMainMenu` helper.** Finding #1 done. Collapsed the 5 duplicated "Escape -> main menu" blocks into one helper; added a `getAppModeForTest()` accessor + new test in `tests/test_input_return_to_main_menu.cpp`. Commit `567ad71`.
 - **Phase 6 — HUD panel-geometry builder.** Finding #7 done. Folded the three near-identical `<panel>.bounds()` getters into one `computePanels()` lookup (`struct Panels{left,right,bottom}`); named getters stay as thin delegators. Commit `0d45de5`.
+- **Phase 4 — AchievementManager counter sub-structs.** Grouped scattered career/shoe counters into `CareerProgress{hands,blackjacks splitWins,perfectStreak}` + `ShoeProgress{...}`; public accessor names/types/values unchanged; bankroll swing tracking kept flat for cross-shoe persistence. Persistence (Id round-trip) unaffected. Commit `44ea266`.
 
 At the start of each window: read this file, then `ACTION_PLAN_refactor.md`, and confirm any §6 decision affects scope (see §1). After an increment, update §3/§7 findings with what changed plus §4-§5 status so the next window inherits accurate state. Verification gate for every phase is in `ACTION_PLAN_refactor.md` ("Verification").
 
