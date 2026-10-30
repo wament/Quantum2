@@ -105,6 +105,7 @@ target_sources(Blackjack2 PRIVATE
     src/Achievement.cpp
     src/GameRules.cpp
     src/StatsDashboard.cpp
+    src/CardAnimation.cpp
 )
 
 # Copy assets to build output (for local testing)
@@ -153,6 +154,7 @@ add_executable(Blackjack2Tests
     src/Achievement.cpp
     src/GameRules.cpp
     src/StatsDashboard.cpp
+    src/CardAnimation.cpp
     tests/test_card.cpp
     tests/test_deck.cpp
     tests/test_hand.cpp
@@ -167,17 +169,22 @@ add_executable(Blackjack2Tests
     tests/test_analytics_charts.cpp
     tests/test_shoe_analytics.cpp
     tests/test_blackjack_settlement.cpp
+    tests/test_dealer_blackjack.cpp
     tests/test_hud_layout.cpp
     tests/test_profile_settings.cpp
     tests/test_sound_manager.cpp
     tests/test_side_bets.cpp
     tests/test_side_bet_round.cpp
+    tests/test_side_bet_placing.cpp
     tests/test_strategy_trainer.cpp
     tests/test_tournament_mode.cpp
     tests/test_achievements.cpp
     tests/test_gamer_speed.cpp
     tests/test_game_rules.cpp
     tests/test_stats_dashboard.cpp
+    tests/test_card_animation.cpp
+    tests/test_deal_animation_speed.cpp
+    tests/test_menu_navigation.cpp
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)

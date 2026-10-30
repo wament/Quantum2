@@ -82,7 +82,20 @@ class StrategyTrainer
     const std::string& lastVerdictForTest() const { return lastVerdict; }
 
     // --- Presentation (graphics-only, no game-state mutation) ---
-    void draw(sf::RenderWindow& window) const;
+    // cardTexture is the shared tilemap already loaded by Game (see Game.cpp), passed in so this stays graphics-only and
+    // free of a Game reference -- draw() never mutates any game state.
+    void draw(sf::RenderWindow& window, const sf::Texture& cardTexture) const;
+
+    // Fixed left-to-right order of the five action buttons drawn by draw(); also their keyboard shortcuts (H/D/S/P/R).
+    // Shared by draw(), buttonIndexAt() and InputHandler so reordering or adding a button is a one-line change here.
+    static std::vector<Action> buttonActions();
+
+    // Geometry for the five action buttons given current window size -- shared by draw() (buttons + hover highlight) and
+    // buttonIndexAt() so click boxes match what's drawn exactly. Pure layout, no game state read or written.
+    std::vector<sf::Rect<float>> buttonRects(float w, float h) const;
+
+    // Index of the action button under window-pixel (x,y), or -1 if outside every button. Hit-test backing InputHandler mouse clicks.
+    int buttonIndexAt(float x, float y, float w, float h) const;
 
   private:
     Deck deck;

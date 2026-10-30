@@ -2,6 +2,8 @@
 
 #include <SFML/Graphics.hpp>
 #include <memory>
+#include <map>
+#include <tuple>
 #include <vector>
 
 // One source of truth for menu contents and row positions, shared by the renderer (drawing + hover)
@@ -58,6 +60,19 @@ public:
     int getHoveredMenuItemIndex(Game &game) const;
     // Same table pattern as the main menu.
     int getHoveredPauseMenuItemIndex(Game &game) const;
+    // Feature 3 (Custom Game Rules): rules-row index under the cursor, or -1 -- shared source of truth with input hover so
+    // pointing at a rule selects it, exactly like getHoveredMenuItemIndex() does for the main menu.
+    int getHoveredGameRulesRowIndex(Game &game) const;
+
+    // Feature 8 (test helpers): expose the presentation-only reveal-clock internals so headless tests can drive the deal
+    // animation timeline deterministically without a window, mirroring Game's *ForTest() accessors. Pure logic only --
+    // no window/audio/network -- so they run over the Graphics-only Blackjack2Tests binary like every other logic test.
+    void advanceRevealClockForTest(Game &game) { advanceRevealClock(game); }
+    float playerRevealAtForForTest(Game &game, int p, int h, int i) { return playerRevealAtFor(game, p, h, i, dealClock_); }
+    float dealerRevealAtForForTest(Game &game, int i) { return dealerRevealAtFor(game, i, dealClock_); }
+    // Feature 8 (test helper): the running reveal-clock value so tests can compute per-card animation elapsed time and
+    // assert a card actually finishes sliding into its slot (elapsed >= DEAL_SLIDE_SECONDS), not just that it is stable.
+    float dealClockForTest() const { return dealClock_; }
 
 private:
     void drawDealer(Game &game);
@@ -94,4 +109,33 @@ private:
     // gameRuleDescription() helpers through the Game friend link.
     void drawGameRules(Game &game);
     sf::Vector2f getPlayerPosition(Game &game, size_t playerIndex, size_t totalPlayers) const;
+
+    // Feature 8 (Animated Card Dealing): presentation-only reveal timing so cards slide in from the shoe rather than
+    // popping. NOT game state -- just per-frame animation clocks keyed by a stable card slot, advanced with
+    // game.deltaTime and cleared whenever a round resets (total dealt cards can only drop at a new-round boundary).
+    float dealClock_ = 0.f;                 // seconds accumulated so far this "deal"
+    int prevTotalCards_ = 0;                // last frame's total player+dealer card count, for reset detection
+    std::map<std::tuple<int, int, int>, float> playerRevealAt_; // (player, hand, card) -> reveal clock value (seconds)
+    std::map<int, float> dealerRevealAt_;                    // (card index) -> reveal clock value (seconds)
+    bool dealerFlipStarted_ = false;       // whether the hole-card flip has been seeded for the current round
+    float dealerFlipStart_ = -1.f;         // dealClock value at which the hole card began flipping (seconds)
+
+    // Feature 8: advance the reveal clock by one frame and clear stale reveal state if a round reset is detected.
+    void advanceRevealClock(Game &game);
+    // Feature 8: return (assigning on first sighting) the reveal-clock value for a player card slot, staggering early
+    // slots so they start sliding before later ones. Stable per (player,hand,card); new slots begin at `now`.
+    float playerRevealAtFor(Game &game, int p, int h, int i, float now);
+    // Feature 8: same for a dealer card slot (staggered to reveal after the player's cards). Takes `game` so it can
+    // count the player cards already dealt and place this slot last in the sweep.
+    float dealerRevealAtFor(Game &game, int i, float now);
+
+    // Feature 8 (speed-linked dealing animation): effective per-speed durations. The base Feature-8 constants are scaled by
+    // GameTiming::dealDurationScale(game.gameSpeed) so the card-deal tempo matches the action cadence and collapses to an
+    // instant snap (no animation) in Hyper/Gamer where animationDisabled(). Presentation-only; declared here, defined in
+    // GameRenderer.cpp alongside advanceRevealClock where Constants.hpp is already included. Used at every deal-duration site
+    // (up/hole/revealed-card slide + doubled-down rotate + hole flip + per-card reveal staggering) so all three durations stay
+    // proportional to one another for a given speed.
+    float dealSlideSeconds(Game &game) const;
+    float dealStaggerSeconds(Game &game) const;
+    float holeFlipSeconds(Game &game) const;
 };

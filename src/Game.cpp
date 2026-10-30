@@ -232,16 +232,89 @@ void Game::startStatsSession()
 
     // Flatten completed-shoe history from the profile plus any rounds played in the current (in-progress) shoe, into one
     // round-history list — exactly what the dashboard feeds on. Reading through getProfile().getLongHistory() keeps this
-    // additive to existing persistence; nothing is rewritten here.
+    // additive to existing persistence; nothing is rewritten here. getProfile() returns a copy by value, so we own that
+    // copy for the whole function: binding const& longHistory to it (rather than to getProfile()'s temporary) keeps the
+    // history reference valid and avoids a stack-use-after-scope once startStatsSession runs against a populated history.
+    PlayerProfile profile = players[0].getProfile();
+
     std::vector<RoundRecord> rounds;
-    const auto& longHistory = players[0].getProfile().getLongHistory();
+    const auto& longHistory = profile.getLongHistory();
     for (const auto& shoe : longHistory)
         for (const auto& round : shoe.rounds)
             rounds.push_back(round);
+    // A round settles into BOTH profile.currentHistory (addRoundRecord) and game.currentShoeRecord.rounds. On a later
+    // QuitToMenu/Restart, addShoeRecord() moves currentHistory -> longHistory but leaves the live mirror in
+    // currentShoeRecord.rounds in place, so reopening stats after quitting-to-menu would otherwise feed that round twice
+    // (once from longHistory, once from the stale current record). Skip any current-record round whose content already
+    // appears in history — dealerCards + playerHands fully fingerprint a round's consumed outcome — so every round feeds
+    // exactly once regardless of how many times it was stored. RoundRecord has no operator==, so compare members directly.
+    auto cardsMatch = [](const Card& a, const Card& b) { return a.value == b.value && a.suit == b.suit; };
+    auto roundOverlap = [&](const RoundRecord& candidate) -> bool
+    {
+        for (const auto& existing : rounds)
+        {
+            if (existing.dealerCards.size() != candidate.dealerCards.size())
+                continue;
+            bool dealerMatch = true;
+            for (int i = 0; i < static_cast<int>(existing.dealerCards.size()); ++i)
+            {
+                if (!cardsMatch(existing.dealerCards[i], candidate.dealerCards[i]))
+                {
+                    dealerMatch = false;
+                    break;
+                }
+            }
+            if (!dealerMatch)
+                continue;
+
+            if (existing.playerHands.size() != candidate.playerHands.size())
+                continue;
+            bool handsMatch = true;
+            for (int i = 0; i < static_cast<int>(existing.playerHands.size()); ++i)
+            {
+                const HandOutcome& e = existing.playerHands[i];
+                const HandOutcome& c = candidate.playerHands[i];
+                if (e.wager != c.wager || e.payout != c.payout || e.won != c.won ||
+                    e.surrendered != c.surrendered || e.insuranceBet != c.insuranceBet ||
+                    e.insuranceTaken != c.insuranceTaken || e.playerIndex != c.playerIndex ||
+                    e.playerName != c.playerName || e.sideBetKind != c.sideBetKind ||
+                    e.sideBetWager != c.sideBetWager || e.sideBetPayout != c.sideBetPayout)
+                {
+                    handsMatch = false;
+                    break;
+                }
+                if (e.cards.size() != c.cards.size())
+                {
+                    handsMatch = false;
+                    break;
+                }
+                for (int k = 0; k < static_cast<int>(e.cards.size()); ++k)
+                {
+                    if (!cardsMatch(e.cards[k], c.cards[k]))
+                    {
+                        handsMatch = false;
+                        break;
+                    }
+                }
+                if (!handsMatch)
+                    break;
+            }
+            if (handsMatch)
+                return true;
+        }
+        return false;
+    };
     for (const auto& round : currentShoeRecord.rounds)
-        rounds.push_back(round);
+        if (!roundOverlap(round))
+            rounds.push_back(round);
 
     statsDashboard->feed(players[0].getStats(), rounds);
+}
+
+int Game::statsPerRoundCountForTest() const
+{
+    // nullptr-guarded: headless construction never builds the dashboard, so a test can call this before any session.
+    return statsDashboard ? static_cast<int>(statsDashboard->computed().perRoundProfit.size()) : 0;
 }
 
 void Game::startNewGame()
@@ -541,12 +614,6 @@ void Game::update(float deltaTime)
         {
             if (gameRulesSelectedRow >= 0 && gameRulesSelectedRow < rowCount)
                 applyGameRuleEdit(gameRules_, gameRuleRows()[gameRulesSelectedRow].id, rightHeld);
-        }
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Escape))
-        {
-            rememberTableSettings(); // persist any rule changes before leaving the panel
-            appMode = AppMode::MainMenu;
-            menuSelection = MenuOption::PlayGame;
         }
     }
     if (appMode != AppMode::Playing)
@@ -1120,7 +1187,10 @@ void Game::confirmBet()
     initialBet = currentBet;
 
     // Feature 7: a placed bet triggers the "bet" effect. Safe in headless mode (just enqueues when buffers are absent).
-    sound_.playSound(Constants::Sound::EVENT_BET);
+    // Hyper/Gamer deliver no sound effects at all (GameTiming::animationDisabled), so skip it there to match that silent,
+    // instant-play pace; every other speed keeps the event.
+    if (!GameTiming::animationDisabled(gameSpeed))
+        sound_.playSound(Constants::Sound::EVENT_BET);
 
     // Track bet stats
     PlayerStats& stats = getStats();
@@ -1243,8 +1313,13 @@ void Game::placeSideBet(SideBetKind kind, int wager)
         Logger::warn() << "Cannot place side bet of " << wager << "; bankroll is " << players[0].getBankroll() << ".";
         return;
     }
-    if (wager == 0)
-        kind = SideBetKind::None; // a zero-wager side bet means the player opted out, regardless of the chosen kind
+    // A side bet is defined by its KIND, not just its amount. Selecting a non-None kind at $0 keeps that kind so the
+    // selection shows up while betting and can be funded later (the "cycle before adding" path); only an explicit None
+    // kind opts out. When a positive wager is placed with no kind chosen yet, default to the first side bet so pressing
+    // X/V makes the selection appear on screen immediately instead of staying invisible at kind=None. A $0 amount never
+    // becomes a real bet -- deal() only applies an intent when its wager is > 0 and the kind is not None.
+    if (kind == SideBetKind::None && wager > 0)
+        kind = SideBetKind::PerfectPairs;
     sideBetIntentKind_ = kind;
     sideBetIntentWager_ = wager;
     // Reflect on the live main hand when it exists so HUD/renderer show the choice instantly while the player places it.
@@ -1252,7 +1327,18 @@ void Game::placeSideBet(SideBetKind kind, int wager)
         players[0].hands[0].setSideBet(kind, wager);
 
     // Feature 7: placing a bet triggers the "bet" effect. Safe in headless mode (just enqueues when buffers are absent).
-    sound_.playSound(Constants::Sound::EVENT_BET);
+    // Hyper/Gamer deliver no sound effects at all (GameTiming::animationDisabled), so skip it there; every other speed keeps it.
+    if (!GameTiming::animationDisabled(gameSpeed))
+        sound_.playSound(Constants::Sound::EVENT_BET);
+}
+
+// Feature 1 (Side Bets): whether the human seat can currently place bets interactively. The round must be in PlaceBets,
+// the active seat must be the human (index 0), and betting must not be auto-advanced (AutoPlay/Hyper/Gamer). Mirrors the
+// input gate in InputHandler so rendering hints share one predicate instead of duplicating it; safe to call from any state
+// (returns false outside PlaceBets). Used by GameRenderer to decide whether to draw the side-bet control line.
+bool Game::canPlaceBets() const
+{
+    return roundState == RoundState::PlaceBets && activePlayerIndex == 0 && !GameTiming::isAutoPlaying(gameSpeed);
 }
 
 // Feature 1 (Side Bets): evaluate + bankroll every seat's side bet once all cards are known. Each side bet resolves against
@@ -1492,8 +1578,10 @@ void Game::dealCardToPlayer(Hand& hand)
     hand.addCard(card);
 
     // Feature 7: each dealt card triggers the "card" effect. Called for every draw in both full and headless modes;
-    // headless-safe because playSound() only enqueues when buffers aren't decoded yet.
-    sound_.playSound(Constants::Sound::EVENT_CARD);
+    // headless-safe because playSound() only enqueues when buffers aren't decoded yet. Hyper/Gamer deliver no sound effects
+    // (GameTiming::animationDisabled), so skip it there to match that silent, instant-play pace; every other speed keeps it.
+    if (!GameTiming::animationDisabled(gameSpeed))
+        sound_.playSound(Constants::Sound::EVENT_CARD);
 }
 
 void Game::dealCardToDealer()
@@ -1505,8 +1593,10 @@ void Game::dealCardToDealer()
     afterDraw(card);
     dealer.addCard(card);
 
-    // Feature 7: each dealt card triggers the "card" effect (see dealCardToPlayer above for rationale).
-    sound_.playSound(Constants::Sound::EVENT_CARD);
+    // Feature 7: each dealt card triggers the "card" effect (see dealCardToPlayer above for rationale). Hyper/Gamer deliver
+    // no sound effects (GameTiming::animationDisabled), so skip it there; every other speed keeps it.
+    if (!GameTiming::animationDisabled(gameSpeed))
+        sound_.playSound(Constants::Sound::EVENT_CARD);
 }
 
 // Dealer
@@ -1528,9 +1618,11 @@ void Game::dealerTurn()
     bool doNotDraw = !anyUnresolved;
 
     // Should the dealer draw another card right now? Hit below soft-17 / hard-17, but never when every
-    // player hand is already resolved (a standing-only dealer draws no cards). Soft-17 behaviour is a configurable
-    // rule: default rules keep the historical H17 rule (dealer hits a soft 17); flipping dealerStandsOnSoft17 makes it
-    // stand on every 17, soft or hard. Reads the live rule so in-game edits take effect immediately.
+    // player hand is already resolved (a standing-only dealer draws no cards) and never on a natural
+    // blackjack -- a two-card 21 is finished. Hand::isSoft() reports a two-card Ace+ten as "soft", so the
+    // default H17 rule would otherwise treat its own natural like a soft-17 and draw extra cards (the
+    // insurance-decline bug: dealer with a natural drew to bust). !doNotDraw still avoids exposing the hole
+    // card when every player hand has already resolved.
     bool standsAt17 = (dealer.getValue() >= Constants::DEALER_STAND);
     bool shouldHit;
     if (!standsAt17)
@@ -1539,7 +1631,7 @@ void Game::dealerTurn()
         shouldHit = !gameRules_.dealerStandsOnSoft17;   // soft 17: stand only when the rule requires it
     else
         shouldHit = false;                         // hard >= 17 -> stand
-    shouldHit = shouldHit && !doNotDraw;
+    shouldHit = shouldHit && !doNotDraw && !dealer.isBlackjack();
 
     if (!dealerTurnStarted)
     {

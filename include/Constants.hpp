@@ -89,6 +89,33 @@ inline float dealerRevealInterval(GameSpeed speed, float refreshRateHz)
     return DEALER_ACTION_DELAY;
 }
 
+// Feature 8 (speed-linked dealing animation): a single per-speed scale factor multiplies every base Feature-8 deal
+// duration (DEAL_SLIDE / DEAL_STAGGER / DEALER_HOLE_FLIP), so the card-deal tempo tracks the selected game action speed
+// instead of running at one fixed real-time pace. This is what fixes the desync reported on Fast, where seat highlights
+// + sound raced ahead of cards that still slid in at a constant 0.32s beat: faster speeds compress the animation so cards
+// land with the action/sound; slower speeds stretch it for visibility. Hyper and Gamer are pure-speed tiers that deliver
+// NO dealing animation at all, so their factor is 0 -- every tween then settles instantly on its resting slot (see
+// CardDealTween::progress(), which returns exactly 1 when duration==0). Tuned this rewrite; we were free to alter the
+// speeds to accommodate the animation overhead. Mirrors npcActionDelay/summaryDisplayTime's "one timing table" pattern.
+inline float dealDurationScale(GameSpeed speed)
+{
+    switch (speed)
+    {
+    case GameSpeed::Slow:     return 2.0f;   // stretch for a watchable, cinematic sweep
+    case GameSpeed::Normal:   return 1.0f;   // unchanged base feel
+    case GameSpeed::Fast:     return 0.4f;   // compress so cards land near the sound/action
+    case GameSpeed::AutoPlay: return 0.3f;   // continuous automation -> snappiest manual-or-auto watchable tier
+    case GameSpeed::Hyper:    return 0.0f;   // animation disabled
+    case GameSpeed::Gamer:    return 0.0f;   // animation disabled
+    }
+    return 1.0f;
+}
+
+// True only for the two pure-speed tiers (Hyper/Gamer) where dealing animations are intentionally not delivered, so all
+// presentation callers can skip them outright. The one source of truth for "no animation here", mirroring isAutoPlaying's
+// single-decision pattern; used by GameRenderer (animations) and Game.cpp (sound effects).
+inline bool animationDisabled(GameSpeed speed) { return speed == GameSpeed::Hyper || speed == GameSpeed::Gamer; }
+
 // A speed is "continuous autoplay": every seat acts on basic strategy without waiting for input - AutoPlay plus the
 // Hyper and refresh-rate Gamer tiers. Centralizing this means all state-machine autoplay gates stay consistent,
 // mirroring the single timing table that keys all pacing. (Hyper/Gamer differ from AutoPlay only in pacing, not in
@@ -191,6 +218,12 @@ constexpr float PLAYER_Y = 470.f;
 constexpr float DECK_X = 10.f;
 constexpr float DECK_Y = 640.f;
 
+// Feature 8 (dealing): the shoe/deck stack sits upper-right near the dealer, so every dealt card -- player hits and
+// dealer cards alike -- slides out from one visible stacked deck instead of popping in from a corner. Fractional of
+// window size keeps it inside the usable band [HANDS_LEFT_MARGIN, HANDS_RIGHT_MARGIN] when the window is resized.
+constexpr float SHOE_X = static_cast<float>(WINDOW_WIDTH) * 0.76f;
+constexpr float SHOE_Y = static_cast<float>(WINDOW_HEIGHT) * 0.04f;
+
 constexpr float CHIP_RADIUS = 18.f;
 
 constexpr float CHIP_BET_X_OFFSET = 24.f;
@@ -204,6 +237,14 @@ constexpr float BOX_PAD = 16.f;
 
 constexpr float SPLIT_SPREAD_X = 80.f;
 constexpr float SPLIT_SPREAD_Y = 80.f;
+
+// Feature 8 (Animated Card Dealing): presentation-only dealing-animation timing, in seconds (matching the rest of
+// GameTiming / dealer-reveal pacing). Cards ease from the shoe into their slot over this duration; successive cards are
+// staggered so the deal sweeps across the table instead of popping. Pure polish: no effect on game logic, settlement or
+// headless-test determinism. Applied only inside GameRenderer::draw (the render loop), never in the logic/tick path.
+constexpr float DEAL_SLIDE_SECONDS = 0.32f;   // per-card slide-in duration from shoe to slot
+constexpr float DEAL_STAGGER_SECONDS = 0.07f; // offset between successive cards' reveal start (the deal sweep)
+constexpr float DEALER_HOLE_FLIP_SECONDS = 0.40f; // hole-card flip-to-face-up duration
 
 // Persistence (fallback path if HOME is not set)
 constexpr const char* PLAYER_FILE_FALLBACK = "saves/player_profile.json";

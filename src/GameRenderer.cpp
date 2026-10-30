@@ -3,6 +3,7 @@
 #include "GameRenderer.hpp"
 #include "Constants.hpp"
 #include "Graphics.hpp"
+#include "CardAnimation.hpp"
 #include "Replay.hpp"
 #include "StrategyTrainer.hpp"
 #include "Tournament.hpp"
@@ -50,19 +51,28 @@ void GameRenderer::draw(Game& game)
         // Feature 5: brief popup for the most recently unlocked achievement (set by Game at settlement). No-op when none.
         drawPendingAchievement(game);
 
-        // Feature 1 (Side Bets): while betting, remind the player how to place a side bet alongside the main-bet controls.
+        // Feature 1 (Side Bets): betting-phase control hints, drawn just above the main controls strip in the central play
+        // band so they sit clear of the left-panel stats charts (their old x=30 ran straight through those charts). The
+        // general main-bet controls are shown throughout PlaceBets; the side-bet line is shown only when the human seat
+        // can actually place bets interactively (Game::canPlaceBets) so it stays hidden during autoplay betting.
         if (game.roundState == RoundState::PlaceBets)
         {
+            constexpr float controlsY = static_cast<float>(Constants::WINDOW_HEIGHT) - Constants::Hud::BOTTOM_HEIGHT - 24.f; // row of the main controls strip
+            const float hintX = Constants::HANDS_LEFT_MARGIN; // just inside the play band, past the left-panel charts
+
             sf::Text hint(FontManager::get(),
                 "Up/Down: set bet   Left: optimal   Right: confirm", 11.f);
             hint.setFillColor(sf::Color(180, 180, 180));
-            hint.setPosition(sf::Vector2f(30.f, 478.f));
+            hint.setPosition(sf::Vector2f(hintX, controlsY - 30.f));
             game.window.draw(hint);
 
-            sf::Text sideHint(FontManager::get(), "Z: side bet type   X/V: adjust side-bet wager", 11.f);
-            sideHint.setFillColor(sf::Color(255, 215, 0));
-            sideHint.setPosition(sf::Vector2f(30.f, 496.f));
-            game.window.draw(sideHint);
+            if (game.canPlaceBets())
+            {
+                sf::Text sideHint(FontManager::get(), "Z: side bet type   X/V: adjust side-bet wager", 11.f);
+                sideHint.setFillColor(sf::Color(255, 215, 0));
+                sideHint.setPosition(sf::Vector2f(hintX, controlsY - 14.f));
+                game.window.draw(sideHint);
+            }
         }
         break;
     case AppMode::Paused:
@@ -74,7 +84,7 @@ void GameRenderer::draw(Game& game)
         drawPauseMenu(game);
         break;
     case AppMode::StrategyTrainer:
-        game.trainer->draw(game.window);
+        game.trainer->draw(game.window, game.cardTexture);
         break;
     case AppMode::Tournament:
         game.tournament->draw(game.window);
@@ -162,6 +172,14 @@ void GameRenderer::drawPendingAchievement(Game &game)
 // Shared table-draw for Playing and Paused states (dealer + players + chips).
 void GameRenderer::drawGameTable(Game& game)
 {
+    // Feature 8: advance the reveal clock by one frame and clear stale reveal state if a round reset is detected, before
+    // any cards are drawn so every card in this table share one consistent animation timeline. Presentation only.
+    advanceRevealClock(game);
+
+    // Feature 8 (dealing): draw the shoe stack first so it sits behind every dealt card. Cards slide out from this
+    // single visible deck near the dealer, so hits and the deal share one origin. Presentation only.
+    drawDeck(game);
+
     // Lay out split hands once so cards, chips and the active-player highlight all line up.
     std::vector<PlayerHandLayout> lanes = allocatePlayerLanes(game);
 
@@ -314,20 +332,68 @@ void GameRenderer::drawDealer(Game& game)
 {
     if (game.roundState == RoundState::PlayerTurn || game.roundState == RoundState::OfferInsurance)
     {
-        auto back = Graphics::makeCardBackSprite(game.cardTexture);
-        back.setPosition(sf::Vector2f(Constants::DEALER_X, Constants::DEALER_Y));
-        game.window.draw(back);
-
+        // Feature 8: slide the up card and the (face-down) hole card in from the shoe over their staggered reveal window.
+        // The two end-points match the settled DealerTurn layout (DEALER_X, then +card spacing), so entering that state is
+        // a seamless flip rather than a jump -- and the gap leaves the up card fully visible instead of overlapping it.
+        CardDealTween upTween;
+        upTween.start = sf::Vector2f(Constants::SHOE_X, Constants::SHOE_Y);
+        upTween.end = sf::Vector2f(Constants::DEALER_X, Constants::DEALER_Y);
+        upTween.duration = dealSlideSeconds(game);
+        upTween.elapsed = std::max(0.f, dealClock_ - dealerRevealAtFor(game, 0, dealClock_));
         auto up = Graphics::makeCardSprite(game.dealer.getCard(0), game.cardTexture);
-        up.setPosition(sf::Vector2f(Constants::DEALER_X - 10, Constants::DEALER_Y));
+        up.setPosition(upTween.position());
         game.window.draw(up);
+
+        CardDealTween holeTween;
+        holeTween.start = sf::Vector2f(Constants::SHOE_X, Constants::SHOE_Y);
+        holeTween.end = sf::Vector2f(Constants::DEALER_X + Constants::CARD_WIDTH + 8.f, Constants::DEALER_Y);
+        holeTween.duration = dealSlideSeconds(game);
+        holeTween.elapsed = std::max(0.f, dealClock_ - dealerRevealAtFor(game, 1, dealClock_));
+        auto back = Graphics::makeCardBackSprite(game.cardTexture);
+        back.setPosition(holeTween.position());
+        game.window.draw(back);
         return;
+    }
+
+    // Feature 8: seed the hole-card flip the first time this round's full dealer hand is revealed (the transition into
+    // DealerTurn / Cleanup). The turn then eases that card from an edge-on pose to flat so it visibly "flips up".
+    if (!dealerFlipStarted_ && game.dealer.size() >= 2)
+    {
+        dealerFlipStarted_ = true;
+        dealerFlipStart_ = dealClock_;
     }
 
     for (std::size_t i = 0; i < game.dealer.size(); i++)
     {
-        Graphics::drawCard(game.window, game.cardTexture, game.dealer.getCard(i),
-                           Constants::DEALER_X + i * 60, Constants::DEALER_Y);
+        // Feature 8: slide each revealed card in from the shoe over its staggered reveal window. Cards are spaced one
+        // width plus a small gap apart, matching the PlayerTurn end-points so there is no jump between states.
+        CardDealTween tween;
+        tween.start = sf::Vector2f(Constants::SHOE_X, Constants::SHOE_Y);
+        tween.end = sf::Vector2f(Constants::DEALER_X + i * (Constants::CARD_WIDTH + 8.f), Constants::DEALER_Y);
+        tween.duration = dealSlideSeconds(game);
+        tween.elapsed = std::max(0.f, dealClock_ - dealerRevealAtFor(game, (int)i, dealClock_));
+
+        auto sprite = Graphics::makeCardSprite(game.dealer.getCard(i), game.cardTexture);
+        sprite.setPosition(tween.position());
+
+        // Feature 8: flip the hole card (index 1) as it is revealed -- ease a rotation from edge-on (90 deg) to flat. The
+        // pivot is set to the card's centre first, then positioned by an extra half-card so the top-left still rests on the
+        // slot (identical to the non-flipped cards), while rotating around the geometric centre -- so it spins in place and
+        // always settles exactly upright instead of drifting off-slot or getting stuck edge-on.
+        if (i == 1 && dealerFlipStarted_ && dealerFlipStart_ >= 0.f)
+        {
+            tween.flipping = true;
+            tween.flipDuration = holeFlipSeconds(game);
+            tween.flipElapsed = std::max(0.f, dealClock_ - dealerFlipStart_);
+            float rotationDeg = 90.f * (1.f - tween.flipProgress());
+
+            sprite.setOrigin(sf::Vector2f(Constants::CARD_WIDTH / 2.f, Constants::CARD_HEIGHT / 2.f));
+            sprite.setPosition(sf::Vector2f(tween.position().x + Constants::CARD_WIDTH / 2.f,
+                                            tween.position().y + Constants::CARD_HEIGHT / 2.f));
+            sprite.rotate(sf::degrees(rotationDeg));
+        }
+
+        game.window.draw(sprite);
     }
     // Draw the dealer's total to the left of their hand, once the hand has finished.
     if (game.roundState == RoundState::DealerTurn || game.roundState == RoundState::Cleanup)
@@ -481,17 +547,38 @@ void GameRenderer::drawPlayers(Game& game, const std::vector<PlayerHandLayout>& 
                 cardShift = -8.f * static_cast<float>(nCards);
             float fanLeftX = handX + cardShift; // where card 0 actually sits after rebalancing
 
+            // Safety clamp: keep the whole row inside the side-panel band so no card is clipped off-screen, even for a
+            // long rebalanced / doubled-down fan. Normal single and double hands sit well within the band and are left
+            // exactly put; only an overflowing fan is nudged back in-bounds (preserving its anchored seat).
+            const float fanWidth = static_cast<float>(nCards - 1) * 16.f + Constants::CARD_WIDTH;
+            if (fanLeftX < Constants::HANDS_LEFT_MARGIN)
+                fanLeftX = Constants::HANDS_LEFT_MARGIN;
+            else
+            {
+                float rightmost = fanLeftX + fanWidth;
+                if (rightmost > Constants::HANDS_RIGHT_MARGIN)
+                    fanLeftX = Constants::HANDS_RIGHT_MARGIN - fanWidth;
+            }
+
             // Draw cards for this hand
             for (std::size_t i = 0; i < hand.size(); i++)
             {
                 float cardX = fanLeftX + i * 16;
                 float cardY = handY - i * 16;
 
+                // Feature 8: ease this card in from the shoe over its staggered reveal window. A fully-arrived card sits
+                // exactly on (cardX, cardY), so settled frames are pixel-for-pixel identical to the pre-animation layout.
+                CardDealTween tween;
+                tween.start = sf::Vector2f(Constants::SHOE_X, Constants::SHOE_Y);
+                tween.end = sf::Vector2f(cardX, cardY);
+                tween.duration = dealSlideSeconds(game);
+                tween.elapsed = std::max(0.f, dealClock_ - playerRevealAtFor(game, (int)playerIndex, (int)handIndex, (int)i, dealClock_));
+
                 // Only rotate the third card (double down card) 90 degrees
                 if (hand.isDoubledDown() && i == 2)
                 {
                     auto sprite = Graphics::makeCardSprite(hand.getCard(i), game.cardTexture);
-                    sprite.setPosition(sf::Vector2f(cardX, cardY));
+                    sprite.setPosition(tween.position());
                     sprite.setOrigin(sf::Vector2f(Constants::CARD_WIDTH / 2.f, Constants::CARD_HEIGHT / 2.f));
                     sprite.move(sf::Vector2f(Constants::CARD_WIDTH / 2.f, Constants::CARD_HEIGHT / 2.f));
                     sprite.rotate(sf::degrees(90.f));
@@ -499,7 +586,9 @@ void GameRenderer::drawPlayers(Game& game, const std::vector<PlayerHandLayout>& 
                 }
                 else
                 {
-                    Graphics::drawCard(game.window, game.cardTexture, hand.getCard(i), cardX, cardY);
+                    auto sprite = Graphics::makeCardSprite(hand.getCard(i), game.cardTexture);
+                    sprite.setPosition(tween.position());
+                    game.window.draw(sprite);
                 }
             }
 
@@ -651,11 +740,18 @@ void GameRenderer::drawChips(Game& game, const std::vector<PlayerHandLayout>& la
 
 void GameRenderer::drawDeck(Game& game)
 {
-    for (std::size_t i = 0; i < game.deck.size(); i++)
+    // Only show the top few cards of the shoe as a stacked face-down edge, positioned at the shoe. Drawing all 52+
+    // cards would sprawl across the screen; a short stack reads clearly as a deck while still being "near the dealer".
+    if (game.deck.size() == 0)
+        return;
+
+    const int show = std::min<int>(game.deck.size(), 6);
+    for (int i = 0; i < show; ++i)
     {
-        Graphics::drawCard(game.window, game.cardTexture, game.deck.getCard(i),
-                           Constants::DECK_X + (i % 52) * 20,
-                           Constants::DECK_Y + (i / 52) * 80);
+        auto back = Graphics::makeCardBackSprite(game.cardTexture);
+        back.setPosition(sf::Vector2f(Constants::SHOE_X + static_cast<float>(i) * 3.f,
+                                      Constants::SHOE_Y + static_cast<float>(i) * 3.f));
+        game.window.draw(back);
     }
 }
 
@@ -686,6 +782,94 @@ static std::string sideBetKindName(SideBetKind kind)
     }
 }
 
+// Feature 8 (Animated Card Dealing): presentation-only reveal-timing helpers. They own NO game state -- only animation
+// clocks keyed by a stable card slot, advanced one frame at a time from game.deltaTime and cleared on round reset. All
+// three are pure presentation; the logic/tick path never calls them, so headless tests are unaffected.
+
+void GameRenderer::advanceRevealClock(Game& game)
+{
+    // Total cards can only grow within a round; any drop means the previous reveal state is stale (a new round begins
+    // with empty hands), so clear it and reset flip state before starting a fresh sweep.
+    int total = 0;
+    for (auto& p : game.players)
+        for (const Hand& hh : p.hands)
+            total += static_cast<int>(hh.size());
+    total += static_cast<int>(game.dealer.size());
+
+    if (total < prevTotalCards_)
+    {
+        playerRevealAt_.clear();
+        dealerRevealAt_.clear();
+        dealerFlipStarted_ = false;
+        dealerFlipStart_ = -1.f;
+        // Re-baseline on the current (low) count instead of retaining the previous round's peak. If we kept the old
+        // maximum here, every later round whose card count stayed below that retained peak would keep tripping this
+        // test and re-clear the freshly-assigned reveals EVERY frame -- which froze each card's progress near 0, so it
+        // never finished sliding into its slot (the "cards get stuck / wrong spot after round 1" bug). A single drop
+        // still clears exactly once per round boundary; subsequent frames in that round only clear on a real new one.
+        prevTotalCards_ = total;
+    }
+    else
+    {
+        // Never let the running count go backwards mid-round, so a transient all-zero frame can't wipe in-flight reveals.
+        prevTotalCards_ = std::max(prevTotalCards_, total);
+    }
+
+    // Advance the shared animation clock by this frame, in seconds (game.deltaTime), matching the rest of the timing
+    // system. Rendering-only: the logic/tick path is untouched.
+    dealClock_ += game.deltaTime;
+}
+
+float GameRenderer::playerRevealAtFor(Game& game, int p, int h, int i, float now)
+{
+    auto key = std::make_tuple(p, h, i);
+    auto it = playerRevealAt_.find(key);
+    if (it != playerRevealAt_.end())
+        return it->second; // already animating / arrived: keep the original start so progress continues smoothly
+
+    // Flattened deal-order index -- all earlier seats' and hands' cards come first, then this hand's earlier cards.
+    // Captured once at first sight, so a later split in an earlier hand shifts nothing visually (progress only grows).
+    int ordinal = 0;
+    for (int q = 0; q < p; ++q)
+        for (const Hand& hh : game.players[q].hands)
+            ordinal += static_cast<int>(hh.size());
+    for (std::size_t k = 0; k < static_cast<std::size_t>(h); ++k)
+        ordinal += static_cast<int>(game.players[p].hands[k].size());
+    ordinal += i;
+
+    // Reveal time INCREASES with deal order so earlier-ordinal cards (dealt first) begin sliding before later ones -- and,
+    // crucially, every card starts at progress ~0 on its first sighting instead of already being past DEAL_SLIDE_SECONDS.
+    // With the old minus sign, high-ordinal slots (later seats / NPCs / dealer) were instantly past their slide duration
+    // and popped into place with no animation; now they sweep in after everyone else, so every seat animates.
+    float revealAt = now + static_cast<float>(ordinal) * dealStaggerSeconds(game);
+    playerRevealAt_[key] = revealAt;
+    return revealAt;
+}
+
+float GameRenderer::dealerRevealAtFor(Game &game, int i, float now)
+{
+    auto it = dealerRevealAt_.find(i);
+    if (it != dealerRevealAt_.end())
+        return it->second;
+
+    int totalPlayerCards = 0;
+    for (auto& p : game.players)
+        for (const Hand& hh : p.hands)
+            totalPlayerCards += static_cast<int>(hh.size());
+    // Dealer cards reveal after the player's, so they sweep in last. Add the stagger (not subtract) so the higher deal
+    // ordinal maps to a later reveal time; with the old minus sign the dealer popped instantly instead of flipping in.
+    float revealAt = now + static_cast<float>(totalPlayerCards + i) * dealStaggerSeconds(game);
+    dealerRevealAt_[i] = revealAt;
+    return revealAt;
+}
+
+// Feature 8 (speed-linked dealing animation): effective durations for the selected game speed. Each base Feature-8
+// constant is scaled by GameTiming::dealDurationScale(game.gameSpeed), so Slow stretches, Fast/AutoPlay compress, and
+// Hyper/Gamer collapse to 0 (CardDealTween::progress() then returns exactly 1 -> no visible animation). Presentation-only.
+float GameRenderer::dealSlideSeconds(Game &game) const { return Constants::DEAL_SLIDE_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }
+float GameRenderer::dealStaggerSeconds(Game &game) const { return Constants::DEAL_STAGGER_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }
+float GameRenderer::holeFlipSeconds(Game &game) const { return Constants::DEALER_HOLE_FLIP_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }
+
 // Feature 1 (Side Bets): show the human seat's current round side bet in its betting area while it is active, plus the
 // resolved outcome once the round settles (DealerTurn/Cleanup). Reads hudState, which Game::updateHUDState populates off
 // the live hand. Only drawn when a side bet was actually placed this round.
@@ -696,7 +880,10 @@ void GameRenderer::drawSideBet(Game& game)
 
     const auto pos = getPlayerPosition(game, 0, game.players.size());
     float x = Constants::PLAYER_X + pos.x + Constants::CARD_WIDTH / 2.f - 45.f;
-    float y = Constants::PLAYER_Y + pos.y + Constants::CARD_HEIGHT + 96.f;
+    // The seat name + bankroll is drawn at PLAYER_Y + yOffset + 160; previously the side-bet label shared that exact row
+    // (CARD_HEIGHT + 96 == 160) so its text ran straight into the name. Sit it a clear row beneath the name, past the
+    // chip stack and the "YOUR TURN" turn-label (+180), so neither overlaps.
+    float y = Constants::PLAYER_Y + pos.y + Constants::CARD_HEIGHT + 150.f;
 
     std::string label = "Side Bet: " + sideBetKindName(game.hudState.sideBetKind) + " $" + std::to_string(game.hudState.sideBetWager);
     if (game.roundState == RoundState::DealerTurn || game.roundState == RoundState::Cleanup)
@@ -776,6 +963,33 @@ int GameRenderer::getHoveredMenuItemIndex(Game& game) const
             // point between two rows resolves unambiguously to the nearer one.
             bestDistance = distance;
             hoveredIndex = i;
+        }
+    }
+    return hoveredIndex;
+}
+
+// Feature 3 (Custom Game Rules): rows sit at startY = h*0.30 + i*spacing (see drawGameRules), so this hit-test matches the
+// drawn rows exactly -- one source of truth for hover->selection that processMenuEvents()/processRulesEvents() both consume,
+// keeping pointing-at-a-row consistent across menus. Same pattern as getHoveredMenuItemIndex().
+int GameRenderer::getHoveredGameRulesRowIndex(Game &game) const
+{
+    float cx = static_cast<float>(game.window.getSize().x) / 2.0f;
+    sf::Vector2f mousePos = game.window.mapPixelToCoords(sf::Mouse::getPosition(game.window));
+
+    int hoveredIndex = -1;
+    const float rulesRowHalfHeight = 21.f; // under half the 46px row spacing, so adjacent rows stay unambiguous
+    const float startY = static_cast<float>(game.window.getSize().y) * 0.30f;
+    const float spacing = 46.f;
+    const auto &rows = gameRuleRows();
+    for (int i = 0; i < static_cast<int>(rows.size()); ++i)
+    {
+        // Rows are uniformly spaced, so the first row whose centre is close enough to the cursor wins. The horizontal band
+        // is wider than getHoveredMenuItemIndex()'s because rules rows also carry a longer description column.
+        float distance = std::abs(mousePos.y - (startY + i * spacing));
+        if (distance < rulesRowHalfHeight && std::abs(mousePos.x - cx) < 420.f)
+        {
+            hoveredIndex = i;
+            break;
         }
     }
     return hoveredIndex;
@@ -902,9 +1116,11 @@ void GameRenderer::drawMainMenu(Game& game)
         drawMenuItem(game, label, game.menuSelection == item.option, item.y, hovered);
     }
 
+    // Controls hint sits below every menu row: the last row (Statistics) is at y=540 and rows are 40px apart, so this
+    // previously sat at y=470 directly on top of the Achievements row. Kept centered horizontally like the title above.
     sf::Text instr(FontManager::get(), "Up/Down: navigate  Enter: select  Esc: quit", 14);
     instr.setFillColor(sf::Color(140, 140, 140));
-    instr.setPosition(sf::Vector2f(cx, 470.0f));
+    instr.setPosition(sf::Vector2f(cx, 585.0f));
     game.window.draw(instr);
 }
 

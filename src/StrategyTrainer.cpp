@@ -2,8 +2,21 @@
 #include "BasicStrategy.hpp"
 #include "Constants.hpp"
 #include "FontManager.hpp"
+#include "Graphics.hpp"   // Graphics::makeCardSprite renders the real cards on screen (shared tilemap from game.cardTexture).
 
 #include <algorithm>
+
+// Draw a string centred horizontally at (cx, y) using the shared font. Centralises the origin/position boilerplate so every
+// label in draw() lines up consistently and draw() stays readable.
+void centeredText(sf::RenderWindow& window, const std::string& text, unsigned size, sf::Color color, float cx, float y)
+{
+    sf::Text t(FontManager::get(), text, size);
+    t.setFillColor(color);
+    const auto b = t.getLocalBounds();
+    t.setOrigin(sf::Vector2f(b.size.x / 2.0f, b.size.y / 2.0f));
+    t.setPosition(sf::Vector2f(cx, y));
+    window.draw(t);
+}
 
 using namespace BasicStrategy;
 
@@ -156,140 +169,145 @@ void StrategyTrainer::computeBookAction()
     currentCorrect = recommendAction(questionHand, questionDealer);
 }
 
-void StrategyTrainer::draw(sf::RenderWindow& window) const
+void StrategyTrainer::draw(sf::RenderWindow& window, const sf::Texture& cardTexture) const
 {
-    const float cx = static_cast<float>(window.getSize().x) / 2.0f;
     const float w = static_cast<float>(window.getSize().x);
+    const float h = static_cast<float>(window.getSize().y);
+    const float cx = w / 2.0f;
 
-    // Title + mode hint.
-    {
-        sf::Text t(FontManager::get(), "STRATEGY TRAINER", 34);
-        t.setFillColor(sf::Color(255, 215, 0));
-        sf::FloatRect b = t.getLocalBounds();
-        t.setOrigin(sf::Vector2f(b.size.x / 2.0f, b.size.y / 2.0f));
-        t.setPosition(sf::Vector2f(cx, 60.f));
-        window.draw(t);
-    }
-    {
-        sf::Text t(FontManager::get(), "Call the play basic strategy prescribes.", 14);
-        t.setFillColor(sf::Color(180, 180, 180));
-        sf::FloatRect b = t.getLocalBounds();
-        t.setOrigin(sf::Vector2f(b.size.x / 2.0f, b.size.y / 2.0f));
-        t.setPosition(sf::Vector2f(cx, 92.f));
-        window.draw(t);
-    }
+    centeredText(window, "STRATEGY TRAINER", 34, sf::Color(255, 215, 0), cx, h * 0.09f);
+    centeredText(window, "Call the play basic strategy prescribes.", 15, sf::Color(200, 200, 200), cx, h * 0.09f + 40.f);
 
     if (!active)
     {
-        // Session not running yet (fresh entry or finished): prompt to start.
         std::string prompt = lastVerdict.empty() ? "Press Enter to start." : lastVerdict;
-        sf::Text t(FontManager::get(), prompt, 18);
-        t.setFillColor(sf::Color(230, 230, 230));
-        sf::FloatRect b = t.getLocalBounds();
-        t.setOrigin(sf::Vector2f(b.size.x / 2.0f, b.size.y / 2.0f));
-        t.setPosition(sf::Vector2f(cx, 220.f));
-        window.draw(t);
-        sf::Text i(FontManager::get(), "Enter: start / restart    Esc: back to menu", 14);
-        i.setFillColor(sf::Color(140, 140, 140));
-        sf::FloatRect bi = i.getLocalBounds();
-        i.setOrigin(sf::Vector2f(bi.size.x / 2.0f, bi.size.y / 2.0f));
-        i.setPosition(sf::Vector2f(cx, 260.f));
-        window.draw(i);
+        centeredText(window, prompt, 20, sf::Color(235, 235, 235), cx, h * 0.46f);
+        centeredText(window, "Enter: start / restart    Esc: back to menu", 14, sf::Color(150, 150, 150), cx, h * 0.46f + 38.f);
         return;
     }
 
-    // The current question: player hand total + dealer up-card.
+    const float cardEdge = static_cast<float>(Constants::CARD_WIDTH) * 2.f;
+    const float cardsMidY = h * 0.39f;
+
+    auto drawCardAt = [&](const Card& card, float px, float py) {
+        sf::Sprite sprite(Graphics::makeCardSprite(card, cardTexture));
+        const auto r = sprite.getTextureRect();
+        sprite.setOrigin(sf::Vector2f(r.size.x / 2.f, r.size.y / 2.f));
+        sprite.setScale(sf::Vector2f(2.f, 2.f));
+        sprite.setPosition(sf::Vector2f(px, py));
+        window.draw(sprite);
+    };
+
+    const int playerCount = static_cast<int>(questionHand.size());
+    const float gap = 28.f;
+    const float playerTotalW = playerCount > 0 ?
+        static_cast<float>(playerCount) * cardEdge + static_cast<float>(playerCount - 1) * gap : 0.f;
+    const float playerCx = cx - cardEdge * 1.5f;
+    for (int i = 0; i < playerCount; ++i)
     {
-        sf::Text t(FontManager::get(), "Your hand", 18);
-        t.setFillColor(sf::Color(230, 230, 230));
-        sf::FloatRect b = t.getLocalBounds();
-        t.setOrigin(sf::Vector2f(b.size.x / 2.0f, b.size.y / 2.0f));
-        t.setPosition(sf::Vector2f(cx, 150.f));
-        window.draw(t);
+        const float px = playerCx - playerTotalW / 2.f + i * (cardEdge + gap) + cardEdge / 2.f;
+        drawCardAt(questionHand.getCard(i), px, cardsMidY);
     }
 
-    std::string cardLabel;
-    for (std::size_t i = 0; i < questionHand.size(); ++i)
-        cardLabel += questionHand.getCard(i).getBlackjackValueToString() + " ";
-    if (cardLabel.empty())
-        cardLabel = "?";
-    {
-        sf::Text t(FontManager::get(), cardLabel, 26);
-        t.setFillColor(sf::Color(255, 255, 255));
-        sf::FloatRect b = t.getLocalBounds();
-        t.setOrigin(sf::Vector2f(b.size.x / 2.0f, b.size.y / 2.0f));
-        t.setPosition(sf::Vector2f(cx - 90.f, 185.f));
-        window.draw(t);
-    }
+    const float dealerCx = cx + cardEdge * 1.5f;
+    if (questionDealer.size() > 0)
+        drawCardAt(questionDealer.getCard(0), dealerCx, cardsMidY);
 
-    std::string dealerLabel = questionDealer.size() ? questionDealer.getCard(0).getBlackjackValueToString() : "?";
-    {
-        sf::Text t(FontManager::get(), "Deal up: " + dealerLabel, 22);
-        t.setFillColor(sf::Color(255, 215, 0));
-        sf::FloatRect b = t.getLocalBounds();
-        t.setOrigin(sf::Vector2f(b.size.x / 2.0f, b.size.y / 2.0f));
-        t.setPosition(sf::Vector2f(cx + 90.f, 185.f));
-        window.draw(t);
-    }
+    centeredText(window, "Your hand - " + std::to_string(questionHand.getValue()),
+                 18, sf::Color(230, 230, 230), playerCx, cardsMidY + cardEdge / 2.f + 30.f);
+    if (questionDealer.size() > 0)
+        centeredText(window, "Dealer shows - " + questionDealer.getCard(0).getBlackjackValueToString(),
+                     18, sf::Color(255, 215, 0), dealerCx, cardsMidY + cardEdge / 2.f + 30.f);
 
-    // Action-key legend.
-    {
-        sf::Text t(FontManager::get(), "[H]it   [D]ouble   [S]tand   [P]plit   [Y/R]ender", 16);
-        t.setFillColor(sf::Color(200, 200, 200));
-        sf::FloatRect b = t.getLocalBounds();
-        t.setOrigin(sf::Vector2f(b.size.x / 2.0f, b.size.y / 2.0f));
-        t.setPosition(sf::Vector2f(cx, 235.f));
-        window.draw(t);
-    }
+    std::string statsText = "Accuracy " + std::to_string(static_cast<int>(stats.accuracyPercent() + 0.5f)) + "%" +
+                            "   Correct " + std::to_string(stats.correctAnswers) + "/" +
+                            std::to_string(stats.totalQuestions) + "   Streak " + std::to_string(stats.currentStreak);
+    centeredText(window, statsText, 16, sf::Color(220, 220, 220), cx, h * 0.565f);
 
-    // Stats bar.
-    {
-        std::string statsText = "Accuracy " + std::to_string(static_cast<int>(stats.accuracyPercent() + 0.5f)) + "%" +
-                                "   Correct " + std::to_string(stats.correctAnswers) + "/" +
-                                std::to_string(stats.totalQuestions) + "   Streak " + std::to_string(stats.currentStreak);
-        sf::Text t(FontManager::get(), statsText, 16);
-        t.setFillColor(sf::Color(220, 220, 220));
-        sf::FloatRect b = t.getLocalBounds();
-        t.setOrigin(sf::Vector2f(b.size.x / 2.0f, b.size.y / 2.0f));
-        t.setPosition(sf::Vector2f(cx, 270.f));
-        window.draw(t);
-    }
-
-    // The verdict from the last graded answer (empty until the first answer comes in).
-    if (!lastVerdict.empty())
-    {
-        sf::Text t(FontManager::get(), lastVerdict, 18);
-        t.setFillColor(sf::Color(255, 235, 130));
-        sf::FloatRect b = t.getLocalBounds();
-        t.setOrigin(sf::Vector2f(b.size.x / 2.0f, b.size.y / 2.0f));
-        t.setPosition(sf::Vector2f(cx, 305.f));
-        window.draw(t);
-    }
-
-    // Session summary once it has finished.
     if (complete)
     {
         std::string summary = "Session over - Accuracy " + std::to_string(static_cast<int>(stats.accuracyPercent() + 0.5f)) + "%" +
                               "   Best streak " + std::to_string(stats.bestStreak);
-        sf::Text t(FontManager::get(), summary, 20);
-        t.setFillColor(sf::Color(255, 215, 0));
-        sf::FloatRect b = t.getLocalBounds();
-        t.setOrigin(sf::Vector2f(b.size.x / 2.0f, b.size.y / 2.0f));
-        t.setPosition(sf::Vector2f(cx, 360.f));
-        window.draw(t);
-        sf::Text i(FontManager::get(), "Press Enter for a new session", 14);
-        i.setFillColor(sf::Color(140, 140, 140));
-        sf::FloatRect bi = i.getLocalBounds();
-        i.setOrigin(sf::Vector2f(bi.size.x / 2.0f, bi.size.y / 2.0f));
-        i.setPosition(sf::Vector2f(cx, 392.f));
-        window.draw(i);
+        centeredText(window, summary, 24, sf::Color(255, 215, 0), cx, h * 0.50f);
+        centeredText(window, "Press Enter for a new session", 15, sf::Color(150, 150, 150), cx, h * 0.50f + 40.f);
+        return;
     }
 
-    // A small corner note so the player knows how many questions remain in an untimed shoe.
-    if (!timed)
+    const float buttonY = h * 0.68f;
+    const auto rects = buttonRects(w, h);
+    int hovered = -1;
+    const sf::Vector2f mouse(sf::Mouse::getPosition(window));
+    for (int i = 0; i < 5; ++i)
+        if (mouse.x >= rects[i].position.x && mouse.x <= rects[i].position.x + rects[i].size.x &&
+            mouse.y >= rects[i].position.y && mouse.y <= rects[i].position.y + rects[i].size.y)
+        {
+            hovered = i;
+            break;
+        }
+
+    const std::vector<Action>& actions = buttonActions();
+    for (int i = 0; i < 5; ++i)
     {
-        sf::Text t(FontManager::get(), "Cards left: " + std::to_string(remainingCardsForTest()), 12);
-        t.setFillColor(sf::Color(120, 120, 120));
-        window.draw(t);
+        const auto& rect = rects[i];
+        sf::RectangleShape bg(sf::Vector2f(rect.size.x, rect.size.y));
+        bg.setPosition(sf::Vector2f(rect.position.x, rect.position.y));
+        bg.setFillColor(i == hovered ? sf::Color(70, 70, 100) : sf::Color(45, 45, 62));
+        window.draw(bg);
+        if (i == hovered)
+        {
+            sf::RectangleShape frame(sf::Vector2f(rect.size.x + 4.f, rect.size.y + 4.f));
+            frame.setPosition(sf::Vector2f(rect.position.x - 2.f, rect.position.y - 2.f));
+            frame.setFillColor(sf::Color(255, 215, 0));
+            window.draw(frame);
+        }
+        centeredText(window, actionName(static_cast<char>(actions[i])),
+                     20, sf::Color(255, 255, 255), rect.position.x + rect.size.x / 2.f, rect.position.y + rect.size.y / 2.f);
     }
+
+    const float keyHintY = buttonY + 46.f;
+    centeredText(window, "Keyboard:   H=Hit   D=Double Down   S=Stand   P=Split   Y or R=Surrender",
+                 13, sf::Color(150, 150, 150), cx, keyHintY);
+
+    if (!lastVerdict.empty())
+        centeredText(window, lastVerdict, 18, sf::Color(255, 235, 130), cx, keyHintY + 28.f);
+
+    if (!timed)
+        centeredText(window, "Cards left: " + std::to_string(remainingCardsForTest()),
+                     12, sf::Color(120, 120, 120), cx, h - 24.f);
+}
+
+std::vector<StrategyTrainer::Action> StrategyTrainer::buttonActions()
+{
+    return { Action::Hit, Action::DoubleDown, Action::Stand, Action::Split, Action::Surrender };
+}
+
+std::vector<sf::Rect<float>> StrategyTrainer::buttonRects(float w, float h) const
+{
+    std::vector<sf::Rect<float>> rects;
+    const float cx = w / 2.0f;
+    const float buttonH = 56.f;
+    const float gap = 16.f;
+    const float availW = w * 0.84f;
+    const float btnW = (availW - 4.f * gap) / 5.f;
+    const float totalW = btnW * 5.f + 4.f * gap;
+    const float startX = cx - totalW / 2.f;
+    const float buttonY = h * 0.68f;
+    for (int i = 0; i < 5; ++i)
+        rects.emplace_back(sf::Rect<float>(sf::Vector2f(startX + i * (btnW + gap), buttonY - buttonH / 2.f), sf::Vector2f(btnW, buttonH)));
+    return rects;
+}
+
+int StrategyTrainer::buttonIndexAt(float x, float y, float w, float h) const
+{
+    const auto rects = buttonRects(w, h);
+    for (int i = 0; i < static_cast<int>(rects.size()); ++i)
+    {
+        const float left = rects[i].position.x;
+        const float top = rects[i].position.y;
+        const float right = left + rects[i].size.x;
+        const float bottom = top + rects[i].size.y;
+        if (x >= left && x <= right && y >= top && y <= bottom)
+            return i;
+    }
+    return -1;
 }

@@ -102,11 +102,15 @@ class Game
 
     const Hand& testHand(size_t playerIndex, size_t handIndex) const; // read a player hand back
     Player& testPlayer(int index = 0) { return players[index]; }      // mutate/read a player (bankroll etc.)
+    std::vector<Player>& playersForTest() { return players; }          // mutate the seat vector for deterministic setup
     const Hand& testDealer() const { return dealer; }
     // Feature 3 (Custom Game Rules): read the current shoe's card count so a configurable deck count can be asserted
     // headlessly after startNewShoeForTest() rebuilds the shoe with gameRules_.numDecks.
     int deckSizeForTest() const { return static_cast<int>(deck.size()); }
     RoundState roundStateForTest() const { return roundState; }
+    // Test-only: drive the round-state machine directly so tests can exercise state-gated predicates (e.g. Game::canPlaceBets)
+    // without running a full deal/turn/settle cycle. Mirrors setGameSpeedForTest / setGameRulesForTest.
+    void setRoundStateForTest(RoundState rs) { roundState = rs; }
     GameState gameStateForTest() const { return gameState; }
     size_t activePlayerIndexForTest() const { return activePlayerIndex; }
     // Feature 1: expose the advisor verdict set by logStrategyDeviation (the source of the Book box color).
@@ -149,6 +153,10 @@ class Game
     // be driven headlessly with any rule set (soft-17, DAS, resplit, deck count, surrender) without touching disk.
     const GameRules& getGameRulesForTest() const { return gameRules_; }
     void setGameRulesForTest(const GameRules& rules) { gameRules_ = rules; }
+    // Main-menu highlighted row: read/select it so pure-logic tests can drive main-menu navigation headlessly (see
+    // InputHandler::navigateMenu) without an SFML window or event loop. menuSelection is otherwise private on Game.
+    MenuOption menuSelectionForTest() const { return menuSelection; }
+    void setMenuSelectionForTest(MenuOption option) { menuSelection = option; }
 
     // Feature 7 (Sound): expose SoundManager state so headless tests can assert the event->queue path without SFML.
     size_t soundPendingForTest() const { return sound_.pendingSounds().size(); }
@@ -175,6 +183,11 @@ class Game
     // it from PlaceBets. A zero wager opts out regardless of kind.
     void placeSideBet(SideBetKind kind, int wager);
 
+    // Whether the human seat can currently place bets interactively — round in PlaceBets, active seat is the human
+    // (index 0) and betting isn't auto-advanced by AutoPlay/Hyper/Gamer. Mirrors InputHandler's input gate so rendering
+    // hints use one shared predicate; returns false outside PlaceBets. Used to decide whether to draw the side-bet control line.
+    bool canPlaceBets() const;
+
     void run();
 
     // Click the count-style label ("Count (Hi-Lo)") to toggle between counting systems. Both are always
@@ -190,6 +203,10 @@ class Game
     // headless construction (which never builds the dashboard) can't crash when the menu calls this; on first entry it seeds
     // the dashboard from the player's career stats + flattened round history.
     void startStatsSession();
+    // Feature 4 (Statistics Dashboard): headless count of rounds fed to the dashboard through the real startStatsSession ->
+    // feed path (mirrors the *ForTest() convention). Exposed as a plain int so tests can assert each round is counted
+    // exactly once without needing the incomplete StatsDashboard type in Game.hpp. nullptr-guarded for headless builds.
+    int statsPerRoundCountForTest() const;
     float deltaTime;
 
     friend class GameRenderer;
@@ -383,6 +400,14 @@ class Game
     // Place the human's current hand bet and record it for the session bet-distribution histogram. Public (with
     // activeTrueCount() below) so tests can drive a full betting round without SFML.
     void confirmBet();
+
+    // Accept or decline insurance on the active seat's current hand. These are public (rather than private like their
+    // InputHandler-facing callers assume) so tests can drive the full InsuranceOffer -> evaluateBlackjack path
+    // headlessly -- most importantly the dealer-natural regression that fires after a player declines insurance against
+    // a natural dealer (see test_dealer_blackjack.cpp).
+    void confirmInsurance();
+    void declineInsurance();
+
     // Kelly-based optimal bet calculation (uses kellyFraction)
     int calculateOptimalBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet) const;
 
@@ -399,10 +424,6 @@ class Game
     float hiLoTrueCount() const;
 
   private:
-    void confirmInsurance();
-
-    void declineInsurance();
-
     // Feature 1 (Side Bets): evaluate + bankroll every seat's side bet once all cards are known (called from deal()),
     // BEFORE any main-hand settlement via evaluateHands(). Side bets pay out / lose independently of the main hand.
     void resolveSideBets();

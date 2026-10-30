@@ -264,3 +264,79 @@ TEST_CASE("StatsDashboard: empty history yields safe zeros and non-empty exports
     REQUIRE(!dash.toJson().empty());
     REQUIRE(!dash.toCsv().empty());
 }
+
+// TEMP reproduction of the user-reported stats crash after play + return-to-menu.
+#include "Game.hpp"
+#include "RoundEngine.hpp"
+#include "PlayerProfile.hpp"
+#include <iostream>
+namespace
+{
+    Card reproCard(int value, Suit suit) { Card c; c.value = value; c.suit = suit; return c; }
+}
+
+TEST_CASE("REPRO stats flow: play -> quit-to-menu -> open dashboard", "[StatsRepro][TEMP]")
+{
+    Game game(true); // headless
+    std::vector<Card> shoe = {
+        reproCard(2, Suit::Spades), reproCard(3, Suit::Hearts), reproCard(4, Suit::Diamonds), reproCard(5, Suit::Clubs),
+        reproCard(6, Suit::Spades), reproCard(7, Suit::Hearts), reproCard(8, Suit::Diamonds), reproCard(9, Suit::Clubs),
+        reproCard(10, Suit::Spades), reproCard(2, Suit::Hearts), reproCard(3, Suit::Diamonds), reproCard(4, Suit::Clubs)
+    };
+    game.setDeck(shoe);
+
+    // One full round to completion (settles -> appends the round to profile.currentHistory AND currentShoeRecord.rounds).
+    game.startTestRound();
+    game.confirmBet();
+    game.stand();
+    game.deltaTime = 100.0f;
+    RoundEngine engine;
+    for (int i = 0; i < 60 && game.roundStateForTest() != RoundState::Cleanup; ++i)
+        engine.tick(100.0f, game);
+    CHECK(game.roundStateForTest() == RoundState::Cleanup);
+
+    // Inspect the LIVE settled round (before any storage copy) to localize whether corruption originates in settlement.
+    {
+        const RoundRecord& live = game.currentRoundRecordForTest();
+        std::cerr << "[REPRO] LIVE round dealerCards=" << live.dealerCards.size()
+                  << " hands=" << live.playerHands.size() << std::endl;
+        for (std::size_t h = 0; h < live.playerHands.size(); ++h)
+            std::cerr << "   LIVE hand[" << h << "] cards=" << live.playerHands[h].cards.size() << std::endl;
+    }
+
+    // Consolidate the in-progress shoe into longHistory exactly as QuitToMenu does (addShoeRecord moves
+    // profile.currentHistory -> longHistory). Crucially it leaves game.currentShoeRecord.rounds untouched, so on the next
+    // stats-open startStatsSession feeds that round from BOTH longHistory AND currentShoeRecord -> double-count.
+    {
+        PlayerProfile profile = game.playersForTest()[0].getProfile();
+        profile.addShoeRecord(ShoeRecord{});
+        game.playersForTest()[0].updateProfile(profile);
+    }
+
+    // Diagnose BEFORE opening stats: inspect what actually got stored in longHistory after the quit-to-menu mimic.
+    {
+        PlayerProfile diag = game.playersForTest()[0].getProfile();
+        const auto& hist = diag.getLongHistory();
+        std::cerr << "[REPRO] longHistory shoes=" << hist.size() << std::endl;
+        for (std::size_t s = 0; s < hist.size(); ++s)
+        {
+            std::cerr << "  shoe[" << s << "] rounds=" << hist[s].rounds.size() << std::endl;
+            for (std::size_t r = 0; r < hist[s].rounds.size(); ++r)
+            {
+                std::cerr << "    round[" << r << "] dealerCards=" << hist[s].rounds[r].dealerCards.size()
+                          << " hands=" << hist[s].rounds[r].playerHands.size() << std::endl;
+                for (std::size_t h = 0; h < hist[s].rounds[r].playerHands.size(); ++h)
+                    std::cerr << "      hand[" << h << "] cards=" << hist[s].rounds[r].playerHands[h].cards.size()
+                              << " wager=" << hist[s].rounds[r].playerHands[h].wager << std::endl;
+            }
+        }
+    }
+
+    // Now open the statistics dashboard exactly as the menu does, then read how many rounds it fed through the real path.
+    game.startStatsSession();
+    const int roundsFed = game.statsPerRoundCountForTest();
+    std::cerr << "[REPRO] rounds fed to dashboard=" << roundsFed << " (expected 1)" << std::endl;
+    // A single completed round should feed exactly once. Double-counting (history + current record) makes this 2.
+    CHECK(roundsFed == 1);
+}
+

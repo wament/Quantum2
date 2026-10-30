@@ -10,6 +10,9 @@
 // Feature 4 (Statistics Dashboard): included here so activateMainMenuOption can start it and processStatsDashboardEvents can
 // drive its tab switching. Pure-logic + no new include cycle.
 #include "StatsDashboard.hpp"
+// Feature 3 (Custom Game Rules): processRulesEvents edits the in-game rules-config panel's selected row via applyGameRuleEdit,
+// so it needs these helpers. Pure-logic header, no include cycle.
+#include "GameRules.hpp"
 
 InputHandler::InputHandler(Game& game) : game(game) {}
 
@@ -134,7 +137,16 @@ void InputHandler::navigateMenu(bool forward)
         case MenuOption::StrategyTrainer:
             game.menuSelection = MenuOption::Tournament;
             break;
-        default: // Tournament wraps to the top.
+        case MenuOption::Tournament:
+            game.menuSelection = MenuOption::Achievements;
+            break;
+        case MenuOption::Achievements:
+            game.menuSelection = MenuOption::GameRules;
+            break;
+        case MenuOption::GameRules:
+            game.menuSelection = MenuOption::Statistics;
+            break;
+        default: // Statistics wraps to the top.
             game.menuSelection = MenuOption::PlayGame;
             break;
         }
@@ -144,7 +156,7 @@ void InputHandler::navigateMenu(bool forward)
         switch (game.menuSelection)
         {
         case MenuOption::PlayGame:
-            game.menuSelection = MenuOption::Tournament; // wrap to the last option
+            game.menuSelection = MenuOption::Statistics; // wrap to the last option
             break;
         default: // PlayerCount/GameSpeed/ReviewHistory/StrategyTrainer/Tournament step one option back.
             game.menuSelection = static_cast<MenuOption>(static_cast<int>(game.menuSelection) - 1);
@@ -211,6 +223,10 @@ void InputHandler::adjustValue(bool forward, MenuOption option)
 
 void InputHandler::processEvents()
 {
+    // Decay the rules-config mouse-wheel rate-limit cooldown by this frame's real elapsed time (once per frame), so fast
+    // scrolling is throttled to at most one action per SCROLL_RATE_LIMIT_SECONDS regardless of frame rate. See processRulesEvents().
+    scrollCooldown_ = scrollCooldown_ > game.deltaTime ? scrollCooldown_ - game.deltaTime : 0.f;
+
     while (true)
     {
         auto event = game.window.pollEvent();
@@ -259,6 +275,9 @@ void InputHandler::processEvents()
         case AppMode::Achievements:
             processAchievementEvents(event.value());
             break;
+        case AppMode::GameRules:
+            processRulesEvents(event.value());
+            break;
         case AppMode::ReplayHistory:
         case AppMode::ReplayPlaying:
         {
@@ -280,6 +299,23 @@ void InputHandler::processEvents()
 // Feature 2 (Strategy Trainer): keyboard drives the trainer directly. H/S/D/P/Y/I choose the play to grade; Enter/Space starts or restarts a fresh shoe; Escape returns to the main menu. Grading uses submitAction(char) so no extra state-machine method is needed, and game.startTrainerSession() begins a new shoe.
 void InputHandler::processTrainerEvents(const sf::Event& event)
 {
+    // Mouse clicks on the action buttons (drawn by the trainer). The five plays remain available via keyboard below; this lets
+    // either input grade an answer. buttonIndexAt() recomputes the same button geometry draw() renders, so click boxes match
+    // exactly. submitAction() is a no-op while no question is live, so stray clicks during start/summary are harmless.
+    if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
+    {
+        if (clicked->button == sf::Mouse::Button::Left)
+        {
+            auto pos = sf::Mouse::getPosition(game.window);
+            int idx = game.trainer->buttonIndexAt(pos.x, pos.y,
+                                                  static_cast<float>(game.window.getSize().x),
+                                                  static_cast<float>(game.window.getSize().y));
+            if (idx >= 0)
+                game.trainer->submitAction(game.trainer->buttonActions()[idx]);
+        }
+        return; // a left-click is handled here; everything else falls through to the key handling below
+    }
+
     auto pressed = event.getIf<sf::Event::KeyPressed>();
     if (!pressed)
         return;
@@ -368,6 +404,49 @@ void InputHandler::processAchievementEvents(const sf::Event& event)
     }
 }
 
+// Feature 3 (Custom Game Rules): drives the rules-config panel using the SAME baseline as the main menu -- pointing at a row
+// selects it (applyMenuRowSelection + getHoveredGameRulesRowIndex) and the wheel edits that row's value forward/back, exactly like
+// Left/Right. Esc persists changes and returns to the main menu as an edge trigger. Up/Down/Left/Right navigation stay in
+// Game::update() because they are held-key state (not edge-triggered). Sharing applyMenuRowSelection() is why future menus inherit
+// consistent hover+wheel behavior without re-implementing it.
+constexpr float gameRulesScrollRateLimitSeconds = 0.15f; // ~6 edits/sec cap
+
+void InputHandler::processRulesEvents(const sf::Event& event)
+{
+    // Hover selects the rule under the cursor, exactly like the main menu updates selection on mouse move.
+    if (event.getIf<sf::Event::MouseMoved>())
+        applyMenuRowSelection(game.renderer.getHoveredGameRulesRowIndex(game), game.gameRulesSelectedRow);
+
+    // Mouse wheel edits whichever rule is under the cursor, else the arrow-selected one -- the same hovered-or-selected row
+    // resolution as processMenuEvents' wheel. Rate-limited so one physical scroll is at most one edit even when several events
+    // land in a frame or the wheel spins fast (cooldown decays by real time once per frame in processEvents()).
+    if (auto wheel = event.getIf<sf::Event::MouseWheelScrolled>())
+    {
+        if (scrollCooldown_ <= 0.f)
+        {
+            int targetRow = game.gameRulesSelectedRow; // fall back to the arrow-selected row when nothing is hovered
+            int hoveredIndex = game.renderer.getHoveredGameRulesRowIndex(game);
+            if (hoveredIndex >= 0 && hoveredIndex < static_cast<int>(gameRuleRows().size()))
+                targetRow = hoveredIndex;
+
+            if (targetRow >= 0 && targetRow < static_cast<int>(gameRuleRows().size()))
+                applyGameRuleEdit(game.gameRules_, gameRuleRows()[targetRow].id, wheel->delta > 0.f);
+            scrollCooldown_ = gameRulesScrollRateLimitSeconds;
+        }
+    }
+
+    if (auto pressed = event.getIf<sf::Event::KeyPressed>())
+    {
+        if (pressed->code == sf::Keyboard::Key::Escape)
+        {
+            Logger::info() << "Returned to main menu from the custom game rules.";
+            game.rememberTableSettings(); // persist any rule changes before leaving the panel
+            game.appMode = AppMode::MainMenu;
+            game.menuSelection = MenuOption::PlayGame;
+        }
+    }
+}
+
 void InputHandler::processMenuEvents(const sf::Event& event)
 {
     if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
@@ -385,6 +464,10 @@ void InputHandler::processMenuEvents(const sf::Event& event)
             }
         }
     }
+
+    // Hover selects the menu item under the cursor -- see applyMenuRowSelection(), the shared baseline every list-style menu uses.
+    if (auto moved = event.getIf<sf::Event::MouseMoved>())
+        applyMenuRowSelection(game.renderer.getHoveredMenuItemIndex(game), game.menuSelection);
 
     // Mouse wheel scrubs PlayerCount / GameSpeed rows via hover authority (hovered row if under the
     // cursor, else game.menuSelection) — same row-selection rule as click in activateMainMenuOption().
