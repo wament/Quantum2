@@ -718,19 +718,25 @@ std::vector<int> HUD::bucketBetDistribution(const std::map<int, int>& distributi
     return buckets;
 }
 
+// One lookup of all three panel bounds; left/right/bottomPanelBounds delegate to it so the geometry lives in a single definition.
+HUD::Panels HUD::computePanels() const
+{
+    return {m_leftPanel.bounds(), m_rightPanel.bounds(), m_bottomPanel.bounds()};
+}
+
 sf::Rect<float> HUD::leftPanelBounds() const
 {
-    return m_leftPanel.bounds();
+    return computePanels().left;
 }
 
 sf::Rect<float> HUD::rightPanelBounds() const
 {
-    return m_rightPanel.bounds();
+    return computePanels().right;
 }
 
 sf::Rect<float> HUD::bottomPanelBounds() const
 {
-    return m_bottomPanel.bounds();
+    return computePanels().bottom;
 }
 
 const std::vector<StatBox*>& HUD::rightPanelStatBoxes() const

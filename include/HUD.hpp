@@ -43,6 +43,12 @@ public:
     sf::Rect<float> rightPanelBounds() const;
     sf::Rect<float> bottomPanelBounds() const;
 
+    // Screen-space bounds of all three HUD panels in one lookup, so the per-panel getters above stay thin delegators and the
+    // geometry lives in a single definition (see HUD::computePanels). Exposed for tests; production reads m_XPanel.bounds()
+    // directly where it needs a specific panel.
+    struct Panels { sf::Rect<float> left, right, bottom; };
+    Panels computePanels() const;
+
     // Read-only views of the boxes each panel owns (see Panel::statBoxes). Used by the layout tests to measure real
     // rendered box bounds and assert the distribution stays even; the panels keep ownership.
     const std::vector<StatBox*>& rightPanelStatBoxes() const;
