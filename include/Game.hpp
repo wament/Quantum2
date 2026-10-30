@@ -157,6 +157,9 @@ class Game
     // InputHandler::navigateMenu) without an SFML window or event loop. menuSelection is otherwise private on Game.
     MenuOption menuSelectionForTest() const { return menuSelection; }
     void setMenuSelectionForTest(MenuOption option) { menuSelection = option; }
+    // AppMode is otherwise private on Game. Read it so headless tests can drive InputHandler's per-mode process* methods
+    // and assert the Escape -> main-menu path switched modes (see InputHandler::returnToMainMenu) without an event loop.
+    AppMode getAppModeForTest() const { return appMode; }
 
     // Feature 7 (Sound): expose SoundManager state so headless tests can assert the event->queue path without SFML.
     size_t soundPendingForTest() const { return sound_.pendingSounds().size(); }

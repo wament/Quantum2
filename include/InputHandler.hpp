@@ -15,6 +15,15 @@ public:
     // public so headless tests can drive it directly; InputHandler is a friend of Game, so it reads/writes the private menuSelection.
     void navigateMenu(bool forward);
 
+    // Per-mode event handlers exposed so headless tests can drive Escape -> main menu directly (see InputHandler::returnToMainMenu).
+    // Like the public navigateMenu(), these let a test call a mode handler without an SFML window; InputHandler is a friend of Game,
+    // so they read/write the private appMode/menuSelection exactly as processEvents() does at runtime.
+    void processTrainerEvents(const sf::Event& event);
+    void processTournamentEvents(const sf::Event& event);
+    void processStatsDashboardEvents(const sf::Event& event);
+    void processAchievementEvents(const sf::Event& event);
+    void processRulesEvents(const sf::Event& event);
+
 private:
     Game& game;
     // Debounce for the rules-config mouse-wheel rate limit (see processRulesEvents and processEvents). Seconds remaining
@@ -47,14 +56,10 @@ private:
             selection = static_cast<Selection>(hoveredIndex);
     }
 
-    void processTrainerEvents(const sf::Event& event);
-    void processTournamentEvents(const sf::Event& event);
-    // Feature 4 (Statistics Dashboard): browse-only tabbed view. Left/Right cycle the tabs; Escape returns to the main menu.
-    void processStatsDashboardEvents(const sf::Event& event);
-    // Feature 5 (Achievement System): browse-only list view. Escape returns to the main menu; nothing else is driven here.
-    void processAchievementEvents(const sf::Event& event);
+    // Browse-only modes not exercised by this refactor's tests; kept private.
     void processGameEvents(const sf::Event& event);
     void processPauseEvents(const sf::Event& event);
-    // Feature 3 (Custom Game Rules): drives the in-game rules-config panel (mouse-wheel edits the selected rule, Escape exits).
-    void processRulesEvents(const sf::Event& event);
+    // Shared "Escape returns to main menu" for every per-mode process* method: one log line naming the source mode, then a
+    // single AppMode/selection reset. Each caller passes its own mode string so the log line still differs (see InputHandler.cpp).
+    void returnToMainMenu(Game& game, const char* fromMode);
 };

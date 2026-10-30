@@ -16,6 +16,16 @@
 
 InputHandler::InputHandler(Game& game) : game(game) {}
 
+// Shared "Escape returns to main menu" collapse of the five duplicated blocks across processTrainer/Tournament/StatsDashboard/
+// Achievement/Rules events. One log line naming the source mode (kept distinct per caller via `fromMode`) plus a single
+// AppMode/selection reset, so every mode's escape path is one call instead of three repeated statements.
+void InputHandler::returnToMainMenu(Game& game, const char* fromMode)
+{
+    Logger::info() << "Returned to main menu from the " << fromMode << ".";
+    game.appMode = AppMode::MainMenu;
+    game.menuSelection = MenuOption::PlayGame;
+}
+
 // Single code path for keyboard (Enter) and mouse (left-click) menu activation, so every option
 // behaves identically. Reads Game's private members directly — hence the friendship access that
 // lets the other process* methods touch them too. This is the source of truth for selection.
@@ -333,9 +343,7 @@ void InputHandler::processTrainerEvents(const sf::Event& event)
         game.startTrainerSession();
         break;
     case sf::Keyboard::Key::Escape:
-        Logger::info() << "Returned to main menu from the strategy trainer.";
-        game.appMode = AppMode::MainMenu;
-        game.menuSelection = MenuOption::PlayGame;
+        returnToMainMenu(game, "strategy trainer");
         break;
     }
 }
@@ -355,9 +363,7 @@ void InputHandler::processTournamentEvents(const sf::Event& event)
                 game.tournament->playHand();
             break;
         case sf::Keyboard::Key::Escape:
-            Logger::info() << "Returned to main menu from tournament mode.";
-            game.appMode = AppMode::MainMenu;
-            game.menuSelection = MenuOption::PlayGame;
+            returnToMainMenu(game, "tournament mode");
             break;
         }
     }
@@ -381,9 +387,7 @@ void InputHandler::processStatsDashboardEvents(const sf::Event& event)
                 game.statsDashboard->nextTabForTest();
             break;
         case sf::Keyboard::Key::Escape:
-            Logger::info() << "Returned to main menu from the statistics dashboard.";
-            game.appMode = AppMode::MainMenu;
-            game.menuSelection = MenuOption::PlayGame;
+            returnToMainMenu(game, "statistics dashboard");
             break;
         }
     }
@@ -397,9 +401,7 @@ void InputHandler::processAchievementEvents(const sf::Event& event)
     {
         if (pressed->code == sf::Keyboard::Key::Escape)
         {
-            Logger::info() << "Returned to main menu from the achievements list.";
-            game.appMode = AppMode::MainMenu;
-            game.menuSelection = MenuOption::PlayGame;
+            returnToMainMenu(game, "achievements list");
         }
     }
 }
@@ -439,10 +441,8 @@ void InputHandler::processRulesEvents(const sf::Event& event)
     {
         if (pressed->code == sf::Keyboard::Key::Escape)
         {
-            Logger::info() << "Returned to main menu from the custom game rules.";
             game.rememberTableSettings(); // persist any rule changes before leaving the panel
-            game.appMode = AppMode::MainMenu;
-            game.menuSelection = MenuOption::PlayGame;
+            returnToMainMenu(game, "the custom game rules");
         }
     }
 }
