@@ -13,49 +13,47 @@
 #include "FontManager.hpp"
 
 #include <algorithm>
+#include <functional>
+#include <optional>
 
-void GameRenderer::draw(Game& game)
+// Single source of truth for draw()'s AppMode->{backdrop, render} dispatch (Finding #4): one table replaces the old backdrop
+// if/else-if chain + separate dispatch switch, so a mode's clear color and its draw fn live together and can't drift apart.
+// Per-mode modules still call their own ->draw(window); this only routes to them after clearing. Render lambdas use the
+// enclosing GameRenderer via implicit `this`, which is why buildModeTable() below is a non-const member (several draw* methods
+// are non-const and must be called on that live renderer).
+const std::map<AppMode, ModeEntry>& GameRenderer::modeTable()
 {
-    if (game.appMode == AppMode::StrategyTrainer)
-        game.window.clear(sf::Color(96, 0, 128)); // royal-purple training backdrop - no felt needed behind the text
-    else if (game.appMode == AppMode::Tournament)
-        game.window.clear(sf::Color(25, 32, 48)); // tournament slate backdrop; Tournament::draw() paints it itself
-    else if (game.appMode == AppMode::Achievements)
-        game.window.clear(sf::Color(18, 28, 24)); // dark-slate backdrop for the achievements list; nothing else draws behind it
-    else if (game.appMode == AppMode::GameRules)
-        game.window.clear(sf::Color(30, 30, 40)); // rules-config backdrop; drawGameRules() paints its own text on top
-    else if (game.appMode == AppMode::StatsDashboard)
-        game.window.clear(sf::Color(15, 22, 30)); // deep-teal dashboard backdrop; StatsDashboard::draw() paints it itself
-    else
-    {
-        game.window.clear();
-        game.window.draw(*game.backgroundSprite);
-    }
+    // Single source of truth for draw()'s AppMode->{backdrop, render} dispatch (Finding #4): one table replaces the old
+    // backdrop if/else-if chain + separate dispatch switch, so a mode's clear color and its draw fn live together and can't
+    // drift apart. Built once on first use; the render lambdas capture this directly (we are in the GameRenderer member), so
+    // they call the non-const draw* methods on that live instance -- exactly how draw() itself mutates window state.
+    static std::map<AppMode, ModeEntry> table;
+    if (!table.empty())
+        return table;
 
-    switch (game.appMode)
-    {
-    case AppMode::MainMenu:
-        drawMainMenu(game);
-        break;
-    case AppMode::Playing:
-        drawGameTable(game);
-        if (game.roundState == RoundState::OfferInsurance)
-            drawInsurance(game);
+    // Populating for the first time: one row per AppMode. `t[X] = {backdrop, render}` keeps each entry's backdrop color and
+    // its render fn on the same line so they can't drift apart either.
+    table[AppMode::MainMenu]         = {std::nullopt, [=](Game& g){ drawMainMenu(g); }};
+    // Playing: felt cleared by the default branch above; HUD update + betting/side-bet/sound/summary/achievement readouts all live here.
+    table[AppMode::Playing]          = {std::nullopt, [=](Game& g){
+        drawGameTable(g);
+        if (g.roundState == RoundState::OfferInsurance)
+            drawInsurance(g);
 
-        game.updateHUDState();
-        game.hud.update(game.hudState);
-        game.hud.draw(game.window);
-        drawSideBet(game);
-        drawSoundStatus(game);
-        drawSummaryOverlay(game);
+        g.updateHUDState();
+        g.hud.update(g.hudState);
+        g.hud.draw(g.window);
+        drawSideBet(g);
+        drawSoundStatus(g);
+        drawSummaryOverlay(g);
         // Feature 5: brief popup for the most recently unlocked achievement (set by Game at settlement). No-op when none.
-        drawPendingAchievement(game);
+        drawPendingAchievement(g);
 
         // Feature 1 (Side Bets): betting-phase control hints, drawn just above the main controls strip in the central play
         // band so they sit clear of the left-panel stats charts (their old x=30 ran straight through those charts). The
         // general main-bet controls are shown throughout PlaceBets; the side-bet line is shown only when the human seat
         // can actually place bets interactively (Game::canPlaceBets) so it stays hidden during autoplay betting.
-        if (game.roundState == RoundState::PlaceBets)
+        if (g.roundState == RoundState::PlaceBets)
         {
             constexpr float controlsY = static_cast<float>(Constants::WINDOW_HEIGHT) - Constants::Hud::BOTTOM_HEIGHT - 24.f; // row of the main controls strip
             const float hintX = Constants::HANDS_LEFT_MARGIN; // just inside the play band, past the left-panel charts
@@ -64,48 +62,63 @@ void GameRenderer::draw(Game& game)
                 "Up/Down: set bet   Left: optimal   Right: confirm", 11.f);
             hint.setFillColor(sf::Color(180, 180, 180));
             hint.setPosition(sf::Vector2f(hintX, controlsY - 30.f));
-            game.window.draw(hint);
+            g.window.draw(hint);
 
-            if (game.canPlaceBets())
+            if (g.canPlaceBets())
             {
                 sf::Text sideHint(FontManager::get(), "Z: side bet type   X/V: adjust side-bet wager", 11.f);
                 sideHint.setFillColor(sf::Color(255, 215, 0));
                 sideHint.setPosition(sf::Vector2f(hintX, controlsY - 14.f));
-                game.window.draw(sideHint);
+                g.window.draw(sideHint);
             }
         }
-        break;
-    case AppMode::Paused:
-        drawGameTable(game);
-        game.updateHUDState();
-        game.hud.update(game.hudState);
-        game.hud.draw(game.window);
-        drawSoundStatus(game);
-        drawPauseMenu(game);
-        break;
-    case AppMode::StrategyTrainer:
-        game.trainer->draw(game.window, game.cardTexture);
-        break;
-    case AppMode::Tournament:
-        game.tournament->draw(game.window);
-        break;
-    case AppMode::Achievements:
-        drawAchievementList(game);
-        break;
-    case AppMode::GameRules:
-        drawGameRules(game);
-        break;
-    case AppMode::StatsDashboard:
-        if (game.statsDashboard)
-            game.statsDashboard->draw(game.window);
-        break;
-    case AppMode::ReplayHistory:
-    case AppMode::ReplayPlaying:
-        game.replay->draw();
-        break;
+    }};
+    // Paused: same felt + HUD readout as Playing but with the pause menu instead of betting/side-bet overlays.
+    table[AppMode::Paused]           = {std::nullopt, [=](Game& g){
+        drawGameTable(g);
+        g.updateHUDState();
+        g.hud.update(g.hudState);
+        g.hud.draw(g.window);
+        drawSoundStatus(g);
+        drawPauseMenu(g);
+    }};
+    table[AppMode::StrategyTrainer]  = {sf::Color(96, 0, 128), [=](Game& g){ g.trainer->draw(g.window, g.cardTexture); }};
+    table[AppMode::Tournament]       = {sf::Color(25, 32, 48), [=](Game& g){ g.tournament->draw(g.window); }};
+    table[AppMode::Achievements]     = {sf::Color(18, 28, 24), [=](Game& g){ drawAchievementList(g); }};
+    table[AppMode::GameRules]        = {sf::Color(30, 30, 40), [=](Game& g){ drawGameRules(g); }};
+    table[AppMode::StatsDashboard]   = {sf::Color(15, 22, 30), [=](Game& g){ if (g.statsDashboard) g.statsDashboard->draw(g.window); }};
+    // ReplayHistory + ReplayPlaying share one render fn; felt cleared by the default branch above.
+    table[AppMode::ReplayHistory]    = {std::nullopt, [=](Game& g){ g.replay->draw(); }};
+    table[AppMode::ReplayPlaying]    = {std::nullopt, [=](Game& g){ g.replay->draw(); }};
+
+    return table;
+}
+
+void GameRenderer::draw(Game& game)
+{
+    // Unknown mode: default backdrop (plain clear + backgroundSprite) and no render -- mirrors the old else-branch + switch fall-through.
+    static const ModeEntry fallback{ std::nullopt, [](Game&){} };
+    auto it = modeTable().find(game.appMode);
+    const ModeEntry& entry = (it != modeTable().end()) ? it->second : fallback;
+
+    if (entry.backdrop)
+        game.window.clear(*entry.backdrop);
+    else
+    {
+        game.window.clear();
+        game.window.draw(*game.backgroundSprite);
     }
 
+    entry.render(game);
+
     game.window.display();
+}
+
+ModeEntry GameRenderer::modeEntryForTest(AppMode appMode)
+{
+    static const ModeEntry fallback{ std::nullopt, [](Game&){} };   // nullopt backdrop (=> default clear + backgroundSprite), no-op render for an unknown mode
+    auto it = modeTable().find(appMode);
+    return (it != modeTable().end()) ? it->second : fallback;
 }
 
 // Feature 5 (Achievement System): render the full achievement list — each entry shows its unlocked/locked state plus name and

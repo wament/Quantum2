@@ -5,6 +5,13 @@
 #include <map>
 #include <tuple>
 #include <vector>
+#include <functional>
+#include <optional>
+
+// AppMode drives GameRenderer::draw()'s unified mode-dispatch table (modeTable()/modeEntryForTest()), so the renderer
+// header needs the enum even though it only forward-declares Game for its draw(Game&) methods. Game.hpp defines AppMode
+// before including this header, so this self-reference resolves without a circular-include cycle.
+#include "Game.hpp"
 
 // One source of truth for menu contents and row positions, shared by the renderer (drawing + hover)
 // and InputHandler (click selection) so they always agree. Edit here; don't duplicate it elsewhere.
@@ -50,10 +57,23 @@ struct PlayerHandLayout {
     float cw = 0.f;             // group width
 };
 
+// One row of the unified AppMode->{backdrop, render} table consumed by GameRenderer::draw() (Finding #4): one place per
+// mode so a mode's clear color and its draw fn can't drift apart. `backdrop` is an explicit clear color, or nullopt for
+// modes that default to a plain clear + backgroundSprite felt; `render` is the per-mode presentation invoked after clearing.
+// Exposed alongside modeEntryForTest() so headless tests lock this table without opening an SFML window (Graphics-only).
+struct ModeEntry {
+    std::optional<sf::Color> backdrop;
+    std::function<void(Game&)> render;
+};
+
 class GameRenderer
 {
 public:
     void draw(Game &game);
+    // Feature 4-style (unified mode dispatch, Finding #4): return the AppMode->{backdrop, render} entry so headless tests can
+    // assert each mode clears to its documented backdrop color and routes to a render fn without opening an SFML window.
+    // Mirrors the *ForTest() pattern -- pure logic, Graphics-only, runs over Blackjack2Tests like every other logic test.
+    ModeEntry modeEntryForTest(AppMode appMode);
     void resizeView(sf::RenderWindow &window, sf::View &view);
 
     // Menu-item index under the cursor, or -1; shared source of truth with input selection — see mainMenuItems().
@@ -75,6 +95,12 @@ public:
     float dealClockForTest() const { return dealClock_; }
 
 private:
+    // Single source of truth for draw()'s AppMode->{backdrop, render} dispatch (Finding #4): one table replaces the old
+    // backdrop if/else-if chain + separate dispatch switch, so adding a mode is one row instead of editing both chains. Built
+    // once on first use; consumed by draw() and exposed via modeEntryForTest(). Render lambdas call non-const draw* methods
+    // via implicit this, so it's a non-const member (matching that draw() itself mutates window state).
+    const std::map<AppMode, ModeEntry>& modeTable();
+
     void drawDealer(Game &game);
     // Draws a numeric hand total in white (16pt). rightAlign anchors the number's right edge at x
     // (dealer, flush left of its cards) instead of centering on it (player hands above each fan).
