@@ -65,30 +65,39 @@ void HandEvaluator::evaluateHands()
             outcome.payout = payout;
             outcome.won = (result == SettlementResult::Win || result == SettlementResult::Push);
 
-            switch (result)
-            {
-            case SettlementResult::Surrender:
-                stats.losses++;
-                if (pIdx == 0)
-                    roundLost = true;
-                Logger::info() << p.getName() << " surrendered hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ").";
-                break;
-            case SettlementResult::Lose:
-                stats.losses++;
-                // Streak box = the human seat's rounds only; an NPC losing must not extend or flip it.
-                if (pIdx == 0)
-                    roundLost = true;
-                Logger::info() << p.getName() << " lost hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ").";
-                break;
-            case SettlementResult::Win:
+            // Surrender/Lose/Win share a near-identical body (counter + human-seat streak flag + log line). Route the
+            // per-result counter and streak flag by outcome: Surrender+Lose both count as a loss / roundLost, Win as a
+            // win. The streak box is the human seat's rounds only, so an NPC result never extends or flips it (below).
+            if (result == SettlementResult::Win)
                 stats.wins++;
-                if (pIdx == 0)
+            else if (result == SettlementResult::Surrender || result == SettlementResult::Lose)
+                stats.losses++;
+            else
+                stats.pushes++; // Push: neither win nor loss.
+
+            if (pIdx == 0 && result != SettlementResult::Push)
+            {
+                if (result == SettlementResult::Win)
                     roundWon = true;
-                Logger::info() << p.getName() << " won hand " << (handIndex + 1) << " (bet: " << hand.getBet() << ", payout: " << payout << ").";
-                break;
-            case SettlementResult::Push:
-                stats.pushes++;
-                break;
+                else
+                    roundLost = true;
+            }
+
+            // One log line per logged outcome, byte-for-byte identical to the collapsed cases above: Surrender/Lose use a
+            // result-specific verb with no payout; only a Win appends the payout. Push has no log line.
+            const char* verb = "won";
+            if (result == SettlementResult::Surrender)
+                verb = "surrendered";
+            else if (result == SettlementResult::Lose)
+                verb = "lost";
+            if (result != SettlementResult::Push)
+            {
+                if (result == SettlementResult::Win)
+                    Logger::info() << p.getName() << " " << verb << " hand " << (handIndex + 1)
+                                   << " (bet: " << hand.getBet() << ", payout: " << payout << ").";
+                else
+                    Logger::info() << p.getName() << " " << verb << " hand " << (handIndex + 1)
+                                   << " (bet: " << hand.getBet() << ").";
             }
 
             int netProfitOnHand = payout - hand.getBet();
