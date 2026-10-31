@@ -2,6 +2,7 @@
 
 #include <SFML/Graphics.hpp>
 #include <vector>
+#include <memory>
 
 enum class AppMode
 {
@@ -49,6 +50,11 @@ class StrategyTrainer;
 // Feature 4 (Statistics Dashboard): like Replay / StrategyTrainer, its state machine is built in full mode only; the
 // forward declaration lets Game hold it as a unique_ptr with an incomplete type (destroyed out-of-line in Game.cpp).
 class StatsDashboard;
+
+// Betting core (Feature): pure-logic betting sizing + true-count derivation, held like the other composed helpers as a
+// unique_ptr with an incomplete type and destroyed out-of-line in Game.cpp. Built in both ctors (no SFML dependency),
+// mirroring AchievementManager.
+class BettingHandler;
 // Feature 9 (Tournament Mode): included fully (not just forward-declared) because Game.hpp exposes a public method
 // that takes `Tournament::TournamentConfig`; the header therefore needs the complete type. Tournament.hpp only pulls in
 // Deck/Hand/Player, which are already part of this include chain, so there is no new cycle.
@@ -235,6 +241,9 @@ class Game
     // dashboard directly (see test_stats_dashboard.cpp). unique_ptr with an incomplete type is fine here (like
     // Replay/StrategyTrainer) because ~Game is defined out-of-line where StatsDashboard.hpp loads.
     std::unique_ptr<StatsDashboard> statsDashboard;
+    // Betting core (Feature): the money-in math (true-count derivation, Kelly/Reko optimal-bet sizing). Pure logic with
+    // no SFML dependency, so Game owns it as a unique_ptr and constructs it in both ctors — like AchievementManager.
+    std::unique_ptr<BettingHandler> betting_;
     GameRenderer renderer;
     InputHandler inputHandler;
     HandEvaluator evaluator;

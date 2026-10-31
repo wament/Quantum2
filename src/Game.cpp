@@ -20,6 +20,9 @@
 // complete type, and startStatsSession() can seed the dashboard from the player's history + career stats. Pure-logic + no
 // new include cycle (pulls only GameRecord/SFML, already in this chain).
 #include "StatsDashboard.hpp"
+// Betting core is pure-logic; included fully here so Game's out-of-line destructor (below) destroys its unique_ptr with a
+// complete type, and both ctors can construct it. No new include cycle (pulls only Deck/BasicStrategy, already in chain).
+#include "BettingHandler.hpp"
 
 // Defined here (Replay.hpp is included in this translation unit) so unique_ptr<Replay>'s member
 // destruction runs with a complete Replay type regardless of who destroys the Game.
@@ -153,6 +156,9 @@ Game::Game()
     // Feature 4 (Statistics Dashboard): its own AppMode state machine, built in full mode only; headless tests drive it
     // directly (see test_stats_dashboard.cpp). Data is seeded on entry via startStatsSession().
     statsDashboard = std::make_unique<StatsDashboard>();
+    // Betting core (Feature): pure-logic money-in math; built in both ctors like AchievementManager so headless tests
+    // can drive betting decisions through Game's delegators. No SFML dependency.
+    betting_ = std::make_unique<BettingHandler>();
     auto profile = players[0].getProfile();
     replay->loadHistory(profile.getLongHistory());
     replay->setStartingBankroll(players[0].getBankroll());
@@ -795,6 +801,9 @@ Game::Game(bool headless)
     initialBet = 0;
     shoeCumulativeWinLoss = 0;
     sessionCumulativeWinLoss = 0;
+    // Betting core (Feature): pure-logic money-in math, built in both ctors like AchievementManager (no SFML dependency)
+    // so headless tests can drive betting decisions through Game's delegators.
+    betting_ = std::make_unique<BettingHandler>();
 }
 
 // Replace the shoe with an exact card order so tests can deal a fully determined sequence. `cards` is in
@@ -1172,32 +1181,21 @@ size_t Game::getGlobalHandIndexForPlayer(size_t playerIdx, size_t handIdx)
 
 float Game::activeTrueCount() const
 {
-    // Reko is an unbalanced system where "the true count is the running count" (per the roadmap); Hi-Lo normalizes
-    // the running count by decks remaining. Betting paths use this so each style's pattern sees its own true count.
-    if (countingStyle == BasicStrategy::CountingStyle::REKO)
-        return static_cast<float>(runningCount);
-
-    return BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
+    // Delegates to the composed BettingHandler; shared game state (counting style + running count + shoe depth) is
+    // passed in so each system's pattern still sees its own true count. See BettingHandler::activeTrueCount.
+    return betting_->activeTrueCount(deck, runningCount, countingStyle);
 }
 
 float Game::hiLoTrueCount() const
 {
-    // Both systems are counted on every draw (see afterDraw), so the Hi-Lo buffer is always current whichever way
-    // the display is set. The edge model is calibrated in Hi-Lo true-count points, so it uses this.
-    const int hiloRunning = (countingStyle == BasicStrategy::CountingStyle::HI_LO)
-                                ? runningCount
-                                : backgroundRunningCount;
-    return BasicStrategy::computeTrueCount(hiloRunning, static_cast<int>(deck.size()));
+    // Delegates to BettingHandler: Hi-Lo calibration uses the Hi-Lo buffer when active, else the background Reko buffer.
+    return betting_->hiLoTrueCount(deck, runningCount, backgroundRunningCount, countingStyle);
 }
 
 int Game::calculateOptimalBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet) const
 {
-    // Follow the active counting system's betting pattern: Reko uses its own tiered unit pattern; Hi-Lo keeps
-    // the Kelly criterion. One Reko "unit" is the table minimum bet.
-    if (countingStyle == BasicStrategy::CountingStyle::REKO)
-        return BasicStrategy::calculateRekoBet(trueCount, minBet, minBet, maxBet);
-
-    return BasicStrategy::calculateKellyBet(trueCount, kellyFraction, bankroll, minBet, maxBet);
+    // Delegates to BettingHandler: Reko steps by table-minimum units; Hi-Lo uses the Kelly criterion (one unit = min).
+    return betting_->calculateOptimalBet(trueCount, kellyFraction, bankroll, minBet, maxBet, countingStyle);
 }
 
 void Game::confirmBet()

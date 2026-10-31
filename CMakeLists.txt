@@ -82,6 +82,7 @@ target_sources(Blackjack2 PRIVATE
     src/Card.cpp
     src/Deck.cpp
     src/Game.cpp
+    src/BettingHandler.cpp
     src/BasicStrategy.cpp
     src/RoundEngine.cpp
     src/Graphics.cpp
@@ -131,6 +132,7 @@ add_executable(Blackjack2Tests
     src/Card.cpp
     src/Deck.cpp
     src/Game.cpp
+    src/BettingHandler.cpp
     src/BasicStrategy.cpp
     src/RoundEngine.cpp
     src/Graphics.cpp
@@ -166,6 +168,7 @@ add_executable(Blackjack2Tests
     tests/test_reko_counting.cpp
     tests/test_advisor_feedback.cpp
     tests/test_analytics_betting.cpp
+    tests/test_betting_handler.cpp
     tests/test_analytics_charts.cpp
     tests/test_shoe_analytics.cpp
     tests/test_blackjack_settlement.cpp
