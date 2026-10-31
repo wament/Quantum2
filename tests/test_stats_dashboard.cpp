@@ -222,6 +222,7 @@ TEST_CASE("StatsDashboard: JSON and CSV export stay populated for any history", 
 
     const std::string csv = dash.toCsv();
     REQUIRE(!csv.empty());
+    CHECK(csv.rfind("metric,value\n", 0) == 0);                // exact CSV header as the first line
     CHECK(csv.find("metric,value") != std::string::npos);      // CSV header
     CHECK(csv.find("hands_finished") != std::string::npos);     // metric rows present
     CHECK(csv.find("round_index,net_profit,cumulative_bankroll") != std::string::npos);  // per-round detail header

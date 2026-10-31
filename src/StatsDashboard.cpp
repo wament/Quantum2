@@ -4,6 +4,8 @@
 #include <sstream>
 #include <algorithm>
 #include <cstdlib>
+#include <array>
+#include <functional>
 
 #include "Hand.hpp"
 #include "FontManager.hpp"
@@ -12,6 +14,16 @@ using json = nlohmann::json;
 
 namespace
 {
+    // Stream any arithmetic value to its canonical textual form. Lets heterogeneous CSV metric fields (ints + floats) share one
+    // formatting path so each row can be a plain {name, string} pair; the bytes match streaming the field directly into os.
+    template <typename T>
+    std::string csvValue(const T& v)
+    {
+        std::ostringstream os;
+        os << v;
+        return os.str();
+    }
+
     // Reconstruct a Hand from its recorded cards so bust / natural detection reuses production scoring (identical to how the
     // game scores it), rather than re-implementing card-value logic. addCard() only pushes back, so this is side-effect free.
     Hand handFromCards(const std::vector<Card>& cards)
@@ -127,23 +139,30 @@ std::string StatsDashboard::toCsv() const
 {
     std::ostringstream os;
     os << "metric,value\n";
-    os << "hands_finished," << computed_.handsFinished << "\n";
-    os << "wins," << computed_.wins << "\n";
-    os << "losses," << computed_.losses << "\n";
-    os << "pushes," << computed_.pushes << "\n";
-    os << "blackjacks," << computed_.blackjacks << "\n";
-    os << "busts," << computed_.busts << "\n";
-    os << "win_rate," << computed_.winRate << "\n";
-    os << "bj_frequency," << computed_.bjFrequency << "\n";
-    os << "bust_frequency," << computed_.bustFrequency << "\n";
-    os << "strategy_accuracy," << computed_.strategyAccuracy << "\n";
-    os << "shoes_finished," << computed_.shoesFinished << "\n";
-    os << "splits," << computed_.splits << "\n";
-    os << "doubles," << computed_.doubles << "\n";
-    os << "greatest_hand_profit," << computed_.greatestHandProfit << "\n";
-    os << "worst_hand_loss," << computed_.worstHandLoss << "\n";
-    os << "peak_bankroll," << computed_.peakBankroll << "\n";
-    os << "max_drawdown," << computed_.maxDrawdown << "\n";
+    // One pre-formatted line per metric, mirroring toJson()'s data-driven table instead of 17 near-identical `os << name,value`
+    // lines. Each string is the row already assembled ("name," + streamed value) so mixed int/float fields share one formatting
+    // path; output is byte-for-byte identical to streaming the field directly into os.
+    const std::array<std::string, 17> rows = {
+        "hands_finished," + csvValue(computed_.handsFinished),
+        "wins," + csvValue(computed_.wins),
+        "losses," + csvValue(computed_.losses),
+        "pushes," + csvValue(computed_.pushes),
+        "blackjacks," + csvValue(computed_.blackjacks),
+        "busts," + csvValue(computed_.busts),
+        "win_rate," + csvValue(computed_.winRate),
+        "bj_frequency," + csvValue(computed_.bjFrequency),
+        "bust_frequency," + csvValue(computed_.bustFrequency),
+        "strategy_accuracy," + csvValue(computed_.strategyAccuracy),
+        "shoes_finished," + csvValue(computed_.shoesFinished),
+        "splits," + csvValue(computed_.splits),
+        "doubles," + csvValue(computed_.doubles),
+        "greatest_hand_profit," + csvValue(computed_.greatestHandProfit),
+        "worst_hand_loss," + csvValue(computed_.worstHandLoss),
+        "peak_bankroll," + csvValue(computed_.peakBankroll),
+        "max_drawdown," + csvValue(computed_.maxDrawdown)
+    };
+    for (const auto& line : rows)
+        os << line << '\n';
 
     os << "\nround_index,net_profit,cumulative_bankroll\n";
     for (std::size_t i = 0; i < computed_.perRoundProfit.size(); ++i)
