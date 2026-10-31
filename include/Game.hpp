@@ -395,6 +395,21 @@ class Game
 
     void updateHUDState();
 
+    // Per-concern HUD sync helpers; updateHUDState composes them so each readout (betting/side-bet, player bankrolls,
+    // counting, sound, advisor/turn, shoe analytics) is one self-contained block. Pure refactor — every hudState field's
+    // value and type are unchanged; see test_hud_layout.cpp which locks the values through hudStateForTest().
+    void syncBettingAndSideBet();
+
+    void syncPlayerBankrolls();
+
+    void syncCounting();
+
+    void syncSoundState();
+
+    void syncBookAdvisor();
+
+    void syncShoeAnalytics();
+
     // Shared HUD timer countdown for summary / after-hand / after-shoe timers.
     void tickTimer(float& timerField, float deltaTime);
     // Advance + wrap activePlayerIndex (and evaluate Blackjack) at insurance-loop boundaries.

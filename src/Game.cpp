@@ -637,12 +637,24 @@ void Game::tickTimer(float& timerField, float deltaTime)
 
 void Game::updateHUDState()
 {
+    // Each readout is one self-contained concern; composition reads as an index of concerns, so a reviewer or test can
+    // target any single concern (test_hud_layout.cpp locks the values through hudStateForTest()). No field changes.
+    syncBettingAndSideBet();
+    syncPlayerBankrolls();
+    syncCounting();
+    syncSoundState();
+    syncBookAdvisor();
+    syncShoeAnalytics();
+}
+
+// Betting + side bet (Feature 1): single data source for the HUD + betting-area renderer. Reads the live human hand;
+// defaults stay "no side bet" when there is no seat or hand yet.
+void Game::syncBettingAndSideBet()
+{
     hudState.bankroll = players[0].getBankroll();
 
     hudState.currentBet = players[0].hands[0].getBet();
 
-    // Feature 1 (Side Bets): surface the human seat's current-round side bet (choice + resolved payout) so the HUD and
-    // betting-area renderer read it from this single data source. Read off the live hand; defaults stay "no side bet".
     if (!players.empty() && !players[0].hands.empty())
     {
         hudState.sideBetKind = players[0].hands[0].getSideBetKind();
@@ -657,20 +669,27 @@ void Game::updateHUDState()
         hudState.sideBetPayout = 0;
         hudState.hasSideBet = false;
     }
+}
 
+// All player bankrolls, refreshed each frame so the readout follows betting changes.
+void Game::syncPlayerBankrolls()
+{
     // Populate all player bankrolls
     hudState.playerBankrolls.clear();
     for (auto& p : players)
     {
         hudState.playerBankrolls.push_back(p.getBankroll());
     }
+}
 
+// Counting readouts: running count, the active style's name, and its true count. Hi-Lo normalizes by decks remaining;
+// Reko is unbalanced so "the true count is the running count" (per the roadmap), highlighted in yellow when active.
+// Both counts stay tracked in the background for instant swap. Cards remaining comes off the live shoe.
+void Game::syncCounting()
+{
     hudState.runningCount = runningCount;
     hudState.countingStyleName = BasicStrategy::countingStyleName(countingStyle);
 
-    // The True Count box reflects the active system's true count. Hi-Lo normalizes its running count by decks
-    // remaining; Reko is unbalanced, so "the true count is the running count" (per the roadmap). Highlighted in
-    // yellow to flag when Reko is the active style. Both counts are still tracked in the background for instant swap.
     if (countingStyle == BasicStrategy::CountingStyle::REKO)
         hudState.trueCount = static_cast<float>(runningCount);
     else
@@ -678,17 +697,24 @@ void Game::updateHUDState()
     hudState.trueCountHighlighted = (countingStyle == BasicStrategy::CountingStyle::REKO);
 
     hudState.cardsRemaining = deck.size();
+}
 
-    // Turn awareness so the book advisor can hide its action during the dealer's turn.
-    hudState.isDealerTurn = (roundState == RoundState::DealerTurn);
-
-    // Feature 7: surface the current sound + music state so any HUD/renderer layer can read it from a single source.
+// Feature 7: surface the current sound + music state so any HUD/renderer layer can read it from a single source.
+void Game::syncSoundState()
+{
     hudState.soundVolume = sound_.settings().soundVolume;
     hudState.musicVolume = sound_.settings().musicVolume;
     hudState.soundMuted = sound_.isMuted();
+}
 
-    // The Book box has three states: while a verdict is pending after a completed action, show the book's letter as
-    // green/red feedback; otherwise advise the live move only during the player's turn; hide on the dealer's turn.
+// Advisor + turn awareness: the dealer-turn flag (so the book can hide its action) plus the Book box feedback. The Book
+// has three states — a green/red letter while a verdict is pending after a completed action; the live move only during
+// the player's turn when an active hand exists; otherwise nothing. advisorFeedback carries the raw verdict.
+void Game::syncBookAdvisor()
+{
+    // Turn awareness so the book advisor can hide its action during the dealer's turn.
+    hudState.isDealerTurn = (roundState == RoundState::DealerTurn);
+
     if (advisorFeedback != AdvisorFeedback::None)
     {
         hudState.basicStrategyHint = std::string(1, advisorAction);
@@ -705,11 +731,13 @@ void Game::updateHUDState()
         hudState.basicStrategyHint.clear();
     }
     hudState.advisorFeedback = advisorFeedback;
+}
 
-    // Advanced Analytics (Feature 3): every readout below comes from this shoe's trackers (shoe_), which
-    // resetShoeAnalytics() zeroes at each boundary — so Std Dev, Long Win, Long Loss, Edge %, Streak and Strategy %
-    // all restart with the shoe while the Bankroll box keeps running. Standard deviation is computed from the
-    // running sum / sum-of-squares of per-hand net profits (variance = E[x^2] - (E[x])^2).
+// Advanced Analytics (Feature 3): every readout comes from this shoe's trackers (shoe_), which resetShoeAnalytics() zeroes
+// at each boundary — so Std Dev, Long Win, Long Loss, Edge %, Streak and Strategy % all restart with the shoe while the
+// Bankroll box keeps running. Variance = E[x^2] - (E[x])^2 over per-hand net profits; std dev is its non-negative root.
+void Game::syncShoeAnalytics()
+{
     hudState.shoeAnalytics = &shoe_;
     hudState.longestWinningStreak = shoe_.longestWinningStreak;
     hudState.longestLosingStreak = shoe_.longestLosingStreak;
