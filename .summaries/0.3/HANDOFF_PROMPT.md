@@ -30,3 +30,38 @@ TRUNCATION WORKAROUND when reading large files: the reader truncates at ~47k cha
 
 SUGGESTED ORDER: start with Phase 0 (InputHandler Escape helper — highest ROI / lowest risk), then follow ACTION_PLAN_refactor.md phases in order, committing per phase. After each increment update §3/§7 findings and §4/§5 status in CONTEXT_refactor.md so the next window inherits accurate state.
 ---
+
+## CURRENT STATE — read this first (appended by the most recent session)
+
+Phases DONE + verified green before their commits (full list in §6 of CONTEXT_refactor.md):
+- Phase 0 `567ad71`, Phase 1 `e9268cc`, Phase 2 `fb81bcb`, Phase 3 `308488f` (code) + `e9f210d`
+  (docs), Phase 4 `44ea266`, Phase 6 `0d45de5`, Phase 8 `80b1022`. Full suite 236/236, tree clean.
+
+Phases REMAINING in ACTION_PLAN_refactor.md order: Phase 5 (Constants.hpp timing-namespace tidy +
+Serialization.hpp additive-schema comment trim) and Phase 7 (HandEvaluator::evaluateHands() case/
+logger collapse). Then the #8 follow-up: Game.cpp god-class split (still >800 lines, biggest win).
+
+What the most recent session (Phase 3) did — GameRenderer::draw():
+- Collapsed the backdrop if/else-if chain + separate dispatch switch into ONE unified table
+  AppMode -> {sf::Color backdrop, render} = modeTable() in src/GameRenderer.cpp. draw() is now a single
+  lookup; every mode's color + draw fn live on one row so they can't drift apart (Finding #4).
+- All 17 draw* methods intact & still call their own ->draw(window); Playing/Paused bodies preserved
+  byte-for-byte inside render lambdas. Unknown modes -> {nullopt backdrop + no-op render}.
+- Exposed ModeEntry struct + modeEntryForTest(AppMode) in include/GameRenderer.hpp (*ForTest pattern).
+- New test: tests/test_game_renderer_modes.cpp, registered under Blackjack2Tests in CMakeLists.txt.
+
+Gotchas learned this session (avoid on the next phase):
+- GCC needs an EXPLICIT lambda capture for member calls ([] does NOT implicitly grab `this` here). Use
+  [=] or [this]. Do NOT wrap such lambdas inside an immediately-invoked [](){...}() IIFE — nesting one
+  extra lambda layer breaks [=]'s reach to the enclosing member's this. Build maps by assigning t[X]=...
+  directly inside the member function instead (that is what modeTable() does now).
+- GameRenderer.hpp now needs AppMode (modeTable/modeEntryForTest signatures) via #include "Game.hpp".
+  Because Game.hpp includes GameRenderer.hpp before it defines AppMode, any TU including GameRenderer.hpp
+  MUST include "Game.hpp" FIRST (its `GameRenderer renderer;` member needs the complete type). All TUs
+  already do; if you add a new test, keep that include order.
+- Net size: GameRenderer.cpp net +13 lines (81 added / 68 removed) from the table + accessor — deliberate
+  structure, not bloat; readouts locked identical by tests. <800 comes from follow-up #8's god-class split.
+
+Next concrete step if continuing: pick Phase 5 or 7 per ACTION_PLAN_refactor.md, verify-green, commit per
+phase (code then docs), and refresh the §3 finding + §6 list for whatever you finish next.
+---
