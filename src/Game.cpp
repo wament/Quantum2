@@ -209,9 +209,12 @@ void Game::run()
 // which never builds the trainer, can't crash when the menu calls this.
 void Game::startTrainerSession(int deckCount, int secondsPerSession)
 {
-    if (trainer)
-        trainer->startSession(deckCount, secondsPerSession);
+    if (!trainer)
+        trainer = std::make_unique<StrategyTrainer>();
+    trainer->startSession(deckCount, secondsPerSession);
 }
+
+float Game::trainerElapsedSecondsForTest() const { return trainer->elapsedSecondsForTest(); }
 
 // Feature 9 (Tournament Mode): begin/restart a tournament. Guards against nullptr so headless construction - which
 // never builds the tournament - can't crash when the menu calls this; on first entry it allocates the state machine.
@@ -566,38 +569,28 @@ void Game::nextRound()
 // Events
 void Game::update(float deltaTime)
 {
-    if (appMode == AppMode::MainMenu)
-        return;
-
-    if (appMode == AppMode::ReplayPlaying || appMode == AppMode::ReplayHistory)
+    // Each AppMode routes through its own case here instead of a wall of `if (appMode == ...)` guards (adding a mode is one new
+    // case, not a new guard); non-Playing modes return before RoundEngine and Playing advances it. Enum-driven dispatch.
+    switch (appMode)
     {
+    case AppMode::MainMenu:
+        return;
+    case AppMode::ReplayPlaying:
+    case AppMode::ReplayHistory:
         replay->update(deltaTime);
         return;
-    }
-    // Feature 2 (Strategy Trainer): advance the trainer's own state machine and render it, then hand off.
-    if (appMode == AppMode::StrategyTrainer)
-    {
+    // Feature 2 / 9 / 4 advance their own state machine, then hand off to rendering (GameRenderer.draw).
+    case AppMode::StrategyTrainer:
         trainer->update(deltaTime);
         return;
-    }
-    // Feature 9 (Tournament Mode): advance the tournament's own state machine and render it, then hand off.
-    if (appMode == AppMode::Tournament)
-    {
+    case AppMode::Tournament:
         tournament->update(deltaTime);
         return;
-    }
-    // Feature 4 (Statistics Dashboard): advance the dashboard's own state machine (tab pacing), then hand off to rendering.
-    // Mirroring the other modes' early-return wiring so it never reaches the Playing path below. Tab switching is driven by
-    // InputHandler::processStatsDashboardEvents; update() only exists for AppMode parity with Tournament / StrategyTrainer.
-    if (appMode == AppMode::StatsDashboard)
-    {
+    case AppMode::StatsDashboard:
         statsDashboard->update(deltaTime);
         return;
-    }
-    // Feature 3 (Custom Game Rules): in-game rules-config panel — its own small state machine mirroring the other modes'
-    // early-return wiring. Arrow keys move the highlight; Left/Right edit the selected rule via applyGameRuleEdit (editing
-    // gameRules_ live); Escape persists and returns to the main menu. Rendering is GameRenderer's job when appMode matches.
-    if (appMode == AppMode::GameRules)
+    // Feature 3: rules-config panel — arrow keys move the highlight, Left/Right edits the selected rule via applyGameRuleEdit.
+    case AppMode::GameRules:
     {
         const int rowCount = static_cast<int>(gameRuleRows().size());
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Up))
@@ -615,7 +608,14 @@ void Game::update(float deltaTime)
             if (gameRulesSelectedRow >= 0 && gameRulesSelectedRow < rowCount)
                 applyGameRuleEdit(gameRules_, gameRuleRows()[gameRulesSelectedRow].id, rightHeld);
         }
+        break;   // falls through to the Playing guard below (never reaches RoundEngine).
     }
+    case AppMode::Playing:
+        break;   // sole mode that advances the turn/round state machine via RoundEngine.
+    }
+
+    // Non-Playing modes return before RoundEngine here (identical to the original guards). Paused / Achievements are driven
+    // elsewhere and only hold AppMode parity — they fall through this same guard, exactly as they did before the refactor.
     if (appMode != AppMode::Playing)
         return;
 

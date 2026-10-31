@@ -160,6 +160,10 @@ class Game
     // AppMode is otherwise private on Game. Read it so headless tests can drive InputHandler's per-mode process* methods
     // and assert the Escape -> main-menu path switched modes (see InputHandler::returnToMainMenu) without an event loop.
     AppMode getAppModeForTest() const { return appMode; }
+    void setAppModeForTest(AppMode mode) { appMode = mode; }
+    // The StrategyTrainer is otherwise private (built only in the full constructor). Exposed out-of-line so headless tests can
+    // assert the StrategyTrainer AppMode routes to trainer->update() and advances session time (see Game::trainerElapsedSecondsForTest).
+    float trainerElapsedSecondsForTest() const;
 
     // Feature 7 (Sound): expose SoundManager state so headless tests can assert the event->queue path without SFML.
     size_t soundPendingForTest() const { return sound_.pendingSounds().size(); }
