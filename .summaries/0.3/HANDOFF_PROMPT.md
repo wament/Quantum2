@@ -40,7 +40,23 @@ Phases DONE + verified green before their commits (full list in §6 of CONTEXT_r
 
 Phases REMAINING in ACTION_PLAN_refactor.md order: all phases 0-8 are done. The #8 follow-up (Game.cpp god-class
 split, the biggest structural win) is now underway — stage 1 done below; two sub-stages remain (Settlement/deal()
-and SessionLifecycle), each needing larger test scaffolding.
+and SessionLifecycle), each needing larger test scaffolding. A header-only shared fixture (`tests/test_support.hpp`)
+now exists to support those stages — see this session's block directly below.
+
+This session did the TEST-SCOLDING consolidation (behavior-preserving; full suite 240/241 green):
+- Widened `test_support.hpp` with frame-drivers duplicated verbatim across 6 files: `tickFrame(game,deltaTime)`
+  (single RoundEngine tick), `advanceToDealerTurn(game)` (drive to DealerTurn), and `settleRound(game,settleDelta=100.0f)`
+  (drive to Cleanup; sets the game member deltaTime so reveal pacing elapses — matching what settlement tests did locally).
+  Header-only + inline, no new link units / no ODR risk.
+- Folded `test_achievements` into the fixture: its bespoke local `makeCard` now uses `test_support::make_card`; its
+  `setDeck(...)`+`startTestRound()` pair collapses to one `start_round(game,{...})`. Removed all per-file local drivers;
+  no leftover unqualified calls remain.
+- Migrated the remaining frame-driver files (`resplit_tens`, `split_aces`, `side_bet_round`, `game_rules`,
+  `blackjack_settlement`) off their duplicate tickOnce/settleRound defs onto the shared helpers — net −~210 lines of
+  duplicated test scaffolding across tests. Build EXIT=0; all cases green except the pre-existing SoundManager CWD artifact.
+- Left bespoke on purpose: `card_animation` (configurable-seat setup), `tournament_mode` (rotatedDeck()), and pure unit-test
+  files — none fit the generic 1-seed fixture. This unblocks #8's Settlement/deal() + SessionLifecycle stages, which now build
+  on this shared scaffolding instead of re-deriving it. See CONTEXT_refactor.md §9 (marked DONE).
 
 This session did Follow-up #8 Stage 1 — Betting core extracted into composed BettingHandler (full suite 241/241 green):
 - Betting core extracted into a new pure-logic `BettingHandler` (`include/BettingHandler.hpp`, no SFML deps) that Game

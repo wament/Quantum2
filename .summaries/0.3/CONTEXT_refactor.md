@@ -201,8 +201,25 @@ Beyond `update()` and `updateHUDState()`, `Game.cpp:1727` owns clearly separable
 - **After (future):** extract `Betting`, `Settlement`/`HandResult`, and a `SessionLifecycle` helper as focused classes that Game composes — Game.cpp drops well under 800 on its own.
 - **Why it is NOT in the phases:** this is a large structural change requiring new test scaffolding and careful ownership moves. Do it *after* the behavior-preserving phases, guarded by the full suite staying green. Not a "shrink now" step; flagged so the next window can sequence it deliberately.
 
-### #9 Repeated test scaffolding (REVIEW, do not force)
-`startTestRound()` is called **60 times** across `tests/*.cpp`; many tests also build an identical `Game(bool)` + `setDeck(...)` + `startTestRound()` preamble. Extracting a shared fixture could cut boilerplate — but test readability favors explicit setup, so this is a judgment call: only consolidate if a clean, named helper (e.g. `makeSeededGame(vector<Card>)`) improves clarity without hiding what a test does.
+### #9 Repeated test scaffolding — NOW CONSOLIDATED (was "REVIEW, do not force")
+`startTestRound()` was called ~60× across `tests/*.cpp`; many tests also repeated an identical
+`Game(bool)` + `setDeck(...)` + `startTestRound()` preamble **and** a per-file local `tickOnce`/`settleRound`
+frame driver. This was the last class of duplicated scaffolding in the suite.
+- **Decision (done):** extracted a header-only, inline shared fixture `tests/test_support.hpp`; CMakeLists.txt adds
+  `tests/` to the test include path only. Guiding rule stayed "readability > DRY": only genuinely-generic helpers went
+  in; bespoke per-file setups were deliberately left alone.
+- **Helpers now centralized:** `make_card(v,suit)` (replaces each file's local makeCard/card()); `seed_deck(game,cards)`;
+  `start_round(game,cards,seats)` (= seed + startTestRound); frame-drivers `tickFrame(game,deltaTime)`,
+  `advanceToDealerTurn(game)` (drive to DealerTurn), and `settleRound(game,settleDelta=100.0f)` (drive to Cleanup; sets
+  the game member deltaTime so reveal pacing elapses — exactly what settlement tests did locally).
+- **Migrated:** deck+frame setup now routes through `test_support::*` in ~24 files (was 19); net −~210 lines of dup
+  scaffolding across tests. Every migration was a rename/wrap so deal/settle semantics are byte-for-byte identical
+  (Deck stays owned by Game). Build EXIT=0; all cases green except the pre-existing SoundManager CWD artifact.
+- **Left bespoke on purpose:** `card_animation` needs configurable-seat setup (`startTestRound(3)`); `tournament_mode`
+  has a bespoke `rotatedDeck()`; pure unit-test files (Card/Hand/Player/Deck/BettingHandler/assets/menus/renderer) have
+  no Game+deck preamble. None fit the generic fixture — merging them would mix strategies and hurt navigation.
+- **Status: DONE.** This unblocks ACTION_PLAN follow-up #8's Settlement/deal() + SessionLifecycle stages, which now build
+  on this shared scaffolding instead of re-deriving it each time.
 
 ### #10 HandEvaluator::evaluateHands() — repeated case+logger block (third pass, exhaustive scan)
 `HandEvaluator.cpp:355` evaluateHands() `switch(result)` lines 68-92 has three near-identical cases (Surrender/Lose/Win), each doing a stats counter increment, an `if(pIdx == 0){roundLost|roundWon = true;}` flag assignment, and a nearly identical logger line ("surrendered"/"lost"/"won hand …"). Push is the odd one out.
