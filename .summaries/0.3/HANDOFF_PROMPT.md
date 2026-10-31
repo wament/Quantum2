@@ -35,13 +35,22 @@ SUGGESTED ORDER: start with Phase 0 (InputHandler Escape helper — highest ROI 
 
 Phases DONE + verified green before their commits (full list in §6 of CONTEXT_refactor.md):
 - Phase 0 `567ad71`, Phase 1 `e9268cc`, Phase 2 `fb81bcb`, Phase 3 `308488f` (code) + `e9f210d`
-  (docs), Phase 4 `44ea266`, Phase 6 `0d45de5`, Phase 8 `80b1022`. Full suite 236/236, tree clean.
+  (docs), Phase 4 `44ea266`, Phase 5 `33c524c`, Phase 6 `0d45de5`, Phase 7 `6787e13`, Phase 8 `80b1022`.
+  Full suite 236/236, tree clean.
 
-Phases REMAINING in ACTION_PLAN_refactor.md order: Phase 5 (Constants.hpp timing-namespace tidy +
-Serialization.hpp additive-schema comment trim) and Phase 7 (HandEvaluator::evaluateHands() case/
-logger collapse). Then the #8 follow-up: Game.cpp god-class split (still >800 lines, biggest win).
+Phases REMAINING in ACTION_PLAN_refactor.md order: all phases 0-8 are done. The only remaining item is
+the #8 follow-up: Game.cpp god-class split (>800 lines, biggest structural win — extract Betting /
+Settlement / SessionLifecycle helpers; needs new test scaffolding).
 
-What the most recent session (Phase 3) did — GameRenderer::draw():
+This session did Phases 5 + 7 (behavior-preserving; full suite 236/236 green):
+- Phase 5 `33c524c`: trimmed verbose per-constant prose in Constants.hpp's single GameTiming namespace
+  plus Kelly/edge-over-time and Feature-8 deal-timing constants; standardized Serialization.hpp's ~11
+  additive-schema comments to short notes. All values unchanged.
+- Phase 7 `6787e13`: collapsed HandEvaluator evaluateHands() Surrender/Lose/Win case+logger blocks by
+  routing the per-result counter and human-seat streak flag by outcome, then one byte-for-byte-identical
+  log line via a result->verb map. Counters/streak flags/settlement semantics unchanged.
+
+Prior session (Phase 3) — GameRenderer::draw():
 - Collapsed the backdrop if/else-if chain + separate dispatch switch into ONE unified table
   AppMode -> {sf::Color backdrop, render} = modeTable() in src/GameRenderer.cpp. draw() is now a single
   lookup; every mode's color + draw fn live on one row so they can't drift apart (Finding #4).
@@ -62,6 +71,6 @@ Gotchas learned this session (avoid on the next phase):
 - Net size: GameRenderer.cpp net +13 lines (81 added / 68 removed) from the table + accessor — deliberate
   structure, not bloat; readouts locked identical by tests. <800 comes from follow-up #8's god-class split.
 
-Next concrete step if continuing: pick Phase 5 or 7 per ACTION_PLAN_refactor.md, verify-green, commit per
-phase (code then docs), and refresh the §3 finding + §6 list for whatever you finish next.
+Next concrete step if continuing: pursue #8's Game.cpp god-class split (ACTION_PLAN_refactor.md "Follow-up"),
+verify-green, commit in pieces (code then docs), and refresh the §3 finding + §6 list for it.
 ---
