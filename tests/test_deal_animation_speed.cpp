@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 
 #include <Constants.hpp>
 #include <Game.hpp>
@@ -56,7 +57,7 @@ TEST_CASE("Hyper and Gamer suppress card/bet sound effects; other speeds keep th
     for (const auto speed : {GameSpeed::Hyper, GameSpeed::Gamer})
     {
         Game game(true); // headless: playSound() only enqueues when buffers are absent
-        game.setDeck(shoe);
+        test_support::seed_deck(game,shoe);
         game.setGameSpeedForTest(speed);
 
         game.startTestRound(); // deals 4 cards -> normally 'card' effects, suppressed in Hyper/Gamer
@@ -71,7 +72,7 @@ TEST_CASE("Hyper and Gamer suppress card/bet sound effects; other speeds keep th
     // Positive control: Normal still plays the effects (the watchable tiers are unchanged by this rewrite).
     {
         Game game(true);
-        game.setDeck(shoe);
+        test_support::seed_deck(game,shoe);
         game.setGameSpeedForTest(GameSpeed::Normal);
 
         int cardsBefore = game.soundTotalPlayedForTest();

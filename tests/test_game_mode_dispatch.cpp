@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 #include <Constants.hpp>
 #include <Card.hpp>
 #include <Game.hpp>
@@ -11,19 +12,12 @@ using namespace Constants;
 
 namespace
 {
-    Card card(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
 
     // Populate a headless game with an injected shoe and one dealt round, exactly like test_game_rules.cpp. The human seat
     // then holds its initial cards and betting is set, so update()'s modes can be exercised deterministically without UI.
     void seedRound(Game& game, std::initializer_list<Card> deck)
     {
-        game.setDeck(deck);
+        test_support::seed_deck(game,deck);
         game.startTestRound();
     }
 } // namespace
@@ -35,9 +29,9 @@ namespace
 TEST_CASE("Game::update routes Playing to RoundEngine and advances past PlayerTurn", "[Game][UpdateDispatch]")
 {
     Game game(true);
-    seedRound(game, {card(10, Suit::Spades), card(6, Suit::Hearts),
-                    card(8, Suit::Clubs),     card(1, Suit::Diamonds),
-                    card(10, Suit::Hearts),   card(2, Suit::Clubs)});
+    seedRound(game, {test_support::make_card(10, Suit::Spades), test_support::make_card(6, Suit::Hearts),
+                    test_support::make_card(8, Suit::Clubs),     test_support::make_card(1, Suit::Diamonds),
+                    test_support::make_card(10, Suit::Hearts),   test_support::make_card(2, Suit::Clubs)});
     game.stand();  // human acts -> round proceeds toward the dealer turn
 
     game.setAppModeForTest(AppMode::Playing);
@@ -57,7 +51,7 @@ TEST_CASE("Game::update routes Playing to RoundEngine and advances past PlayerTu
 TEST_CASE("Game::update routes every non-Playing mode without advancing the playing round", "[Game][UpdateDispatch]")
 {
     Game game(true);
-    seedRound(game, {card(5, Suit::Hearts), card(6, Suit::Clubs)});  // one easy dealt round
+    seedRound(game, {test_support::make_card(5, Suit::Hearts), test_support::make_card(6, Suit::Clubs)});  // one easy dealt round
     const RoundState initialRound = game.roundStateForTest();
 
     auto driveInMode = [&](AppMode mode) {

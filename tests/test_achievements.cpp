@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 
 #include "Constants.hpp"
 #include "Card.hpp"
@@ -13,32 +14,6 @@
 using namespace Constants;
 using namespace GameConfig; // STARTING_BANKROLL lives here (declared in Constants.hpp)
 
-namespace
-{
-    Card makeCard(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
-
-    // Drive one frame of the shared round-state machine. deltaTime is ignored by player/turn transitions; settle ticks use
-    // 100.0f so the dealer's reveal-pacing timers (which advance on Game::deltaTime, a member) elapse in finite time.
-    void tickOnce(Game& game, float deltaTime = 0.0f)
-    {
-        RoundEngine engine;
-        engine.tick(deltaTime, game);
-    }
-
-    // Frame-loop until the round leaves PlayerTurn (all hands resolved -> DealerTurn). Bounded so a stuck state cannot spin.
-    void tickUntilLeavesPlayerTurn(Game& game)
-    {
-        for (int i = 0; i < 25 && game.roundStateForTest() == RoundState::PlayerTurn; ++i)
-            tickOnce(game);
-    }
-}
-
 // C++17 std::vector has no contains(); this mirrors the intended "is id in the newly-unlocked list?" check.
 inline bool anyOf(std::vector<Achievement::Id> ids, Achievement::Id want)
 {
@@ -48,7 +23,7 @@ inline bool anyOf(std::vector<Achievement::Id> ids, Achievement::Id want)
 // Two-card hand fixture used by the integration tests (e.g. to build a natural 21).
 std::vector<Card> twoCards(int v0, int v1)
 {
-    return {makeCard(v0, Suit::Spades), makeCard(v1, Suit::Hearts)};
+    return {test_support::make_card(v0, Suit::Spades), test_support::make_card(v1, Suit::Hearts)};
 }
 
 // ---------------------------------------------------------------------------
@@ -385,22 +360,21 @@ TEST_CASE("A real deal->settle cycle through the headless round machine feeds th
 {
     Game game(true);
     // Player is dealt a hard 15 (7 + 8) vs a dealer 2 -> reaches PlayerTurn; standing then runs evaluateHands().
-    game.setDeck({makeCard(7, Suit::Spades),   // player card 0
-                  makeCard(2, Suit::Hearts),   // dealer up-card
-                  makeCard(8, Suit::Diamonds), // player card 1 -> 15
-                  makeCard(3, Suit::Clubs),
-                  makeCard(4, Suit::Spades),
-                  makeCard(5, Suit::Hearts),
-                  makeCard(6, Suit::Diamonds)});
+    test_support::start_round(game,{test_support::make_card(7, Suit::Spades),   // player card 0
+                    test_support::make_card(2, Suit::Hearts),   // dealer up-card
+                    test_support::make_card(8, Suit::Diamonds), // player card 1 -> 15
+                    test_support::make_card(3, Suit::Clubs),
+                    test_support::make_card(4, Suit::Spades),
+                    test_support::make_card(5, Suit::Hearts),
+                    test_support::make_card(6, Suit::Diamonds)});
 
-    game.startTestRound();
     CHECK(game.achievementsForTest().unlockedCount() == 0);   // nothing unlocked before the round settles
 
     game.stand();
     game.deltaTime = 100.0f;                                // elapse dealer reveal pacing timers
-    tickUntilLeavesPlayerTurn(game);                        // all hands resolved -> DealerTurn
+    test_support::advanceToDealerTurn(game);                // all hands resolved -> DealerTurn
     for (int i = 0; i < 60 && game.roundStateForTest() != RoundState::Cleanup; ++i)
-        tickOnce(game, 100.0f);                             // dealer draws/stands then evaluateHands settles the round
+        test_support::tickFrame(game, 100.0f);              // dealer draws/stands then evaluateHands settles the round
 
     CHECK(game.roundStateForTest() == RoundState::Cleanup);
     // Any settled hand unlocks First Deal, proving the whole deal -> settle -> recordHandAchievements chain works live.

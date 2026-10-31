@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 
 #include "Constants.hpp"
 #include "Card.hpp"
@@ -11,19 +12,12 @@ using Catch::Approx;
 
 namespace
 {
-    Card makeCard(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
 
     Hand makeHand(std::initializer_list<int> values)
     {
         std::vector<Card> cards;
         for (int v : values)
-            cards.push_back(makeCard(v, Suit::Spades));
+            cards.push_back(test_support::make_card(v, Suit::Spades));
         return Hand(cards);
     }
 
@@ -52,16 +46,16 @@ TEST_CASE("StrategyTrainer: advisor matches BasicStrategy for representative han
     auto& t = trainer;
 
     // Hard 16 vs a dealer 2 -> Stand (HARD row 16, column 2 is 'S').
-    CHECK(t.loadQuestion(makeHand({10, 6}), makeCard(2, Suit::Hearts)) == 'S');
+    CHECK(t.loadQuestion(makeHand({10, 6}), test_support::make_card(2, Suit::Hearts)) == 'S');
 
     // Hard 15 vs a ten -> Surrender (SURRENDER[15][T] == 'R').
-    CHECK(t.loadQuestion(makeHand({10, 5}), makeCard(10, Suit::Hearts)) == 'R');
+    CHECK(t.loadQuestion(makeHand({10, 5}), test_support::make_card(10, Suit::Hearts)) == 'R');
 
     // Pair of eights vs a seven -> Split (PAIRS[8,8][7] resolves to 'P').
-    CHECK(t.loadQuestion(makeHand({8, 8}), makeCard(7, Suit::Hearts)) == 'P');
+    CHECK(t.loadQuestion(makeHand({8, 8}), test_support::make_card(7, Suit::Hearts)) == 'P');
 
     // Soft 18 (Ace-7) vs a two -> Double Down (SOFT[A7][2] == 'D').
-    CHECK(t.loadQuestion(makeHand({1, 7}), makeCard(2, Suit::Hearts)) == 'D');
+    CHECK(t.loadQuestion(makeHand({1, 7}), test_support::make_card(2, Suit::Hearts)) == 'D');
 }
 
 TEST_CASE("StrategyTrainer: submitAction grades correct and incorrect answers", "[StrategyTrainer][Grading]")
@@ -69,13 +63,13 @@ TEST_CASE("StrategyTrainer: submitAction grades correct and incorrect answers", 
     StrategyTrainer trainer;
     auto& t = trainer;
     t.startSession(6, 0); // graded session so submitAction tallies
-    t.loadQuestion(makeHand({10, 6}), makeCard(2, Suit::Hearts)); // book says Stand
+    t.loadQuestion(makeHand({10, 6}), test_support::make_card(2, Suit::Hearts)); // book says Stand
 
     CHECK(t.submitAction('S') == true);
     CHECK(t.lastVerdictForTest().find("Correct") != std::string::npos);
 
     // Reload the same question and take a wrong action; it must grade as incorrect.
-    t.loadQuestion(makeHand({10, 6}), makeCard(2, Suit::Hearts));
+    t.loadQuestion(makeHand({10, 6}), test_support::make_card(2, Suit::Hearts));
     CHECK(t.submitAction('H') == false);
     CHECK(t.lastVerdictForTest().find("Incorrect") != std::string::npos);
 }
@@ -87,10 +81,10 @@ TEST_CASE("StrategyTrainer: accuracy and streaks track a known answer sequence",
     const Hand q = makeHand({10, 6}); // book always says Stand here
     t.startSession(6, 0); // graded session; stats start at zero
 
-    t.loadQuestion(q, makeCard(2, Suit::Hearts)); CHECK(t.submitAction('S')); // T streak 1
-    t.loadQuestion(q, makeCard(2, Suit::Hearts)); CHECK(t.submitAction('S')); // T streak 2
-    t.loadQuestion(q, makeCard(2, Suit::Spades));  CHECK(!t.submitAction('H'));// F streak 0
-    t.loadQuestion(q, makeCard(2, Suit::Spades));  CHECK(t.submitAction('S')); // T streak 1
+    t.loadQuestion(q, test_support::make_card(2, Suit::Hearts)); CHECK(t.submitAction('S')); // T streak 1
+    t.loadQuestion(q, test_support::make_card(2, Suit::Hearts)); CHECK(t.submitAction('S')); // T streak 2
+    t.loadQuestion(q, test_support::make_card(2, Suit::Spades));  CHECK(!t.submitAction('H'));// F streak 0
+    t.loadQuestion(q, test_support::make_card(2, Suit::Spades));  CHECK(t.submitAction('S')); // T streak 1
 
     const auto s = t.statsForTest();
     CHECK(s.totalQuestions == 4);
@@ -109,7 +103,7 @@ TEST_CASE("StrategyTrainer: all-correct session is perfect with best streak equa
 
     for (int i = 0; i < 3; ++i)
     {
-        t.loadQuestion(q, makeCard(2, Suit::Hearts));
+        t.loadQuestion(q, test_support::make_card(2, Suit::Hearts));
         CHECK(t.submitAction('S'));
     }
 
@@ -182,10 +176,10 @@ TEST_CASE("StrategyTrainer: surrender keys 'Y' and 'R' both grade as surrender",
     t.startSession(6, 0); // graded session so submitAction tallies
     const Hand q = makeHand({10, 5}); // book says Surrender against a ten
 
-    t.loadQuestion(q, makeCard(10, Suit::Hearts));
+    t.loadQuestion(q, test_support::make_card(10, Suit::Hearts));
     CHECK(t.submitAction('R'));              // the explicit surrender letter
 
-    t.loadQuestion(q, makeCard(10, Suit::Spades));
+    t.loadQuestion(q, test_support::make_card(10, Suit::Spades));
     CHECK(t.submitAction('Y'));              // the game's surrender key normalizes to 'R'
 }
 
@@ -209,7 +203,7 @@ TEST_CASE("StrategyTrainer: no grading before a session; stats reset each new se
     StrategyTrainer trainer;
     auto& t = trainer;
     const Hand q = makeHand({10, 6});
-    t.loadQuestion(q, makeCard(2, Suit::Hearts)); // load only sets the question; nothing is graded yet
+    t.loadQuestion(q, test_support::make_card(2, Suit::Hearts)); // load only sets the question; nothing is graded yet
     CHECK(t.submitAction('S') == false);          // no active session => grading is a no-op
 
     t.startSession(6, 0);

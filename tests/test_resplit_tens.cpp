@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 #include <Constants.hpp>
 #include <Game.hpp>
 #include <RoundEngine.hpp>
@@ -10,22 +11,6 @@
 // a ten-value hand that already came from a split. Non-ten pairs are unaffected.
 // ---------------------------------------------------------------------------
 
-namespace
-{
-    Card makeCard(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
-
-    void tickOnce(Game& game)
-    {
-        RoundEngine engine;
-        engine.tick(0.0f, game);
-    }
-}
 
 // An ordinary pair of tens splits into two hands regardless of the flag (initial split is always allowed).
 TEST_CASE("Initial split of ten-value cards is always allowed", "[SplitTens][Feature2]")
@@ -35,9 +20,8 @@ TEST_CASE("Initial split of ten-value cards is always allowed", "[SplitTens][Fea
 
     Game game(true);
     // p:{10,10}, dealer hole 7, up card 6 (non-ace -> PlayerTurn).
-    game.setDeck({makeCard(10, Suit::Spades), makeCard(7, Suit::Hearts),
-                  makeCard(10, Suit::Hearts),  makeCard(6, Suit::Diamonds)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(10, Suit::Spades), test_support::make_card(7, Suit::Hearts),
+                  test_support::make_card(10, Suit::Hearts),  test_support::make_card(6, Suit::Diamonds)});
 
     CHECK(game.split());
     CHECK(game.testPlayer(0).hands.size() == 2);
@@ -52,14 +36,13 @@ TEST_CASE("Resplitting tens is allowed when RESPLIT_TENS_ALLOWED is true", "[Spl
 
     Game game(true);
     // p:{10,10}, dHole 7, dUp 6; then the next draw is another ten, making hand[0] a pair of tens again.
-    game.setDeck({makeCard(10, Suit::Spades), makeCard(7, Suit::Hearts),
-                  makeCard(10, Suit::Hearts),  makeCard(6, Suit::Diamonds),
-                  makeCard(10, Suit::Clubs),   makeCard(2, Suit::Hearts),
-                  makeCard(3, Suit::Spades),   makeCard(4, Suit::Hearts)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(10, Suit::Spades), test_support::make_card(7, Suit::Hearts),
+                  test_support::make_card(10, Suit::Hearts),  test_support::make_card(6, Suit::Diamonds),
+                  test_support::make_card(10, Suit::Clubs),   test_support::make_card(2, Suit::Hearts),
+                  test_support::make_card(3, Suit::Spades),   test_support::make_card(4, Suit::Hearts)});
 
     CHECK(game.split());                       // initial pair of tens -> two hands
-    tickOnce(game);                            // first hand draws a ten -> {10,10} again
+    test_support::tickFrame(game);                            // first hand draws a ten -> {10,10} again
     auto& p = game.testPlayer(0);
     CHECK(p.hands[0].size() == 2);
     CHECK(p.hands[0].isSplit());               // already a split hand, so this is a re-split
@@ -74,14 +57,13 @@ TEST_CASE("Resplitting tens is refused when RESPLIT_TENS_ALLOWED is false", "[Sp
     Constants::RESPLIT_TENS_ALLOWED = false;
 
     Game game(true);
-    game.setDeck({makeCard(10, Suit::Spades), makeCard(7, Suit::Hearts),
-                  makeCard(10, Suit::Hearts),  makeCard(6, Suit::Diamonds),
-                  makeCard(10, Suit::Clubs),   makeCard(2, Suit::Hearts),
-                  makeCard(3, Suit::Spades),   makeCard(4, Suit::Hearts)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(10, Suit::Spades), test_support::make_card(7, Suit::Hearts),
+                  test_support::make_card(10, Suit::Hearts),  test_support::make_card(6, Suit::Diamonds),
+                  test_support::make_card(10, Suit::Clubs),   test_support::make_card(2, Suit::Hearts),
+                  test_support::make_card(3, Suit::Spades),   test_support::make_card(4, Suit::Hearts)});
 
     CHECK(game.split());                       // initial split of tens still allowed
-    tickOnce(game);                            // first hand draws a ten -> {10,10}
+    test_support::tickFrame(game);                            // first hand draws a ten -> {10,10}
     auto& p = game.testPlayer(0);
     int handsAfterInitialSplit = static_cast<int>(p.hands.size());
 
@@ -100,14 +82,13 @@ TEST_CASE("Non-ten pairs can still be re-split when RESPLIT_TENS_ALLOWED is fals
 
     Game game(true);
     // p:{8,8}, dHole 7, dUp 6; next draw another eight -> hand[0] a pair of eights again.
-    game.setDeck({makeCard(8, Suit::Spades), makeCard(7, Suit::Hearts),
-                  makeCard(8, Suit::Hearts),  makeCard(6, Suit::Diamonds),
-                  makeCard(8, Suit::Clubs),   makeCard(2, Suit::Hearts),
-                  makeCard(3, Suit::Spades),   makeCard(4, Suit::Hearts)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(8, Suit::Spades), test_support::make_card(7, Suit::Hearts),
+                  test_support::make_card(8, Suit::Hearts),  test_support::make_card(6, Suit::Diamonds),
+                  test_support::make_card(8, Suit::Clubs),   test_support::make_card(2, Suit::Hearts),
+                  test_support::make_card(3, Suit::Spades),   test_support::make_card(4, Suit::Hearts)});
 
     CHECK(game.split());                       // initial pair of eights -> two hands
-    tickOnce(game);                            // first hand draws an eight -> {8,8}
+    test_support::tickFrame(game);                            // first hand draws an eight -> {8,8}
     auto& p = game.testPlayer(0);
 
     CHECK(game.split());                       // re-split of eights still allowed despite the flag off

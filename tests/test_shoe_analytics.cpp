@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 #include <Constants.hpp>
 #include <BasicStrategy.hpp>
 #include <Game.hpp>
@@ -29,20 +30,13 @@ using Catch::Approx;
 
 namespace
 {
-    Card card(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
 
     // Neutral filler: 8s score 0 in Hi-Lo AND in Reko, so the shoe never runs dry mid-round and the
     // counting systems stay exactly where the explicit cards above left them.
     void padWithEights(std::vector<Card>& shoe)
     {
         for (int i = 0; i < 200; ++i)
-            shoe.push_back(card(8, Suit::Clubs));
+            shoe.push_back(test_support::make_card(8, Suit::Clubs));
     }
 
     // Drive frames until the round fully settles (dealer finishes and evaluateHands runs, which is what
@@ -69,9 +63,9 @@ namespace
     std::vector<Card> humanLosesShoe()
     {
         std::vector<Card> shoe = {
-            card(5, Suit::Spades), card(4, Suit::Clubs), card(3, Suit::Diamonds), card(6, Suit::Hearts),
-            card(2, Suit::Spades), card(3, Suit::Clubs), card(2, Suit::Diamonds), card(4, Suit::Hearts),
-            card(6, Suit::Spades), card(6, Suit::Clubs), card(6, Suit::Diamonds), card(6, Suit::Hearts),
+            test_support::make_card(5, Suit::Spades), test_support::make_card(4, Suit::Clubs), test_support::make_card(3, Suit::Diamonds), test_support::make_card(6, Suit::Hearts),
+            test_support::make_card(2, Suit::Spades), test_support::make_card(3, Suit::Clubs), test_support::make_card(2, Suit::Diamonds), test_support::make_card(4, Suit::Hearts),
+            test_support::make_card(6, Suit::Spades), test_support::make_card(6, Suit::Clubs), test_support::make_card(6, Suit::Diamonds), test_support::make_card(6, Suit::Hearts),
         };
         padWithEights(shoe);
         return shoe;
@@ -86,7 +80,7 @@ namespace
 TEST_CASE("Every stat box except Bankroll restarts at the shoe boundary", "[Feature3][Analytics][Shoe]")
 {
     Game game(true);
-    game.setDeck(humanLosesShoe());
+    test_support::seed_deck(game,humanLosesShoe());
 
     game.startTestRound();
     game.confirmBet();
@@ -150,7 +144,7 @@ TEST_CASE("Every stat box except Bankroll restarts at the shoe boundary", "[Feat
 TEST_CASE("Streaks and std dev do not leak from one shoe into the next", "[Feature3][Analytics][Shoe]")
 {
     Game game(true);
-    game.setDeck(humanLosesShoe());
+    test_support::seed_deck(game,humanLosesShoe());
 
     game.startTestRound();
     game.confirmBet();
@@ -186,7 +180,7 @@ TEST_CASE("Streaks and std dev do not leak from one shoe into the next", "[Featu
 
     // Cross the boundary, then lose once more in the fresh shoe.
     game.startNewShoeForTest();
-    game.setDeck(humanLosesShoe());
+    test_support::seed_deck(game,humanLosesShoe());
     game.nextRoundForTest();
     game.confirmBet();
     game.stand();
@@ -212,10 +206,10 @@ TEST_CASE("Both counting systems restart at the shoe boundary", "[Counting][Shoe
     Game game(true); // headless default style is Reko
 
     std::vector<Card> shoe = {
-        card(2, Suit::Spades), card(3, Suit::Clubs), card(4, Suit::Diamonds), card(5, Suit::Hearts),
+        test_support::make_card(2, Suit::Spades), test_support::make_card(3, Suit::Clubs), test_support::make_card(4, Suit::Diamonds), test_support::make_card(5, Suit::Hearts),
     };
     padWithEights(shoe);
-    game.setDeck(shoe);
+    test_support::seed_deck(game,shoe);
 
     game.startTestRound();
     game.confirmBet();
@@ -255,21 +249,21 @@ TEST_CASE("Bankroll curve, Streak and Strategy boxes ignore the NPCs", "[Feature
     Game game(true);
 
     std::vector<Card> shoe = {
-        card(5, Suit::Spades),    // p0 card 1
-        card(8, Suit::Hearts),    // p1 card 1
-        card(10, Suit::Diamonds), // dealer up card
-        card(4, Suit::Clubs),     // p0 card 2 -> 9
-        card(5, Suit::Spades),    // p1 card 2 -> 13
-        card(2, Suit::Hearts),    // dealer hole  -> 12
-        card(2, Suit::Clubs),     // p0 card 3 -> 11
-        card(2, Suit::Spades),    // p1 card 3 -> 15
-        card(3, Suit::Clubs),     // dealer      -> 15
-        card(5, Suit::Diamonds),  // p0 card 4 -> 16
-        card(4, Suit::Hearts),    // p1 card 4 -> 19
-        card(2, Suit::Clubs),     // dealer      -> 17
+        test_support::make_card(5, Suit::Spades),    // p0 card 1
+        test_support::make_card(8, Suit::Hearts),    // p1 card 1
+        test_support::make_card(10, Suit::Diamonds), // dealer up card
+        test_support::make_card(4, Suit::Clubs),     // p0 card 2 -> 9
+        test_support::make_card(5, Suit::Spades),    // p1 card 2 -> 13
+        test_support::make_card(2, Suit::Hearts),    // dealer hole  -> 12
+        test_support::make_card(2, Suit::Clubs),     // p0 card 3 -> 11
+        test_support::make_card(2, Suit::Spades),    // p1 card 3 -> 15
+        test_support::make_card(3, Suit::Clubs),     // dealer      -> 15
+        test_support::make_card(5, Suit::Diamonds),  // p0 card 4 -> 16
+        test_support::make_card(4, Suit::Hearts),    // p1 card 4 -> 19
+        test_support::make_card(2, Suit::Clubs),     // dealer      -> 17
     };
     padWithEights(shoe);
-    game.setDeck(shoe);
+    test_support::seed_deck(game,shoe);
 
     game.startTestRound(2);
     game.confirmBet();

@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 
 #include "Constants.hpp"
 #include "Card.hpp"
@@ -16,13 +17,6 @@
 
 namespace
 {
-    Card card(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
 
     // Drive frames until the round leaves for Cleanup. The dealer reveal pacing timers only elapse with a large delta, so
     // settle ticks use 100.0f (matching test_blackjack_settlement.cpp) to let the dealer draw/stand and evaluateHands()
@@ -46,13 +40,12 @@ TEST_CASE("Insurance path: dealer holds a natural after decline and draws no ext
 
     // Deal order (see setDeck): player card0, dealer UP, player card1, dealer hole, then fillers. Up-card is an Ace so the
     // round enters OfferInsurance; the hidden King makes a natural (Ace + 10 = 21). Player hand 9+7=16 stays unresolved.
-    game.setDeck({card(9, Suit::Spades),      // player card 0 -> 16 with the next card
-                  card(1, Suit::Hearts),       // dealer up-card: Ace -> insurance offered
-                  card(7, Suit::Clubs),        // player card 1 -> hand of 16 (not a natural, stays unresolved)
-                  card(13, Suit::Diamonds),    // dealer hole card: King -> natural Ace + 10 = 21
-                  card(2, Suit::Clubs),        // filler (drawn only if the dealer wrongly hits)
-                  card(10, Suit::Hearts)});   // filler
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(9, Suit::Spades),      // player card 0 -> 16 with the next card
+                  test_support::make_card(1, Suit::Hearts),       // dealer up-card: Ace -> insurance offered
+                  test_support::make_card(7, Suit::Clubs),        // player card 1 -> hand of 16 (not a natural, stays unresolved)
+                  test_support::make_card(13, Suit::Diamonds),    // dealer hole card: King -> natural Ace + 10 = 21
+                  test_support::make_card(2, Suit::Clubs),        // filler (drawn only if the dealer wrongly hits)
+                  test_support::make_card(10, Suit::Hearts)});
 
     CHECK(game.roundStateForTest() == RoundState::OfferInsurance);   // up-card is an Ace -> insurance offered
     CHECK(game.testDealer().isBlackjack());                          // natural locked in on the deal
@@ -79,12 +72,11 @@ TEST_CASE("Dealer natural with a non-Ace up-card draws no extra cards", "[Blackj
     Game game(true);
 
     // Up-card is a King (not an Ace) so deal() evaluates blackjack directly; the hidden Ace makes a natural. Player hand 16.
-    game.setDeck({card(9, Suit::Spades),     // player card 0 -> 16
-                  card(13, Suit::Hearts),    // dealer up-card: King (not an Ace) -> evaluateBlackjack on the deal
-                  card(7, Suit::Clubs),      // player card 1 -> hand of 16 (unresolved)
-                  card(1, Suit::Diamonds),   // dealer hole card: Ace -> natural
-                  card(8, Suit::Clubs)});    // filler drawn only if the dealer wrongly hits
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(9, Suit::Spades),     // player card 0 -> 16
+                  test_support::make_card(13, Suit::Hearts),    // dealer up-card: King (not an Ace) -> evaluateBlackjack on the deal
+                  test_support::make_card(7, Suit::Clubs),      // player card 1 -> hand of 16 (unresolved)
+                  test_support::make_card(1, Suit::Diamonds),   // dealer hole card: Ace -> natural
+                  test_support::make_card(8, Suit::Clubs)});
 
     CHECK(game.roundStateForTest() == RoundState::DealerTurn);   // natural detected on the deal (no insurance)
     CHECK(game.testDealer().isBlackjack());

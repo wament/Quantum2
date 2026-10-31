@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 #include <Constants.hpp>
 #include <BasicStrategy.hpp>
 #include <Game.hpp>
@@ -28,13 +29,6 @@ using Catch::Approx;
 
 namespace
 {
-    Card card(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
 
     // Drive frames until the round fully settles (dealer finishes and evaluateHands runs, which is what
     // appends the bankroll/edge points). dealerTurn() paces itself off Game::deltaTime rather than the tick
@@ -65,11 +59,11 @@ TEST_CASE("Edge series, bankroll series and Edge % all reset at the shoe boundar
     // confirmBet) plus one dealer hit here, so round 1 takes 9 and leaves 2. The next round's deal therefore runs
     // the shoe dry on its third card, which is what fires handleEmptyDeck().
     std::vector<Card> shoe = {
-        card(5, Suit::Spades), card(3, Suit::Clubs), card(4, Suit::Diamonds), card(6, Suit::Hearts),
-        card(2, Suit::Spades), card(2, Suit::Clubs), card(2, Suit::Diamonds), card(2, Suit::Hearts),
-        card(7, Suit::Spades), card(7, Suit::Clubs), card(7, Suit::Diamonds),
+        test_support::make_card(5, Suit::Spades), test_support::make_card(3, Suit::Clubs), test_support::make_card(4, Suit::Diamonds), test_support::make_card(6, Suit::Hearts),
+        test_support::make_card(2, Suit::Spades), test_support::make_card(2, Suit::Clubs), test_support::make_card(2, Suit::Diamonds), test_support::make_card(2, Suit::Hearts),
+        test_support::make_card(7, Suit::Spades), test_support::make_card(7, Suit::Clubs), test_support::make_card(7, Suit::Diamonds),
     };
-    game.setDeck(shoe);
+    test_support::seed_deck(game,shoe);
 
     game.startTestRound();
     game.confirmBet();
@@ -105,9 +99,9 @@ TEST_CASE("Ordinary rounds append to the edge series; they do not reset it", "[F
 
     std::vector<Card> shoe;
     for (int i = 0; i < 40; ++i)
-        shoe.push_back(card(2, Suit::Clubs));   // low + count-neutral: rounds settle fast, the shoe stays deep
+        shoe.push_back(test_support::make_card(2, Suit::Clubs));   // low + count-neutral: rounds settle fast, the shoe stays deep
 
-    game.setDeck(shoe);
+    test_support::seed_deck(game,shoe);
 
     game.startTestRound();
     game.confirmBet();
@@ -153,12 +147,12 @@ TEST_CASE("Edge Over Time samples the current edge instead of adding it up each 
     // Eight low cards, then neutral 8s. The human stands on 12 and the dealer stands on 17, so round 1 takes
     // exactly those eight cards - every one of them +1 to Hi-Lo.
     std::vector<Card> shoe = {
-        card(5, Suit::Spades), card(4, Suit::Clubs), card(3, Suit::Diamonds), card(6, Suit::Hearts),
-        card(2, Suit::Spades), card(3, Suit::Clubs), card(2, Suit::Diamonds), card(4, Suit::Hearts),
+        test_support::make_card(5, Suit::Spades), test_support::make_card(4, Suit::Clubs), test_support::make_card(3, Suit::Diamonds), test_support::make_card(6, Suit::Hearts),
+        test_support::make_card(2, Suit::Spades), test_support::make_card(3, Suit::Clubs), test_support::make_card(2, Suit::Diamonds), test_support::make_card(4, Suit::Hearts),
     };
     for (int i = 0; i < 204; ++i)
-        shoe.push_back(card(8, Suit::Clubs));
-    game.setDeck(shoe);
+        shoe.push_back(test_support::make_card(8, Suit::Clubs));
+    test_support::seed_deck(game,shoe);
 
     game.startTestRound();
     game.confirmBet();

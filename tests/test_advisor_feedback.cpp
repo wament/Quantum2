@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 #include <Constants.hpp>
 #include <Game.hpp>
 #include <RoundEngine.hpp>
@@ -16,13 +17,6 @@
 
 namespace
 {
-    Card makeCard(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
 
     // Drive frames until the round fully settles to Cleanup (dealer finishes and evaluateHands runs). dealerTurn()
     // advances its own pacing off Game::deltaTime rather than the tick argument, so seed that member large to let the
@@ -47,10 +41,9 @@ TEST_CASE("Correct action matches basic strategy -> Correct feedback", "[Advisor
 {
     Game game(true);
     // Hard 8 (5+3): basic strategy says Hit against any up-card. c0=5(P1), c1=7(dealer shown), c2=3(P2); hit card c4=2.
-    game.setDeck({makeCard(5, Suit::Spades), makeCard(7, Suit::Hearts),
-                  makeCard(3, Suit::Diamonds),  makeCard(6, Suit::Clubs),
-                  makeCard(2, Suit::Spades),    makeCard(9, Suit::Hearts)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(5, Suit::Spades), test_support::make_card(7, Suit::Hearts),
+                  test_support::make_card(3, Suit::Diamonds),  test_support::make_card(6, Suit::Clubs),
+                  test_support::make_card(2, Suit::Spades),    test_support::make_card(9, Suit::Hearts)});
 
     CHECK(game.testPlayer(0).getStats().strategyHits == 0);
 
@@ -68,10 +61,9 @@ TEST_CASE("Deviating from basic strategy -> Deviated feedback with a recorded de
 {
     Game game(true);
     // Hard 8 (5+3); basic strategy says Hit, so Standing is the deviation. Same deck as the Correct case above.
-    game.setDeck({makeCard(5, Suit::Spades), makeCard(7, Suit::Hearts),
-                  makeCard(3, Suit::Diamonds),  makeCard(6, Suit::Clubs),
-                  makeCard(2, Suit::Spades),    makeCard(9, Suit::Hearts)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(5, Suit::Spades), test_support::make_card(7, Suit::Hearts),
+                  test_support::make_card(3, Suit::Diamonds),  test_support::make_card(6, Suit::Clubs),
+                  test_support::make_card(2, Suit::Spades),    test_support::make_card(9, Suit::Hearts)});
 
     game.stand(); // book says Hit -> deviation
 
@@ -94,10 +86,9 @@ TEST_CASE("Deviating from basic strategy -> Deviated feedback with a recorded de
 TEST_CASE("Winning after a deviation increments winsAfterDeviation and stamps DeviationRecord.won", "[Advisor][Feature1]")
 {
     Game game(true);
-    game.setDeck({makeCard(10, Suit::Spades), makeCard(5, Suit::Hearts),
-                  makeCard(6, Suit::Diamonds),  makeCard(10, Suit::Clubs),
-                  makeCard(5, Suit::Spades),    makeCard(7, Suit::Hearts)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(10, Suit::Spades), test_support::make_card(5, Suit::Hearts),
+                  test_support::make_card(6, Suit::Diamonds),  test_support::make_card(10, Suit::Clubs),
+                  test_support::make_card(5, Suit::Spades),    test_support::make_card(7, Suit::Hearts)});
 
     // Hard 16 (ten+six) vs dealer's five: basic strategy says Stand. Player hits the five -> 21, auto-finishes; a deviation.
     game.hit();
@@ -122,10 +113,9 @@ TEST_CASE("Winning after a deviation increments winsAfterDeviation and stamps De
 TEST_CASE("Settled hands populate the variance accumulators feeding standard deviation", "[Advisor][Feature1][Analytics]")
 {
     Game game(true);
-    game.setDeck({makeCard(9, Suit::Spades), makeCard(5, Suit::Hearts),
-                  makeCard(4, Suit::Diamonds),  makeCard(10, Suit::Clubs),
-                  makeCard(8, Suit::Spades),    makeCard(7, Suit::Hearts)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(9, Suit::Spades), test_support::make_card(5, Suit::Hearts),
+                  test_support::make_card(4, Suit::Diamonds),  test_support::make_card(10, Suit::Clubs),
+                  test_support::make_card(8, Suit::Spades),    test_support::make_card(7, Suit::Hearts)});
 
     game.hit(); // 13 + eight -> 21 (auto-finish)
     tickUntilSettled(game);

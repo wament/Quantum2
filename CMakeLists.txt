@@ -194,6 +194,9 @@ add_executable(Blackjack2Tests
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)
+# Test-only shared infrastructure (e.g. test_support.hpp). Kept off include/ so production headers stay clean; only the
+# test target needs it, and each test_*.cpp already compiles as its own translation unit.
+target_include_directories(Blackjack2Tests PRIVATE tests)
 
 # For tests, always use dynamic SFML (simpler with Catch2)
 if(GITHUB_BUILD OR CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")

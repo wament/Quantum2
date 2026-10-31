@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 #include <Constants.hpp>
 #include <BasicStrategy.hpp>
 #include <Game.hpp>
@@ -33,7 +34,7 @@ TEST_CASE("Reko true count is the raw running count; Hi-Lo normalizes by decks",
         deck.push_back(filler);
     }
 
-    game.setDeck(deck);
+    test_support::seed_deck(game,deck);
     game.startTestRound();
 
     // Default counting style is Reko. The raw running count after the initial deal is reko(6)+reko(7)=2 (the dealer's
@@ -66,7 +67,7 @@ TEST_CASE("confirmBet records the wager into the session bet-distribution histog
         c.suit = Suit::Hearts;
         deck.push_back(c);
     }
-    game.setDeck(deck);
+    test_support::seed_deck(game,deck);
     game.startTestRound();
 
     // startTestRound sets up a single minimum bet but does not confirm/place it; that is confirmBet()'s job.

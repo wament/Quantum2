@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 
 #include "Constants.hpp"
 #include "Game.hpp"
@@ -23,34 +24,6 @@ using namespace GameConfig; // STARTING_BANKROLL lives in this top-level namespa
 // stored and resolveSideBets() runs once the two hand cards + dealer up-card are known.
 // ---------------------------------------------------------------------------
 
-namespace
-{
-    Card makeCard(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
-
-    // Drive frames of the shared round-state machine. deltaTime is ignored by the player/turn transitions, but the
-    // dealer's reveal pacing timers only elapse with a large delta; the settle ticks use 100.0f (matching the
-    // settlement tests) so the dealer draws, stands and runs evaluateHands() in finite time.
-    void tickOnce(Game& game, float deltaTime = 0.0f)
-    {
-        RoundEngine engine;
-        engine.tick(deltaTime, game);
-    }
-
-    // Frame-loop until the round leaves PlayerTurn (all hands resolved -> DealerTurn).
-    // Bounded so a stuck state cannot spin forever. Never invokes a player action.
-    void tickUntilLeavesPlayerTurn(Game& game)
-    {
-        RoundEngine engine;
-        for (int i = 0; i < 25 && game.roundStateForTest() == RoundState::PlayerTurn; ++i)
-            engine.tick(0.0f, game);
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Perfect Pairs: the player's two cards only (indices 0 and 2). Same rank
@@ -61,10 +34,10 @@ namespace
 TEST_CASE("Round: Perfect Pairs pays 30:1 for a same-rank, same-suit pair", "[SideBets][PerfectPairs][Round]")
 {
     Game game(true); // headless: no window/assets/replay/HUD
-    game.setDeck({makeCard(1, Suit::Spades),   // player card 0 -> Ace
-                  makeCard(9, Suit::Hearts),   // dealer up-card (irrelevant to Perfect Pairs)
-                  makeCard(1, Suit::Spades),   // player card 1 -> second Ace of Spades (Perfect Pair)
-                  makeCard(2, Suit::Diamonds)});
+    test_support::seed_deck(game,{test_support::make_card(1, Suit::Spades),   // player card 0 -> Ace
+                  test_support::make_card(9, Suit::Hearts),   // dealer up-card (irrelevant to Perfect Pairs)
+                  test_support::make_card(1, Suit::Spades),   // player card 1 -> second Ace of Spades (Perfect Pair)
+                  test_support::make_card(2, Suit::Diamonds)});
 
     game.placeSideBet(SideBetKind::PerfectPairs, 10);
     game.startTestRound();
@@ -87,10 +60,10 @@ TEST_CASE("Round: Perfect Pairs pays 30:1 for a same-rank, same-suit pair", "[Si
 TEST_CASE("Round: Perfect Pairs pays 25:1 for a same-rank, same-color pair", "[SideBets][PerfectPairs][Round]")
 {
     Game game(true);
-    game.setDeck({makeCard(7, Suit::Hearts),   // both red sevens -> Colored Pair 25:1
-                  makeCard(2, Suit::Clubs),
-                  makeCard(7, Suit::Diamonds),
-                  makeCard(3, Suit::Clubs)});
+    test_support::seed_deck(game,{test_support::make_card(7, Suit::Hearts),   // both red sevens -> Colored Pair 25:1
+                  test_support::make_card(2, Suit::Clubs),
+                  test_support::make_card(7, Suit::Diamonds),
+                  test_support::make_card(3, Suit::Clubs)});
 
     game.placeSideBet(SideBetKind::PerfectPairs, 10);
     game.startTestRound();
@@ -105,10 +78,10 @@ TEST_CASE("Round: Perfect Pairs pays 25:1 for a same-rank, same-color pair", "[S
 TEST_CASE("Round: Perfect Pairs pays 10:1 for a same-rank, different-color pair", "[SideBets][PerfectPairs][Round]")
 {
     Game game(true);
-    game.setDeck({makeCard(7, Suit::Spades),   // black seven + red seven -> Mixed Pair 10:1
-                  makeCard(2, Suit::Clubs),
-                  makeCard(7, Suit::Hearts),
-                  makeCard(3, Suit::Diamonds)});
+    test_support::seed_deck(game,{test_support::make_card(7, Suit::Spades),   // black seven + red seven -> Mixed Pair 10:1
+                  test_support::make_card(2, Suit::Clubs),
+                  test_support::make_card(7, Suit::Hearts),
+                  test_support::make_card(3, Suit::Diamonds)});
 
     game.placeSideBet(SideBetKind::PerfectPairs, 10);
     game.startTestRound();
@@ -123,10 +96,10 @@ TEST_CASE("Round: Perfect Pairs pays 10:1 for a same-rank, different-color pair"
 TEST_CASE("Round: Perfect Pairs loses the wager for two cards of different rank", "[SideBets][PerfectPairs][Round]")
 {
     Game game(true);
-    game.setDeck({makeCard(5, Suit::Spades),   // different ranks -> nothing pays
-                  makeCard(2, Suit::Hearts),
-                  makeCard(6, Suit::Diamonds),
-                  makeCard(3, Suit::Clubs)});
+    test_support::seed_deck(game,{test_support::make_card(5, Suit::Spades),   // different ranks -> nothing pays
+                  test_support::make_card(2, Suit::Hearts),
+                  test_support::make_card(6, Suit::Diamonds),
+                  test_support::make_card(3, Suit::Clubs)});
 
     game.placeSideBet(SideBetKind::PerfectPairs, 10);
     game.startTestRound();
@@ -150,8 +123,8 @@ TEST_CASE("Round: 21+3 pays 40:1 for a straight flush", "[SideBets][TwentyOneThr
 {
     Game game(true);
     // 4-5-6 all Hearts across indices 0,1(dealer up),2 -> Straight Flush 40:1.
-    game.setDeck({makeCard(4, Suit::Hearts), makeCard(5, Suit::Hearts), makeCard(6, Suit::Hearts),
-                  makeCard(2, Suit::Clubs)});
+    test_support::seed_deck(game,{test_support::make_card(4, Suit::Hearts), test_support::make_card(5, Suit::Hearts), test_support::make_card(6, Suit::Hearts),
+                  test_support::make_card(2, Suit::Clubs)});
 
     game.placeSideBet(SideBetKind::TwentyOneThree, 10);
     game.startTestRound();
@@ -167,8 +140,8 @@ TEST_CASE("Round: 21+3 pays 30:1 for three of a kind", "[SideBets][TwentyOneThre
 {
     Game game(true);
     // Three aces (different suits) -> Trips 30:1.
-    game.setDeck({makeCard(1, Suit::Spades), makeCard(1, Suit::Hearts), makeCard(1, Suit::Diamonds),
-                  makeCard(2, Suit::Clubs)});
+    test_support::seed_deck(game,{test_support::make_card(1, Suit::Spades), test_support::make_card(1, Suit::Hearts), test_support::make_card(1, Suit::Diamonds),
+                  test_support::make_card(2, Suit::Clubs)});
 
     game.placeSideBet(SideBetKind::TwentyOneThree, 10);
     game.startTestRound();
@@ -183,8 +156,8 @@ TEST_CASE("Round: 21+3 pays 30:1 for three of a kind", "[SideBets][TwentyOneThre
 TEST_CASE("Round: 21+3 pays 9:1 for a flush (same suit, not a straight)", "[SideBets][TwentyOneThree][Round]")
 {
     Game game(true);
-    game.setDeck({makeCard(2, Suit::Spades), makeCard(5, Suit::Spades), makeCard(9, Suit::Spades),
-                  makeCard(3, Suit::Clubs)});
+    test_support::seed_deck(game,{test_support::make_card(2, Suit::Spades), test_support::make_card(5, Suit::Spades), test_support::make_card(9, Suit::Spades),
+                  test_support::make_card(3, Suit::Clubs)});
 
     game.placeSideBet(SideBetKind::TwentyOneThree, 10);
     game.startTestRound();
@@ -199,8 +172,8 @@ TEST_CASE("Round: 21+3 pays 9:1 for a flush (same suit, not a straight)", "[Side
 TEST_CASE("Round: 21+3 pays 5:1 for a straight (consecutive, not one suit)", "[SideBets][TwentyOneThree][Round]")
 {
     Game game(true);
-    game.setDeck({makeCard(4, Suit::Hearts), makeCard(5, Suit::Diamonds), makeCard(6, Suit::Clubs),
-                  makeCard(2, Suit::Spades)});
+    test_support::seed_deck(game,{test_support::make_card(4, Suit::Hearts), test_support::make_card(5, Suit::Diamonds), test_support::make_card(6, Suit::Clubs),
+                  test_support::make_card(2, Suit::Spades)});
 
     game.placeSideBet(SideBetKind::TwentyOneThree, 10);
     game.startTestRound();
@@ -216,8 +189,8 @@ TEST_CASE("Round: 21+3 treats Ace as high for the Q-K-A straight", "[SideBets][T
 {
     Game game(true);
     // Q-K-A across indices 0,1,2 -> Straight (Ace high), not a pair.
-    game.setDeck({makeCard(12, Suit::Spades), makeCard(13, Suit::Hearts), makeCard(1, Suit::Diamonds),
-                  makeCard(2, Suit::Clubs)});
+    test_support::seed_deck(game,{test_support::make_card(12, Suit::Spades), test_support::make_card(13, Suit::Hearts), test_support::make_card(1, Suit::Diamonds),
+                  test_support::make_card(2, Suit::Clubs)});
 
     game.placeSideBet(SideBetKind::TwentyOneThree, 10);
     game.startTestRound();
@@ -232,8 +205,8 @@ TEST_CASE("Round: 21+3 treats Ace as high for the Q-K-A straight", "[SideBets][T
 TEST_CASE("Round: 21+3 pays 2:1 for a one-pair hand", "[SideBets][TwentyOneThree][Round]")
 {
     Game game(true);
-    game.setDeck({makeCard(8, Suit::Hearts), makeCard(8, Suit::Clubs), makeCard(3, Suit::Spades),
-                  makeCard(2, Suit::Diamonds)});
+    test_support::seed_deck(game,{test_support::make_card(8, Suit::Hearts), test_support::make_card(8, Suit::Clubs), test_support::make_card(3, Suit::Spades),
+                  test_support::make_card(2, Suit::Diamonds)});
 
     game.placeSideBet(SideBetKind::TwentyOneThree, 10);
     game.startTestRound();
@@ -248,8 +221,8 @@ TEST_CASE("Round: 21+3 pays 2:1 for a one-pair hand", "[SideBets][TwentyOneThree
 TEST_CASE("Round: 21+3 loses the wager for an unqualifying three-card combination", "[SideBets][TwentyOneThree][Round]")
 {
     Game game(true);
-    game.setDeck({makeCard(2, Suit::Spades), makeCard(5, Suit::Diamonds), makeCard(9, Suit::Clubs),
-                  makeCard(3, Suit::Hearts)});
+    test_support::seed_deck(game,{test_support::make_card(2, Suit::Spades), test_support::make_card(5, Suit::Diamonds), test_support::make_card(9, Suit::Clubs),
+                  test_support::make_card(3, Suit::Hearts)});
 
     game.placeSideBet(SideBetKind::TwentyOneThree, 10);
     game.startTestRound();
@@ -276,13 +249,13 @@ TEST_CASE("Round: side bet resolves before main-hand settlement and stays indepe
     Game game(true);
     // Pair of eights -> Mixed Pair 10:1 wins (index0=index2 = rank 8, different color).
     // Dealer up-card is a high card so the main hand's eventual settlement is separate.
-    game.setDeck({makeCard(8, Suit::Spades),   // player card 0
-                  makeCard(13, Suit::Hearts),  // dealer up-card (King)
-                  makeCard(8, Suit::Hearts),   // player card 1 -> pair of eights
-                  makeCard(2, Suit::Diamonds),  // dealer hole + fillers below
-                  makeCard(3, Suit::Clubs),
-                  makeCard(4, Suit::Diamonds),
-                  makeCard(5, Suit::Hearts)});
+    test_support::seed_deck(game,{test_support::make_card(8, Suit::Spades),   // player card 0
+                  test_support::make_card(13, Suit::Hearts),  // dealer up-card (King)
+                  test_support::make_card(8, Suit::Hearts),   // player card 1 -> pair of eights
+                  test_support::make_card(2, Suit::Diamonds),  // dealer hole + fillers below
+                  test_support::make_card(3, Suit::Clubs),
+                  test_support::make_card(4, Suit::Diamonds),
+                  test_support::make_card(5, Suit::Hearts)});
 
     game.placeSideBet(SideBetKind::PerfectPairs, 10);
     game.startTestRound();
@@ -308,9 +281,9 @@ TEST_CASE("Round: side bet resolves before main-hand settlement and stays indepe
     // settles the round in finite ticks.
     game.deltaTime = 100.0f;
 
-    tickUntilLeavesPlayerTurn(game);          // all hands finished -> DealerTurn
+    test_support::advanceToDealerTurn(game);          // all hands finished -> DealerTurn
     for (int i = 0; i < 60 && game.roundStateForTest() != RoundState::Cleanup; ++i)
-        tickOnce(game, 100.0f);                // elapsed timers let the dealer draw/stand then evaluateHands settles round -> Cleanup
+        test_support::tickFrame(game, 100.0f);                // elapsed timers let the dealer draw/stand then evaluateHands settles round -> Cleanup
 
 
     PlayerStats& s = game.testPlayer(0).getStats();

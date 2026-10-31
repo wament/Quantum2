@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 
 // Feature 8 (Animated Card Dealing): headless, Graphics-only unit tests for the pure tween math behind card dealing.
 // CardAnimation holds no game state and depends only on sf::Vector2f (SFML Graphics), so this links over the same

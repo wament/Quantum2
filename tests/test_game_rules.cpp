@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 #include <Constants.hpp>
 #include <Card.hpp>
 #include <Game.hpp>
@@ -23,34 +24,6 @@ namespace fs = std::filesystem;
 
 namespace
 {
-    Card card(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
-
-    // One frame of the shared state machine. deltaTime is irrelevant to the split/hit/stand logic itself.
-    void tickOnce(Game& game)
-    {
-        RoundEngine engine;
-        engine.tick(0.0f, game);
-    }
-
-    // Drive frames until the round leaves PlayerTurn/DealerTurn (settled). A large dt advances the dealer-turn pacing
-    // timers every frame so cards are dealt one at a time and the round actually completes under headless control.
-    void settleRound(Game& game)
-    {
-        RoundEngine engine;
-        game.deltaTime = 100.0f;
-        for (int i = 0; i < 80 &&
-             (game.roundStateForTest() == RoundState::PlayerTurn ||
-              game.roundStateForTest() == RoundState::DealerTurn); ++i)
-        {
-            engine.tick(100.0f, game);
-        }
-    }
 
     fs::path tempProfile(const std::string& name)
     {
@@ -67,12 +40,11 @@ TEST_CASE("Dealer hits a soft 17 under default rules", "[GameRules][Soft17]")
     Game game(true);
     // Deal order: human 10 + 8 (hard 18, forces the dealer to play), dealer up 6, hole Ace -> soft 17, then a ten-value
     // card for the dealer's required extra draw.
-    game.setDeck({card(10, Suit::Spades),   card(6, Suit::Hearts),
-                  card(8, Suit::Clubs),     card(1, Suit::Diamonds),
-                  card(10, Suit::Hearts),   card(2, Suit::Clubs)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(10, Suit::Spades),   test_support::make_card(6, Suit::Hearts),
+                  test_support::make_card(8, Suit::Clubs),     test_support::make_card(1, Suit::Diamonds),
+                  test_support::make_card(10, Suit::Hearts),   test_support::make_card(2, Suit::Clubs)});
     game.stand(); // human stands on hard 18 -> unresolved -> the dealer must play its own rule
-    settleRound(game);
+    test_support::settleRound(game);
 
     CHECK(game.testDealer().size() > 2); // drew at least one card off the soft 17
 }
@@ -85,11 +57,10 @@ TEST_CASE("Dealer stands on a soft 17 when the rule requires it", "[GameRules][S
     rules.dealerStandsOnSoft17 = true;
     game.setGameRulesForTest(rules);
 
-    game.setDeck({card(10, Suit::Spades),   card(6, Suit::Hearts),
-                  card(8, Suit::Clubs),     card(1, Suit::Diamonds)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(10, Suit::Spades),   test_support::make_card(6, Suit::Hearts),
+                  test_support::make_card(8, Suit::Clubs),     test_support::make_card(1, Suit::Diamonds)});
     game.stand();
-    settleRound(game);
+    test_support::settleRound(game);
 
     CHECK(game.testDealer().size() == 2);
     CHECK(game.testDealer().getValue() == 17);
@@ -106,13 +77,12 @@ TEST_CASE("Aces can be re-split when resplit-aces is allowed", "[GameRules][Resp
     game.setGameRulesForTest(rules);
 
     // Two aces, then an ace as the first hand's draw so it stays re-split eligible.
-    game.setDeck({card(1, Suit::Spades),  card(7, Suit::Hearts),
-                  card(1, Suit::Hearts),   card(6, Suit::Diamonds),
-                  card(1, Suit::Clubs),    card(1, Suit::Diamonds)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(1, Suit::Spades),  test_support::make_card(7, Suit::Hearts),
+                  test_support::make_card(1, Suit::Hearts),   test_support::make_card(6, Suit::Diamonds),
+                  test_support::make_card(1, Suit::Clubs),    test_support::make_card(1, Suit::Diamonds)});
 
     CHECK(game.split()); // AA -> two aces
-    tickOnce(game);      // first ace draws an Ace -> still open (re-split eligible)
+    test_support::tickFrame(game);      // first ace draws an Ace -> still open (re-split eligible)
     CHECK(game.testPlayer(0).hands[0].isSplitAce());
     CHECK(!game.testPlayer(0).hands[0].isFinished());
 
@@ -128,13 +98,12 @@ TEST_CASE("Aces cannot be re-split when resplit-aces is disallowed", "[GameRules
     game.setGameRulesForTest(rules);
 
     // Two aces, then a non-ace as the first hand's draw.
-    game.setDeck({card(1, Suit::Spades),  card(7, Suit::Hearts),
-                  card(1, Suit::Hearts),   card(6, Suit::Diamonds),
-                  card(2, Suit::Clubs)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(1, Suit::Spades),  test_support::make_card(7, Suit::Hearts),
+                  test_support::make_card(1, Suit::Hearts),   test_support::make_card(6, Suit::Diamonds),
+                  test_support::make_card(2, Suit::Clubs)});
 
     CHECK(game.split()); // AA -> two single-card ace hands
-    tickOnce(game);      // first ace draws one card; with resplit off it is forced to stand (cannot re-split)
+    test_support::tickFrame(game);      // first ace draws one card; with resplit off it is forced to stand (cannot re-split)
 
     auto& p = game.testPlayer(0);
     CHECK(p.hands.size() == 2);              // no re-split happened
@@ -152,13 +121,12 @@ TEST_CASE("A split hand can be doubled when double-after-split is allowed", "[Ga
     game.setGameRulesForTest(rules);
 
     // Pair of 5s, dealer up non-ace; filler gives the split hand its card then the double-down's extra card.
-    game.setDeck({card(5, Suit::Spades),  card(6, Suit::Hearts),
-                  card(5, Suit::Clubs),   card(1, Suit::Diamonds),
-                  card(3, Suit::Hearts),  card(4, Suit::Clubs)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(5, Suit::Spades),  test_support::make_card(6, Suit::Hearts),
+                  test_support::make_card(5, Suit::Clubs),   test_support::make_card(1, Suit::Diamonds),
+                  test_support::make_card(3, Suit::Hearts),  test_support::make_card(4, Suit::Clubs)});
 
     CHECK(game.split()); // pair of 5s -> two hands (size 1 each)
-    tickOnce(game);      // first split hand draws one card -> size 2, ready to act
+    test_support::tickFrame(game);      // first split hand draws one card -> size 2, ready to act
     CHECK(game.testPlayer(0).hands[0].size() == 2);
 
     CHECK(game.doubleDown());            // DAS allowed -> double proceeds
@@ -173,13 +141,12 @@ TEST_CASE("A split hand cannot be doubled when double-after-split is disallowed"
     game.setGameRulesForTest(rules);
 
     // Pair of 5s, dealer up non-ace; one filler card lets the split hand reach size 2 (so canDouble is true).
-    game.setDeck({card(5, Suit::Spades),  card(6, Suit::Hearts),
-                  card(5, Suit::Clubs),   card(1, Suit::Diamonds),
-                  card(3, Suit::Hearts)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(5, Suit::Spades),  test_support::make_card(6, Suit::Hearts),
+                  test_support::make_card(5, Suit::Clubs),   test_support::make_card(1, Suit::Diamonds),
+                  test_support::make_card(3, Suit::Hearts)});
 
     CHECK(game.split());
-    tickOnce(game);
+    test_support::tickFrame(game);
     CHECK(game.testPlayer(0).hands[0].size() == 2);
 
     CHECK_FALSE(game.doubleDown());      // DAS off -> refused, no extra card dealt
@@ -195,9 +162,8 @@ TEST_CASE("Surrender is refused entirely when the type is None", "[GameRules][Su
     rules.surrenderType = SurrenderType::None;
     game.setGameRulesForTest(rules);
 
-    game.setDeck({card(5, Suit::Spades),  card(6, Suit::Hearts),
-                  card(6, Suit::Clubs),   card(1, Suit::Diamonds)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(5, Suit::Spades),  test_support::make_card(6, Suit::Hearts),
+                  test_support::make_card(6, Suit::Clubs),   test_support::make_card(1, Suit::Diamonds)});
 
     CHECK_FALSE(game.surrender()); // surrender disabled by the rule
 }
@@ -209,9 +175,8 @@ TEST_CASE("Surrender is offered on the first two cards under Late rules", "[Game
     rules.surrenderType = SurrenderType::Late;
     game.setGameRulesForTest(rules);
 
-    game.setDeck({card(5, Suit::Spades),  card(6, Suit::Hearts),
-                  card(6, Suit::Clubs),   card(1, Suit::Diamonds)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(5, Suit::Spades),  test_support::make_card(6, Suit::Hearts),
+                  test_support::make_card(6, Suit::Clubs),   test_support::make_card(1, Suit::Diamonds)});
 
     CHECK(game.surrender()); // allowed on the first two cards
 }
@@ -224,9 +189,8 @@ TEST_CASE("Early surrender is only offered when the dealer shows an Ace or ten-v
     rules.surrenderType = SurrenderType::Early;
     game.setGameRulesForTest(rules);
 
-    game.setDeck({card(5, Suit::Spades),  card(6, Suit::Hearts),
-                  card(6, Suit::Clubs),   card(1, Suit::Diamonds)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(5, Suit::Spades),  test_support::make_card(6, Suit::Hearts),
+                  test_support::make_card(6, Suit::Clubs),   test_support::make_card(1, Suit::Diamonds)});
 
     CHECK_FALSE(game.surrender());
 
@@ -236,8 +200,8 @@ TEST_CASE("Early surrender is only offered when the dealer shows an Ace or ten-v
     rules2.surrenderType = SurrenderType::Early;
     g2.setGameRulesForTest(rules2);
 
-    g2.setDeck({card(5, Suit::Spades),  card(13, Suit::Hearts),
-                card(6, Suit::Clubs),   card(1, Suit::Diamonds)});
+    g2.setDeck({test_support::make_card(5, Suit::Spades),  test_support::make_card(13, Suit::Hearts),
+                test_support::make_card(6, Suit::Clubs),   test_support::make_card(1, Suit::Diamonds)});
     g2.startTestRound();
 
     CHECK(g2.surrender());

@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 
 #include "Constants.hpp"
 #include "Card.hpp"
@@ -14,20 +15,13 @@ using namespace Constants;
 
 namespace
 {
-    Card makeCard(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
 
     // A natural blackjack: an Ace (value 1) plus a ten-value card. Hand::isBlackjack() requires two cards summing to 21.
     RoundRecord bjRound(int wager)
     {
         RoundRecord r;
         HandOutcome h;
-        h.cards = {makeCard(1, Suit::Hearts), makeCard(10, Suit::Spades)}; // Ace + Ten = natural 21
+        h.cards = {test_support::make_card(1, Suit::Hearts), test_support::make_card(10, Suit::Spades)}; // Ace + Ten = natural 21
         h.wager = wager;
         h.payout = wager * 3; // 3:2 natural payout (stake returned + 1.5x)
         h.won = true;
@@ -40,7 +34,7 @@ namespace
     {
         RoundRecord r;
         HandOutcome h;
-        h.cards = {makeCard(7, Suit::Hearts), makeCard(8, Suit::Spades), makeCard(8, Suit::Diamonds)};
+        h.cards = {test_support::make_card(7, Suit::Hearts), test_support::make_card(8, Suit::Spades), test_support::make_card(8, Suit::Diamonds)};
         h.wager = wager;
         h.payout = payout;
         r.playerHands.push_back(h);
@@ -52,7 +46,7 @@ namespace
     {
         RoundRecord r;
         HandOutcome h;
-        h.cards = {makeCard(5, Suit::Clubs), makeCard(6, Suit::Hearts)}; // hard 11
+        h.cards = {test_support::make_card(5, Suit::Clubs), test_support::make_card(6, Suit::Hearts)}; // hard 11
         h.won = won;
         h.surrendered = surrendered;
         h.wager = wager;
@@ -284,7 +278,7 @@ TEST_CASE("REPRO stats flow: play -> quit-to-menu -> open dashboard", "[StatsRep
         reproCard(6, Suit::Spades), reproCard(7, Suit::Hearts), reproCard(8, Suit::Diamonds), reproCard(9, Suit::Clubs),
         reproCard(10, Suit::Spades), reproCard(2, Suit::Hearts), reproCard(3, Suit::Diamonds), reproCard(4, Suit::Clubs)
     };
-    game.setDeck(shoe);
+    test_support::seed_deck(game,shoe);
 
     // One full round to completion (settles -> appends the round to profile.currentHistory AND currentShoeRecord.rounds).
     game.startTestRound();

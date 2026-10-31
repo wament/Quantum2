@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 #include <Constants.hpp>
 #include <Card.hpp>
 #include <Hand.hpp>
@@ -17,37 +18,17 @@ using Catch::Approx;
 
 namespace
 {
-    Card card(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
 
     Hand hand(std::initializer_list<int> values, int bet)
     {
         Hand h;
         for (int v : values)
-            h.addCard(card(v, Suit::Spades));
+            h.addCard(test_support::make_card(v, Suit::Spades));
         h.setBet(bet);
         return h;
     }
 
-    void settleRound(Game& game)
-    {
-        RoundEngine engine;
-        game.deltaTime = 100.0f;
-        for (int i = 0; i < 50; ++i)
-        {
-            RoundState rs = game.roundStateForTest();
-            if (rs == RoundState::PlayerTurn || rs == RoundState::DealerTurn)
-                engine.tick(100.0f, game);
-            else
-                break;
-        }
-    }
-} // namespace
+    } // namespace
 
 // The reported bug: the player had a natural blackjack, the dealer drew three cards to reach 21,
 // and the round scored as a 21-vs-21 push. A natural outranks a non-natural 21.
@@ -100,16 +81,15 @@ TEST_CASE("Player natural is resolved before the dealer acts and pays 3:2", "[Bl
     Game game(true);
 
     // Deal order: player card, dealer UP card, player card, dealer hole card.
-    game.setDeck({card(13, Suit::Spades), card(6, Suit::Hearts),
-                  card(1, Suit::Clubs),  card(7, Suit::Diamonds),
-                  card(9, Suit::Clubs),  card(9, Suit::Clubs)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(13, Suit::Spades), test_support::make_card(6, Suit::Hearts),
+                  test_support::make_card(1, Suit::Clubs),  test_support::make_card(7, Suit::Diamonds),
+                  test_support::make_card(9, Suit::Clubs),  test_support::make_card(9, Suit::Clubs)});
 
     CHECK(game.testHand(0, 0).isBlackjack());
     CHECK(game.testHand(0, 0).isFinished());          // settled on the deal; the player cannot act on it
     CHECK(game.testPlayer(0).getStats().blackjacks == 1);
 
-    settleRound(game);
+    test_support::settleRound(game);
 
     CHECK(game.testDealer().size() == 2);             // dealer drew no cards for a resolved blackjack
     CHECK(game.testPlayer(0).getBankroll() == 10015); // 10 stake paid at 3:2
@@ -123,14 +103,13 @@ TEST_CASE("Dealer natural costs the player exactly one wager", "[Blackjack][Sett
     Game game(true);
 
     // Dealer up card K (not an ace, so no insurance detour) + hole ace = natural blackjack.
-    game.setDeck({card(9, Suit::Spades),  card(13, Suit::Spades),
-                  card(7, Suit::Clubs),   card(1, Suit::Hearts),
-                  card(8, Suit::Clubs),   card(8, Suit::Clubs)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(9, Suit::Spades),  test_support::make_card(13, Suit::Spades),
+                  test_support::make_card(7, Suit::Clubs),   test_support::make_card(1, Suit::Hearts),
+                  test_support::make_card(8, Suit::Clubs),   test_support::make_card(8, Suit::Clubs)});
 
     CHECK(game.testDealer().isBlackjack());
 
-    settleRound(game);
+    test_support::settleRound(game);
 
     CHECK(game.testPlayer(0).getBankroll() == 9990);   // one 10 stake lost, not two
     CHECK(game.testPlayer(0).getStats().losses == 1);

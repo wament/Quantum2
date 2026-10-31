@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 
 #include "Game.hpp"
 #include "PlayerProfile.hpp"
@@ -30,7 +31,7 @@ TEST_CASE("Game plays bet + card effects through the headless queue", "[Sound][L
         Card{6, Suit::Spades}, Card{7, Suit::Hearts}, Card{8, Suit::Diamonds}, Card{9, Suit::Clubs},
         Card{10, Suit::Spades}, Card{2, Suit::Hearts}, Card{3, Suit::Diamonds}, Card{4, Suit::Clubs}
     };
-    game.setDeck(shoe);
+    test_support::seed_deck(game,shoe);
 
     REQUIRE(game.soundTotalPlayedForTest() == 0);
     REQUIRE(game.soundVolumeForTest() == Constants::Sound::DEFAULT_SOUND_VOLUME);

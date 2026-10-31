@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 #include <Constants.hpp>
 #include <Game.hpp>
 #include <RoundEngine.hpp>
@@ -18,31 +19,6 @@ using namespace Constants;
 
 namespace
 {
-    Card makeCard(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
-
-    // One frame of the shared state machine. deltaTime is irrelevant to the split-ace logic (the
-    // single-card deal + auto-finish run regardless of timing).
-    void tickOnce(Game& game)
-    {
-        RoundEngine engine;
-        engine.tick(0.0f, game);
-    }
-
-    // Drive frames until the round leaves PlayerTurn (all hands resolved -> DealerTurn). Bounded so a
-    // stuck state cannot spin forever. Never invokes any player action, which is how we prove the
-    // "no input required after splitting aces" clause.
-    void tickUntilLeavesPlayerTurn(Game& game)
-    {
-        RoundEngine engine;
-        for (int i = 0; i < 25 && game.roundStateForTest() == RoundState::PlayerTurn; ++i)
-            engine.tick(0.0f, game);
-    }
 
     // Is this hand a finished split ace totaling 21 without being a natural (3:2) blackjack?
     bool splitAceIs21NotBlackjack(const Hand& h)
@@ -55,12 +31,10 @@ namespace
 TEST_CASE("Initial deal of two aces puts the player in PlayerTurn, ready to split", "[SplitAces][Flow]")
 {
     Game game(true); // headless: no window/assets/replay/HUD
-    game.setDeck({makeCard(1, Suit::Spades),   // player card 1 -> Ace
-                  makeCard(7, Suit::Hearts),   // dealer hole card
-                  makeCard(1, Suit::Hearts),   // player card 2 -> Ace
-                  makeCard(6, Suit::Diamonds)}); // dealer up card (non-ace -> PlayerTurn)
-
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(1, Suit::Spades),   // player card 1 -> Ace
+                  test_support::make_card(7, Suit::Hearts),   // dealer hole card
+                  test_support::make_card(1, Suit::Hearts),   // player card 2 -> Ace
+                  test_support::make_card(6, Suit::Diamonds)});
 
     const Hand& hand = game.testHand(0, 0);
     CHECK(hand.size() == 2);
@@ -73,9 +47,8 @@ TEST_CASE("Initial deal of two aces puts the player in PlayerTurn, ready to spli
 TEST_CASE("Splitting aces creates two single-card split-ace hands", "[SplitAces][Flow]")
 {
     Game game(true);
-    game.setDeck({makeCard(1, Suit::Spades), makeCard(7, Suit::Hearts),
-                  makeCard(1, Suit::Hearts),  makeCard(6, Suit::Diamonds)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(1, Suit::Spades), test_support::make_card(7, Suit::Hearts),
+                  test_support::make_card(1, Suit::Hearts),  test_support::make_card(6, Suit::Diamonds)});
 
     CHECK(game.split());
 
@@ -95,15 +68,14 @@ TEST_CASE("Each split ace receives exactly one card and auto-stands with no user
 {
     Game game(true);
     // After the initial four cards, the next two draws (K then 9) are each hand's single permitted card.
-    game.setDeck({makeCard(1, Suit::Spades), makeCard(7, Suit::Hearts),
-                  makeCard(1, Suit::Hearts),  makeCard(6, Suit::Diamonds),
-                  makeCard(13, Suit::Clubs),  makeCard(9, Suit::Spades)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(1, Suit::Spades), test_support::make_card(7, Suit::Hearts),
+                  test_support::make_card(1, Suit::Hearts),  test_support::make_card(6, Suit::Diamonds),
+                  test_support::make_card(13, Suit::Clubs),  test_support::make_card(9, Suit::Spades)});
 
     CHECK(game.split()); // player splits the aces
 
     // Drive the round to completion WITHOUT ever calling hit()/stand()/doubleDown().
-    tickUntilLeavesPlayerTurn(game);
+    test_support::advanceToDealerTurn(game);
 
     // The round auto-advanced all the way to the dealer; no input was consumed.
     CHECK(game.roundStateForTest() == RoundState::DealerTurn);
@@ -127,13 +99,12 @@ TEST_CASE("Each split ace receives exactly one card and auto-stands with no user
 TEST_CASE("Split ace plus a face card is 21 but not a 3:2 blackjack", "[SplitAces][Payout]")
 {
     Game game(true);
-    game.setDeck({makeCard(1, Suit::Spades), makeCard(7, Suit::Hearts),
-                  makeCard(1, Suit::Hearts),  makeCard(6, Suit::Diamonds),
-                  makeCard(12, Suit::Clubs),  makeCard(8, Suit::Spades)}); // Q then 8
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(1, Suit::Spades), test_support::make_card(7, Suit::Hearts),
+                  test_support::make_card(1, Suit::Hearts),  test_support::make_card(6, Suit::Diamonds),
+                  test_support::make_card(12, Suit::Clubs),  test_support::make_card(8, Suit::Spades)});
 
     CHECK(game.split());
-    tickUntilLeavesPlayerTurn(game);
+    test_support::advanceToDealerTurn(game);
 
     auto& p = game.testPlayer(0);
     const Hand& hand0 = p.hands[0];
@@ -155,13 +126,12 @@ TEST_CASE("Cannot double down on a split ace", "[SplitAces][Flow]")
 {
     Game game(true);
     // The draw after splitting must be an Ace so the hand stays open (resplit-eligible) and unfinished.
-    game.setDeck({makeCard(1, Suit::Spades), makeCard(7, Suit::Hearts),
-                  makeCard(1, Suit::Hearts),  makeCard(6, Suit::Diamonds),
-                  makeCard(1, Suit::Clubs)}); // extra Ace on the first split hand
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(1, Suit::Spades), test_support::make_card(7, Suit::Hearts),
+                  test_support::make_card(1, Suit::Hearts),  test_support::make_card(6, Suit::Diamonds),
+                  test_support::make_card(1, Suit::Clubs)});
 
     CHECK(game.split());
-    tickOnce(game); // deals the Ace -> [A, A], still unfinished so it can be re-split
+    test_support::tickFrame(game); // deals the Ace -> [A, A], still unfinished so it can be re-split
 
     auto& p = game.testPlayer(0);
     const Hand& hand0 = p.hands[0];
@@ -185,21 +155,20 @@ TEST_CASE("Split aces can be re-split up to the maximum number of hands", "[Spli
     Game game(true);
     // Indices 0/2 are the initial aces; 4 and 5 are Aces drawn as each hand's first card (triggering
     // re-splits). The rest fill out the shoe so it never runs out mid-resolution.
-    game.setDeck({makeCard(1, Suit::Spades), makeCard(7, Suit::Hearts),
-                  makeCard(1, Suit::Hearts),  makeCard(6, Suit::Diamonds),
-                  makeCard(1, Suit::Clubs),   makeCard(1, Suit::Diamonds),
-                  makeCard(5, Suit::Hearts),  makeCard(9, Suit::Spades),
-                  makeCard(2, Suit::Clubs),   makeCard(3, Suit::Hearts)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(1, Suit::Spades), test_support::make_card(7, Suit::Hearts),
+                  test_support::make_card(1, Suit::Hearts),  test_support::make_card(6, Suit::Diamonds),
+                  test_support::make_card(1, Suit::Clubs),   test_support::make_card(1, Suit::Diamonds),
+                  test_support::make_card(5, Suit::Hearts),  test_support::make_card(9, Suit::Spades),
+                  test_support::make_card(2, Suit::Clubs),   test_support::make_card(3, Suit::Hearts)});
 
     CHECK(game.split()); // AA -> two aces
-    tickOnce(game);      // first ace draws an Ace -> still open (re-split eligible)
+    test_support::tickFrame(game);      // first ace draws an Ace -> still open (re-split eligible)
     CHECK(game.testPlayer(0).hands[0].isSplitAce());
     CHECK(!game.testPlayer(0).hands[0].isFinished());
 
     CHECK(game.split()); // re-split -> three aces
     CHECK(game.testPlayer(0).hands.size() == 3);
-    tickOnce(game);      // first ace draws an Ace -> still open (re-split eligible)
+    test_support::tickFrame(game);      // first ace draws an Ace -> still open (re-split eligible)
     CHECK(game.testPlayer(0).hands[0].isSplitAce());
     CHECK(!game.testPlayer(0).hands[0].isFinished());
 
@@ -210,7 +179,7 @@ TEST_CASE("Split aces can be re-split up to the maximum number of hands", "[Spli
     CHECK_FALSE(game.split());
 
     // Each of the four ace hands takes exactly one card and stands; the round auto-advances to the dealer.
-    tickUntilLeavesPlayerTurn(game);
+    test_support::advanceToDealerTurn(game);
     CHECK(game.roundStateForTest() == RoundState::DealerTurn);
 
     for (const Hand& h : game.testPlayer(0).hands)
@@ -229,10 +198,9 @@ TEST_CASE("Normal pair split gives each hand one card but stays actable", "[Spli
 {
     Game game(true);
     // Split 8s; dealer up non-ace. The next draw is an Ace on the first active hand.
-    game.setDeck({makeCard(8, Suit::Spades), makeCard(2, Suit::Hearts),
-                  makeCard(8, Suit::Hearts),  makeCard(6, Suit::Diamonds),
-                  makeCard(1, Suit::Clubs)});
-    game.startTestRound();
+    test_support::start_round(game,{test_support::make_card(8, Suit::Spades), test_support::make_card(2, Suit::Hearts),
+                  test_support::make_card(8, Suit::Hearts),  test_support::make_card(6, Suit::Diamonds),
+                  test_support::make_card(1, Suit::Clubs)});
 
     CHECK(game.split()); // pair of eights -> two hands
     auto& p = game.testPlayer(0);
@@ -243,7 +211,7 @@ TEST_CASE("Normal pair split gives each hand one card but stays actable", "[Spli
         CHECK(!h.isSplitAce());   // ordinary split, not a split ace
     }
 
-    tickOnce(game); // first hand draws one card -> size 2, NOT finished
+    test_support::tickFrame(game); // first hand draws one card -> size 2, NOT finished
     CHECK(p.hands[0].size() == 2);
     CHECK(!p.hands[0].isFinished());        // unlike a split ace, it stays actable
     CHECK(!p.hands[0].isSplitAce());

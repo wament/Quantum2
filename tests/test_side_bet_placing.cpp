@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 
 #include "Constants.hpp"
 #include "Game.hpp"
@@ -19,21 +20,13 @@ using namespace GameConfig; // STARTING_BANKROLL lives in this top-level namespa
 
 namespace
 {
-    Card makeCard(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
 
     // Build a headless game with the human seat dealt (so hands[0] exists and placeSideBet can mutate it live). Game is
     // non-copyable (SoundManager pImpl), so take it by reference instead of returning one by value.
     void startHuman(Game& game)
     {
-        game.setDeck({makeCard(1, Suit::Spades), makeCard(9, Suit::Hearts),
-                      makeCard(1, Suit::Spades), makeCard(2, Suit::Diamonds)});
-        game.startTestRound();
+        test_support::start_round(game,{test_support::make_card(1, Suit::Spades), test_support::make_card(9, Suit::Hearts),
+                      test_support::make_card(1, Suit::Spades), test_support::make_card(2, Suit::Diamonds)});
     }
 }
 

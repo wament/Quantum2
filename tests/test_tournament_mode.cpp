@@ -1,4 +1,5 @@
 #include <catch2/catch_all.hpp>
+#include "test_support.hpp"
 
 #include "Constants.hpp"
 #include "Card.hpp"
@@ -10,13 +11,6 @@ using namespace BasicStrategy;
 
 namespace
 {
-    Card makeCard(int value, Suit suit)
-    {
-        Card c;
-        c.value = value;
-        c.suit = suit;
-        return c;
-    }
 
     // A full 52-card shoe rotated by `offset`: deterministic per offset (so the same offset always yields the same
     // tournament), varied across offsets. Used to prove the winner-selection invariant over many distinct deals.
@@ -28,7 +22,7 @@ namespace
         for (int i = 0; i < 52; ++i)
         {
             int idx = (i + offset) % 52;
-            deck.push_back(makeCard(rank[idx % 13], static_cast<Suit>(idx / 13)));
+            deck.push_back(test_support::make_card(rank[idx % 13], static_cast<Suit>(idx / 13)));
         }
         return deck;
     }
@@ -73,13 +67,13 @@ TEST_CASE("Tournament: winner is the seat with the highest chips", "[Tournament]
     // card and exactly seven cards are consumed (no overdraw). Alice's natural 21 beats the dealer's non-natural 19;
     // Bob's hard 16 loses to it. This makes the winner deterministic without depending on advisor table nuances.
     std::vector<Card> shoe = {
-        makeCard(1, Suit::Hearts),    // d1 -> Alice card 1 (Ace)
-        makeCard(13, Suit::Spades),   // d2 -> Bob   card 1 (King=10)
-        makeCard(12, Suit::Clubs),    // d3 -> Alice card 2 (Queen=10) -> natural blackjack 21
-        makeCard(6, Suit::Diamonds),  // d4 -> Bob   card 2 (6) -> hard 16
-        makeCard(3, Suit::Hearts),    // d5 -> dealer up-card; Bob's 16 stands vs a 3
-        makeCard(6, Suit::Spades),    // d6 -> dealer hole card: 3+6 = 9, hits
-        makeCard(13, Suit::Clubs),    // d7 -> dealer hit (King=10): 19, stands on all-17 (not busted)
+        test_support::make_card(1, Suit::Hearts),    // d1 -> Alice card 1 (Ace)
+        test_support::make_card(13, Suit::Spades),   // d2 -> Bob   card 1 (King=10)
+        test_support::make_card(12, Suit::Clubs),    // d3 -> Alice card 2 (Queen=10) -> natural blackjack 21
+        test_support::make_card(6, Suit::Diamonds),  // d4 -> Bob   card 2 (6) -> hard 16
+        test_support::make_card(3, Suit::Hearts),    // d5 -> dealer up-card; Bob's 16 stands vs a 3
+        test_support::make_card(6, Suit::Spades),    // d6 -> dealer hole card: 3+6 = 9, hits
+        test_support::make_card(13, Suit::Clubs),    // d7 -> dealer hit (King=10): 19, stands on all-17 (not busted)
     };
     t.setDeck(shoe);
     t.start(cfg, 0); // injected deck persists; deckCount is ignored when one was set
