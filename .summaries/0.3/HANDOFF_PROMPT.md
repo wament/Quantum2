@@ -38,9 +38,19 @@ Phases DONE + verified green before their commits (full list in §6 of CONTEXT_r
   (docs), Phase 4 `44ea266`, Phase 5 `33c524c`, Phase 6 `0d45de5`, Phase 7 `6787e13`, Phase 8 `80b1022`.
   Full suite 236/236, tree clean.
 
-Phases REMAINING in ACTION_PLAN_refactor.md order: all phases 0-8 are done. The only remaining item is
-the #8 follow-up: Game.cpp god-class split (>800 lines, biggest structural win — extract Betting /
-Settlement / SessionLifecycle helpers; needs new test scaffolding).
+Phases REMAINING in ACTION_PLAN_refactor.md order: all phases 0-8 are done. The #8 follow-up (Game.cpp god-class
+split, the biggest structural win) is now underway — stage 1 done below; two sub-stages remain (Settlement/deal()
+and SessionLifecycle), each needing larger test scaffolding.
+
+This session did Follow-up #8 Stage 1 — Betting core extracted into composed BettingHandler (full suite 241/241 green):
+- Betting core extracted into a new pure-logic `BettingHandler` (`include/BettingHandler.hpp`, no SFML deps) that Game
+  owns via unique_ptr and delegates to. Moved activeTrueCount()/hiLoTrueCount()/calculateOptimalBet() out of the 1755-line
+  Game god-class; shared state (countingStyle, running/background counts, deck depth via const Deck&) is passed in as
+  parameters — Deck stays owned by Game so betting semantics are byte-for-byte identical. Constructed in both ctors (like
+  AchievementManager) so headless tests keep driving betting through Game's delegators. New
+  tests/test_betting_handler.cpp asserts each method returns exactly what BasicStrategy computes; commit `8d9d995`.
+- Remaining #8 stages: the betting STATE methods (confirmBet/placeSideBet/resolveSideBets), then Settlement/deal(),
+  then SessionLifecycle — each needs larger test scaffolding.
 
 This session did Phases 5 + 7 (behavior-preserving; full suite 236/236 green):
 - Phase 5 `33c524c`: trimmed verbose per-constant prose in Constants.hpp's single GameTiming namespace
