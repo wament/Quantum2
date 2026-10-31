@@ -2,7 +2,7 @@
 
 **Purpose:** Self-contained audit + state for the *refinement* pass over the feature work described in `.summaries/0.3/CONTEXT.md`, `ACTION_PLAN.md`, and `FEATURES.md`. It establishes which files are too big, where code is repeated or duplicated, what is already centralized (so we do NOT touch it), and the hard conventions a refactor must preserve. This supersedes earlier refactor notes for this refinement; read first at the start of every window that edits code here.
 
-**Last updated:** 2026-10-30.
+**Last updated:** 2026-10-31.
 **Owner of truth for feature behavior:** `.summaries/0.3/CONTEXT.md` (the live project context). This file is the *refactor-specific* overlay only — it does not re-explain game rules; it narrows "what may change" and points at concrete duplication.
 
 ---
@@ -118,6 +118,7 @@ The top-level draw has a backdrop if/else-if chain (lines 19-27) **and** a separ
 - **Before:** two timing namespaces doing overlapping jobs plus long explanatory comments per line (some ~10 lines each).
 - **After:** one timing namespace; keep all functional values unchanged, trim prose to one short sentence, and move deep rationale into a trailing `// why` note only where non-obvious. Behavior-preserving: no value moves or drops.
 - **Test:** nothing changes in behavior; rely on existing timing tests (`test_gamer_speed.cpp`, `test_deal_animation_speed.cpp`) as the regression guard.
+- **Status: DONE (Phase 5).** Trimmed verbose per-constant prose to short notes across the single `GameTiming` namespace (NPC delays, deal pacing, summary durations, refresh-rate "Gamer" logic) and the Kelly/edge-over-time + Feature-8 deal-timing constants; every value unchanged, non-obvious rationale kept in brief trailing notes. Standardized Serialization.hpp's additive-schema comments to short `// additive: missing key ...` notes (the `j.value(...)` read path is untouched). Behavior-preserving: full suite 236/236 green under build + ctest; timing tests and profile-load regression as guards. Commit `33c524c`.
 
 ### #6 Serialization.hpp — repeated additive-schema comment boilerplate
 `Serialization.hpp:236`. The additive-schema pattern (`j.value("field", <default>)`) is already *functionally* correct and must stay (old profiles keep loading). But there are **8** near-identical explanatory comments ("additive — older profiles lack these fields and fall back to the struct default") next to field loads.
@@ -125,6 +126,7 @@ The top-level draw has a backdrop if/else-if chain (lines 19-27) **and** a separ
 - **Before:** 8 repetitive comment blocks repeating the same schema rule per field.
 - **After:** standardize to a short `// additive: defaults keep old profiles loading` (or fold once into a file-header note) and trim each occurrence. Documentation bloat, not logic — do NOT change how fields are read.
 - **Test:** re-run the profile-load regression (`test_profile_settings.cpp`) to prove the schema stayed additive.
+- **Status: DONE (Phase 5).** Standardized the ~11 additive-schema comment occurrences to short `// additive: missing key falls back to default ...` notes, preserving each field/feature context; the functional `j.value(...)` read path is byte-for-byte unchanged so old profiles still load exactly as before. Guarded by test_profile_settings.cpp (profile-load regression); full suite 236/236 green. Commit `33c524c`.
 
 ---
 
@@ -160,6 +162,8 @@ These are real overlaps to look at, but each needs judgment before changing — 
 - **Phase 6 — HUD panel-geometry builder.** Finding #7 done. Folded the three near-identical `<panel>.bounds()` getters into one `computePanels()` lookup (`struct Panels{left,right,bottom}`); named getters stay as thin delegators. Commit `0d45de5`.
 - **Phase 4 — AchievementManager counter sub-structs.** Grouped scattered career/shoe counters into `CareerProgress{hands,blackjacks splitWins,perfectStreak}` + `ShoeProgress{...}`; public accessor names/types/values unchanged; bankroll swing tracking kept flat for cross-shoe persistence. Persistence (Id round-trip) unaffected. Commit `44ea266`.
 - **Phase 8 — StatsDashboard::toCsv() data-driven table.** Finding #11 done. Replaced the 17 near-identical `os << name,value` lines with one `std::array<std::string,17>` of pre-formatted rows (mirroring toJson()), plus a small `csvValue<T>()` helper streaming mixed int/float fields through one path. Output byte-for-byte identical; detail block unchanged. Added exact-header lock to test_stats_dashboard.cpp. Commit `80b1022`.
+- **Phase 5 — Constants.hpp prose tidy + Serialization.hpp additive-schema comment standardize.** Findings #5 + #6 done. Trimmed verbose per-constant prose to short notes across the single `GameTiming` namespace (NPC delays, deal pacing, summary durations, refresh-rate "Gamer" logic) plus Kelly/edge-over-time and Feature-8 deal-timing constants; every value unchanged, non-obvious rationale kept in brief trailing notes. Standardized Serialization.hpp's ~11 additive-schema comments to short `// additive: missing key ...` notes (the `j.value(...)` read path is untouched). Behavior-preserving; full suite 236/236 green under build + ctest, with timing tests and the profile-load regression as guards. Commit `33c524c`.
+- **Phase 7 — HandEvaluator::evaluateHands() case+logger collapse.** Finding #10 done. Collapsed the three near-identical Surrender/Lose/Win cases by routing the per-result counter and human-seat streak flag by outcome (Surrender+Lose -> losses/roundLost; Win -> wins/roundWon) via result-based if/else, then one byte-for-byte-identical log line through a small result->verb map (Push has none). Counters, roundWon/roundLost flags and settlement semantics unchanged. Existing test_blackjack_settlement.cpp green; full suite 236/236 green under build + ctest. Commit `6787e13`.
 
 At the start of each window: read this file, then `ACTION_PLAN_refactor.md`, and confirm any §6 decision affects scope (see §1). After an increment, update §3/§7 findings with what changed plus §4-§5 status so the next window inherits accurate state. Verification gate for every phase is in `ACTION_PLAN_refactor.md` ("Verification").
 
@@ -196,6 +200,7 @@ Beyond `update()` and `updateHUDState()`, `Game.cpp:1727` owns clearly separable
 - **Before:** ~3 duplicated case+logger blocks in the settlement switch.
 - **After:** build ONE outcome log string from `result` after the switch (a small result->verb mapping), keep the tiny per-result counter/flag deltas, then emit a single `if(pIdx==0){flag}` + one Logger call. Collapse only the repeated logging structure — never change which counter/flag each result sets.
 - **Test:** existing `test_blackjack_settlement.cpp` must stay green (it locks outcomes/payouts); log output byte-for-byte identical. Behavior-preserving; settlement semantics unchanged.
+- **Status: DONE (Phase 7).** Collapsed the three near-identical Surrender/Lose/Win cases by routing the per-result counter and human-seat streak flag by outcome (Surrender+Lose -> losses/roundLost; Win -> wins/roundWon) via result-based if/else, then emitting one byte-for-byte-identical log line through a small result->verb map (Push still has none; Surrender/Lose share the "(bet: B)" format and only a Win appends payout). Counters, roundWon/roundLost flags and settlement semantics unchanged. Existing test_blackjack_settlement.cpp green; full suite 236/236 green under build + ctest. Commit `6787e13`.
 
 ### #11 StatsDashboard::toCsv() — one os<< line per metric (third pass, exhaustive scan)
 `StatsDashboard.cpp:342` toCsv() repeats one `os << "metric," << computed_.field << "\n"` line per field (~14 times). Values are mixed types, so a pure key/value table is awkward but small lambdas work.
