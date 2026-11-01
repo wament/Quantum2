@@ -1,22 +1,162 @@
+// Deal-timing / game-speed handling: Gamer refresh-rate derivation, Feature-8 dealing-animation pacing, card-animation reveal clocks.
+
 #include <catch2/catch_all.hpp>
 #include "test_support.hpp"
-
-// Feature 8 (Animated Card Dealing): headless, Graphics-only unit tests for the pure tween math behind card dealing.
-// CardAnimation holds no game state and depends only on sf::Vector2f (SFML Graphics), so this links over the same
-// Graphics-only Blackjack2Tests binary as every other logic test -- no window/audio/network needed. These exercise the
-// easing curves, the deal-tween position/flip math, and the reveal-slot staggering that GameRenderer drives from
-// game.deltaTime; they are the "smoke check" of the animation algorithm (see ACTION_PLAN Feature 8).
-
-#include "CardAnimation.hpp"
 #include "Card.hpp"
-#include "Hand.hpp"
-#include "Player.hpp"
+#include "CardAnimation.hpp"
 #include "Game.hpp"
 #include "GameRenderer.hpp"
-
+#include "Hand.hpp"
+#include "Player.hpp"
+#include "test_support.hpp"
+#include <Constants.hpp>
+#include <Game.hpp>
 #include <algorithm>  // std::max for per-card animation elapsed time across the reveal-clock tests
+#include <catch2/catch_all.hpp>
 
 using Catch::Approx;
+
+TEST_CASE("Gamer speed derives its per-step interval from the monitor refresh rate", "[GameSpeed][Constants]")
+{
+    // One step advances per frame, so seconds-per-step = 1/refreshRate: a higher-refresh monitor plays strictly faster.
+    CHECK(GameTiming::gamerStepInterval(60.0f) == Approx(1.0f / 60.0f));
+    CHECK(GameTiming::gamerStepInterval(144.0f) == Approx(1.0f / 144.0f));
+    CHECK(GameTiming::gamerStepInterval(240.0f) == Approx(1.0f / 240.0f));
+
+    // An undetected or absurdly low rate never yields a negative or exploding interval; it falls back to the default.
+    CHECK(GameTiming::gamerStepInterval(0.0f) == GameTiming::DEFAULT_REFRESH_HZ);
+    CHECK(GameTiming::gamerStepInterval(1.0f) == Approx(GameTiming::DEFAULT_REFRESH_HZ));
+
+    // At a high refresh rate Gamer is strictly faster per step than Hyper's fixed tiny delay, honoring the goal of
+    // pushing playback as fast as the hardware allows.
+    CHECK(GameTiming::gamerStepInterval(240.0f) < GameTiming::npcActionDelay(GameSpeed::Hyper));
+}
+
+// The injected refresh rate flows through to what Gamer timing reads, so pure-logic paths can be driven headlessly
+// (the full-mode constructor instead detects the real monitor rate from hardware at startup).
+TEST_CASE("Gamer speed reads its injectable monitor refresh rate off Game", "[GameSpeed]")
+{
+    Game game(true); // headless: no SFML window, no audio device
+
+    game.setRefreshRateForTest(144.0f);
+    CHECK(game.refreshRateForTest() == Approx(144.0f));
+
+    game.setGameSpeedForTest(GameSpeed::Gamer);
+    CHECK(static_cast<GameSpeed>(game.gameSpeedForTest()) == GameSpeed::Gamer);
+}
+
+TEST_CASE("isAutoPlaying treats AutoPlay, Hyper, and refresh-rate Gamer as continuous autoplay", "[GameSpeed]")
+{
+    // The three automated tiers (AutoPlay, Hyper, refresh-rate Gamer) advance every seat on basic strategy without
+    // waiting for input...
+    CHECK(GameTiming::isAutoPlaying(GameSpeed::AutoPlay));
+    CHECK(GameTiming::isAutoPlaying(GameSpeed::Gamer));
+    CHECK(GameTiming::isAutoPlaying(GameSpeed::Hyper));
+
+    // ...while the manual tiers (Fast/Normal/Slow) still let the player drive their own cards.
+    CHECK(!GameTiming::isAutoPlaying(GameSpeed::Fast));
+    CHECK(!GameTiming::isAutoPlaying(GameSpeed::Normal));
+    CHECK(!GameTiming::isAutoPlaying(GameSpeed::Slow));
+}
+
+TEST_CASE("dealerRevealInterval matches player pace in Gamer/Hyper, fixed beat otherwise", "[GameSpeed]")
+{
+    // In the automated-fast tiers the dealer reveals cards at the SAME interval players act...
+    CHECK(GameTiming::dealerRevealInterval(GameSpeed::Gamer, 240.0f) == Approx(GameTiming::gamerStepInterval(240.0f)));
+    CHECK(GameTiming::dealerRevealInterval(GameSpeed::Hyper, 0.0f) == Approx(GameTiming::npcActionDelay(GameSpeed::Hyper)));
+
+    // ...while every other speed keeps the fixed, watchable beat so a casual player can follow each card reveal.
+    CHECK(GameTiming::dealerRevealInterval(GameSpeed::Fast, 0.0f) == Approx(GameTiming::DEALER_ACTION_DELAY));
+    CHECK(GameTiming::dealerRevealInterval(GameSpeed::Normal, 0.0f) == Approx(GameTiming::DEALER_ACTION_DELAY));
+    CHECK(GameTiming::dealerRevealInterval(GameSpeed::Slow, 0.0f) == Approx(GameTiming::DEALER_ACTION_DELAY));
+    CHECK(GameTiming::dealerRevealInterval(GameSpeed::AutoPlay, 0.0f) == Approx(GameTiming::DEALER_ACTION_DELAY));
+}
+
+
+TEST_CASE("dealDurationScale keys card-deal tempo to game speed", "[GameSpeed][Animation]")
+{
+    // Slower speeds stretch for visibility; faster speeds compress so cards land with the action/sound rather than trailing.
+    CHECK(GameTiming::dealDurationScale(GameSpeed::Slow) == Approx(2.0f));
+    CHECK(GameTiming::dealDurationScale(GameSpeed::Normal) == Approx(1.0f));
+    CHECK(GameTiming::dealDurationScale(GameSpeed::Fast) == Approx(0.4f));
+    CHECK(GameTiming::dealDurationScale(GameSpeed::AutoPlay) == Approx(0.3f));
+
+    // Monotonic: every step down in speed is a step up (or equal) in animation-duration factor, so the whole deal sweep
+    // speeds up / slows down as one unit with the action cadence.
+    CHECK(GameTiming::dealDurationScale(GameSpeed::Slow) > GameTiming::dealDurationScale(GameSpeed::Normal));
+    CHECK(GameTiming::dealDurationScale(GameSpeed::Normal) > GameTiming::dealDurationScale(GameSpeed::Fast));
+    CHECK(GameTiming::dealDurationScale(GameSpeed::Fast) > GameTiming::dealDurationScale(GameSpeed::AutoPlay));
+
+    // Hyper and Gamer deliver no animation: the factor collapses to 0, so every CardDealTween settles instantly on its
+    // resting slot (progress()==1 when duration==0), i.e. cards snap into place with no visible sweep.
+    CHECK(GameTiming::dealDurationScale(GameSpeed::Hyper) == Approx(0.0f));
+    CHECK(GameTiming::dealDurationScale(GameSpeed::Gamer) == Approx(0.0f));
+    CHECK(GameTiming::dealDurationScale(GameSpeed::Hyper) == GameTiming::dealDurationScale(GameSpeed::Gamer));
+}
+
+TEST_CASE("animationDisabled is true only for Hyper and Gamer", "[GameSpeed][Animation]")
+{
+    // The two pure-speed tiers skip animation (and sound effects); the watchable/manual tiers keep it.
+    CHECK(GameTiming::animationDisabled(GameSpeed::Hyper));
+    CHECK(GameTiming::animationDisabled(GameSpeed::Gamer));
+    CHECK_FALSE(GameTiming::animationDisabled(GameSpeed::Slow));
+    CHECK_FALSE(GameTiming::animationDisabled(GameSpeed::Normal));
+    CHECK_FALSE(GameTiming::animationDisabled(GameSpeed::Fast));
+    CHECK_FALSE(GameTiming::animationDisabled(GameSpeed::AutoPlay));
+}
+
+// Headless proof that Hyper/Gamer suppress the bet/card sound effects while every other speed still plays them. The game
+// logic/tick path is untouched by speed, so startTestRound deals normally; only the effect queue differs per speed. This
+// mirrors the deterministic shoe + assertions in tests/test_sound_manager.cpp so the positive control is identical there.
+TEST_CASE("Hyper and Gamer suppress card/bet sound effects; other speeds keep them", "[GameSpeed][Sound][Animation]")
+{
+    const std::vector<Card> shoe = {
+        Card{2, Suit::Spades}, Card{3, Suit::Hearts}, Card{4, Suit::Diamonds}, Card{5, Suit::Clubs},
+        Card{6, Suit::Spades}, Card{7, Suit::Hearts}, Card{8, Suit::Diamonds}, Card{9, Suit::Clubs},
+        Card{10, Suit::Spades}, Card{2, Suit::Hearts}, Card{3, Suit::Diamonds}, Card{4, Suit::Clubs}
+    };
+
+    for (const auto speed : {GameSpeed::Hyper, GameSpeed::Gamer})
+    {
+        Game game(true); // headless: playSound() only enqueues when buffers are absent
+        test_support::seed_deck(game,shoe);
+        game.setGameSpeedForTest(speed);
+
+        game.startTestRound(); // deals 4 cards -> normally 'card' effects, suppressed in Hyper/Gamer
+        CHECK(game.soundQueueForTest().empty());
+
+        game.confirmBet();     // normally one 'bet' effect
+        const auto q = game.soundQueueForTest();
+        CHECK(std::count(q.begin(), q.end(), "card") == 0);
+        CHECK(std::count(q.begin(), q.end(), "bet") == 0);
+    }
+
+    // Positive control: Normal still plays the effects (the watchable tiers are unchanged by this rewrite).
+    {
+        Game game(true);
+        test_support::seed_deck(game,shoe);
+        game.setGameSpeedForTest(GameSpeed::Normal);
+
+        int cardsBefore = game.soundTotalPlayedForTest();
+        game.startTestRound();
+        CHECK(game.soundTotalPlayedForTest() > cardsBefore);
+        const auto q0 = game.soundQueueForTest();
+        CHECK(std::count(q0.begin(), q0.end(), "card") >= 1);
+
+        const int betsBefore = static_cast<int>(std::count(q0.begin(), q0.end(), "bet"));
+        game.confirmBet();
+        const auto q1 = game.soundQueueForTest();
+        CHECK(std::count(q1.begin(), q1.end(), "bet") == betsBefore + 1);
+
+        if (game.roundStateForTest() == RoundState::PlayerTurn && !game.testHand(0, 0).isFinished())
+        {
+            const int beforeHit = game.soundTotalPlayedForTest();
+            game.hit(); // a drawn card -> exactly one 'card' effect
+            CHECK(game.soundTotalPlayedForTest() == beforeHit + 1);
+        }
+    }
+}
+
 
 TEST_CASE("easeOutCubic has correct endpoints and clamps out-of-range input", "[card-animation]")
 {
@@ -297,4 +437,3 @@ TEST_CASE("every seat including NPCs sweeps its deal from progress 0 and settles
     }
     REQUIRE(maxElapsed >= Constants::DEAL_SLIDE_SECONDS);   // NPC card finished sliding into its slot
 }
-

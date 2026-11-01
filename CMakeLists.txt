@@ -169,38 +169,25 @@ add_executable(Blackjack2Tests
     tests/test_game.cpp
     tests/test_player.cpp
     tests/test_assets.cpp
-    tests/test_split_aces.cpp
-    tests/test_resplit_tens.cpp
     tests/test_reko_counting.cpp
     tests/test_advisor_feedback.cpp
-    tests/test_analytics_betting.cpp
     tests/test_betting_handler.cpp
-    tests/test_round_dealer.cpp
+    tests/test_settlement.cpp
+    tests/test_side_bets.cpp
+    tests/test_analytics.cpp
+    tests/test_deal_timing.cpp
+    tests/test_achievements.cpp
+    tests/test_rendering.cpp
     tests/test_replay_layout.cpp
     tests/test_session_lifecycle.cpp
-    tests/test_achievement_feeder.cpp
-    tests/test_analytics_charts.cpp
-    tests/test_shoe_analytics.cpp
-    tests/test_blackjack_settlement.cpp
-    tests/test_dealer_blackjack.cpp
     tests/test_hud_layout.cpp
     tests/test_profile_settings.cpp
     tests/test_sound_manager.cpp
-    tests/test_side_bets.cpp
-    tests/test_side_bet_round.cpp
-    tests/test_side_bet_placing.cpp
     tests/test_strategy_trainer.cpp
     tests/test_tournament_mode.cpp
-    tests/test_achievements.cpp
-    tests/test_gamer_speed.cpp
     tests/test_game_rules.cpp
-    tests/test_stats_dashboard.cpp
-    tests/test_card_animation.cpp
-    tests/test_deal_animation_speed.cpp
     tests/test_menu_navigation.cpp
     tests/test_input_return_to_main_menu.cpp
-    tests/test_game_mode_dispatch.cpp
-    tests/test_game_renderer_modes.cpp
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)

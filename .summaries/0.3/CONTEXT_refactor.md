@@ -229,6 +229,30 @@ frame driver. This was the last class of duplicated scaffolding in the suite.
 - **Status: DONE.** This unblocks ACTION_PLAN follow-up #8's Settlement/deal() + SessionLifecycle stages, which now build
   on this shared scaffolding instead of re-deriving it each time.
 
+### #9b Test-file THEMING — third pass (condensing per-feature files into themed TUs)
+The suite had grown to ~42 tiny feature-specific `test_*.cpp` files, many categorically identical (e.g. four separate
+settlement files: `blackjack_settlement` / `resplit_tens` / `split_aces` / `dealer_blackjack`; three side-bet files; three
+analytics files; three speed/deal-animation files). Each reused the shared `test_support.hpp` fixture but lived as its own
+translation unit. This pass folded each categorical group into ONE themed TU (readability > DRY, same rule as #9).
+- **Merge method:** for every member file, everything before its first `TEST_CASE(` was parsed out — includes and all forms
+  of `using` (`namespace X;`, `using a::b;`, `alias = ...`) go to the unified header at global scope; the rest (anonymous-ns
+  blocks + any file-scope helpers) were brace-matched into individual top-level functions, de-duplicated by comment-stripped
+  identity, and hoisted once into a single shared anonymous namespace per merged file. TEST_CASE bodies are concatenated
+  verbatim (names already unique — all 256 were distinct). This declares every helper before any test uses it and collapses
+  each member's separate anon namespaces, so names must be globally unique within the group; identical copies collapse to one.
+- **Safety verified before build:** no file-scope symbol collisions except two real dupes the script de-duped — analytics'
+  `tickUntilSettled` (identical in `analytics_charts` + `shoe_analytics`) and achievements' `twoCards` (achievements keeps it
+  file-scope global; feeder's is anon-ns to coexist — both now one definition). A stray `using Catch::Approx;` single-name
+  using-declaration initially got hoisted *inside* the anon ns (breaking every `Approx` call) and was fixed by keeping such
+  declarations in the global header.
+- **Result:** 20 member files → 6 themed TUs (`test_settlement`, `test_side_bets`, `test_analytics`, `test_deal_timing`,
+  `test_achievements`, `test_rendering`); CMakeLists.txt source list updated (492 insertions / −2831 deletions tracked).
+  Build EXIT=0; **ctest 257/257 green** (no sanitizer preset, clean pass/fail). Net test surface unchanged — same assertions,
+  fewer files.
+- **Left standalone on purpose:** pure unit tests (Card/Hand/Player/Deck/BettingHandler/assets/reko) and bespoke fixtures
+  (`tournament_mode` rotated deck, `card_animation` configurable-seat setup, HUD/layout/profile/sound/tournament/session/
+  replay/trainer) don't share a category cleanly; merging them would mix strategies. They stay as their own files.
+
 ### #10 HandEvaluator::evaluateHands() — repeated case+logger block (third pass, exhaustive scan)
 `HandEvaluator.cpp:355` evaluateHands() `switch(result)` lines 68-92 has three near-identical cases (Surrender/Lose/Win), each doing a stats counter increment, an `if(pIdx == 0){roundLost|roundWon = true;}` flag assignment, and a nearly identical logger line ("surrendered"/"lost"/"won hand …"). Push is the odd one out.
 - **Before:** ~3 duplicated case+logger blocks in the settlement switch.

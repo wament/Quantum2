@@ -1,31 +1,45 @@
+// Rendering mode backdrop/render table and Game::update() AppMode routing to each subsystem.
+
 #include <catch2/catch_all.hpp>
 #include "test_support.hpp"
-#include <Constants.hpp>
+#include "Game.hpp"
+#include "GameRenderer.hpp"
+#include "test_support.hpp"
 #include <Card.hpp>
+#include <Constants.hpp>
 #include <Game.hpp>
 #include <RoundEngine.hpp>
-// For StrategyTrainer::elapsedSecondsForTest(), read through Game::trainerElapsedSecondsForTest() (an out-of-line accessor whose
-// incomplete-type usage is contained in Game.cpp) to prove the trainer AppMode routes to trainer->update() (Phase 1 refactor:
-// Game::update dispatch). The test binary links SFML::Graphics only; this stays headless.
+#include <catch2/catch_all.hpp>
 
 using namespace Constants;
 
-namespace
-{
-
-    // Populate a headless game with an injected shoe and one dealt round, exactly like test_game_rules.cpp. The human seat
-    // then holds its initial cards and betting is set, so update()'s modes can be exercised deterministically without UI.
-    void seedRound(Game& game, std::initializer_list<Card> deck)
+// Shared test fixtures/helpers lifted from every member file into one anonymous namespace (identical copies de-duped).
+namespace {
+void seedRound(Game& game, std::initializer_list<Card> deck)
     {
         test_support::seed_deck(game,deck);
         game.startTestRound();
     }
+
+std::vector<std::pair<AppMode, std::optional<sf::Color>>> expectedBackdrops()
+{
+    return {
+        // nullopt backdrops clear to default (plain clear + backgroundSprite felt); the themed modes set their own color.
+        {AppMode::MainMenu,         std::nullopt},   // felt behind the menu; drawMainMenu paints it itself
+        {AppMode::Playing,          std::nullopt},   // felt behind the table
+        {AppMode::Paused,           std::nullopt},   // felt behind the paused table
+        {AppMode::StrategyTrainer,  sf::Color(96, 0, 128)}, // royal-purple training backdrop
+        {AppMode::Tournament,       sf::Color(25, 32, 48)}, // tournament slate (own paint)
+        {AppMode::Achievements,     sf::Color(18, 28, 24)}, // dark-slate list backdrop
+        {AppMode::GameRules,        sf::Color(30, 30, 40)}, // rules-config backdrop
+        {AppMode::StatsDashboard,   sf::Color(15, 22, 30)}, // deep-teal dashboard (own paint)
+        {AppMode::ReplayHistory,    std::nullopt},   // felt behind replay
+        {AppMode::ReplayPlaying,    std::nullopt},   // felt behind replay
+    };
+}
+
 } // namespace
 
-// Playing must still reach RoundEngine, the sole turn/round state machine. Driving update() with a big dt advances the turn
-// machine out of PlayerTurn through the SAME dispatch switch that previously used an `if (appMode == ...)` guard — if dispatch
-// ever returns early for Playing, roundState stays parked at PlayerTurn and this REQUIRE fails. The soft-17 setup (hard 18 vs
-// dealer up 6, hole Ace -> soft 17) forces the dealer to play its own cards under default rules so the turn actually progresses.
 TEST_CASE("Game::update routes Playing to RoundEngine and advances past PlayerTurn", "[Game][UpdateDispatch]")
 {
     Game game(true);
@@ -93,4 +107,33 @@ TEST_CASE("Game::update routes StrategyTrainer to its updater and advances sessi
     game.update(1.5f);  // StrategyTrainer -> trainer->update(1.5)
 
     REQUIRE(game.trainerElapsedSecondsForTest() > before + 1.0f);
+}
+
+
+TEST_CASE("GameRenderer routes every mode through the single unified dispatch table", "[renderer][mode-dispatch]")
+{
+    GameRenderer r;
+
+    for (const auto& [mode, expectedBackdrop] : expectedBackdrops())
+    {
+        const ModeEntry entry = r.modeEntryForTest(mode);
+
+        // Backdrop color matches its documented value: an explicit sf::Color for the five themed modes, nullopt for felt
+        // modes (default clear + backgroundSprite). One table => a mode's clear color can't drift from its draw fn.
+        REQUIRE(entry.backdrop == expectedBackdrop);
+
+        // Every known mode routes to a non-empty render fn so draw() reaches per-mode presentation; an unknown AppMode gets
+        // the default entry (nullopt backdrop + no-op render), matching the old else-branch + switch fall-through.
+        REQUIRE(entry.render != nullptr);
+    }
+}
+
+TEST_CASE("GameRenderer falls back to the default entry for an unknown mode", "[renderer][mode-dispatch]")
+{
+    GameRenderer r;
+
+    const ModeEntry fallback = r.modeEntryForTest(static_cast<AppMode>(99));   // no such AppMode -> find() misses -> fallback
+
+    REQUIRE(!fallback.backdrop.has_value());          // default backdrop (plain clear + backgroundSprite felt)
+    REQUIRE(fallback.render != nullptr);              // safe no-op render, so draw() never throws on an unknown mode
 }
