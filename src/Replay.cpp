@@ -6,6 +6,7 @@
 #include "Hand.hpp"
 #include "Card.hpp"
 #include "ReplayView.hpp"
+#include "ReplayLayout.hpp"
 #include <algorithm>
 #include <cmath>
 #include <sstream>
@@ -570,29 +571,25 @@ void Replay::selectNextShoe()
     }
 }
 
-// Index of the list row under `mousePos` (window pixels), or -1 if none. Rows start at y=120 in
-// window space with 40px height and the highlight background spans x [50, 1250] (see drawHistoryList).
+// Index of the list row under `mousePos` (window pixels), or -1 if none. Row geometry is shared
+// with ReplayView::drawHistoryList via ReplayLayout so a drawn row and its hover target never drift.
 int Replay::hoveredHistoryRow(sf::Vector2i mousePos) const
 {
     if (historyEntries.empty())
         return -1;
 
-    constexpr float topStart = 120.f; // matches drawHistoryList row origin
-    constexpr float lineHeight = 40.f;
-
     for (int i = 0; i < static_cast<int>(historyEntries.size()); ++i)
     {
         // Scroll offset shifts rows up so off-screen entries become hoverable and clickable.
-        float rowTop = topStart + static_cast<float>(i) * lineHeight -
-                       static_cast<float>(historyScrollOffset) * lineHeight;
+        float rowTop = ReplayLayout::historyRowTop(i, historyScrollOffset);
 
         // Match the draw clip exactly: only rows actually drawn below the header are selectable,
-        // so a row that has scrolled into the title is not hoverable either.
-        if (rowTop < topStart) continue;
+        // so a row that has scrolled into the title is not hoverable either (helper returns -1).
+        if (rowTop < 0.f) continue;
 
-        bool inX = mousePos.x >= 50 && mousePos.x <= 1250;
+        bool inX = ReplayLayout::inSelectableXBand(static_cast<float>(mousePos.x));
         bool inY = (mousePos.y >= static_cast<int>(rowTop - 5.f)) &&
-                   (mousePos.y <= static_cast<int>(rowTop + lineHeight));
+                   (mousePos.y <= static_cast<int>(rowTop + ReplayLayout::kRowHeight));
         if (inX && inY)
             return i;
     }
@@ -602,12 +599,8 @@ int Replay::hoveredHistoryRow(sf::Vector2i mousePos) const
 
 int Replay::historyVisibleRowCount() const
 {
-    constexpr float topStart = 120.f;
-    constexpr float lineHeight = 40.f;
     int windowHeight = window.getSize().y;
-    if (windowHeight <= topStart + lineHeight)
-        return 0;
-    return static_cast<int>((windowHeight - topStart - lineHeight) / lineHeight) + 1;
+    return ReplayLayout::visibleHistoryRows(windowHeight);
 }
 
 int Replay::maxHistoryScrollOffset() const

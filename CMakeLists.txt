@@ -176,6 +176,7 @@ add_executable(Blackjack2Tests
     tests/test_analytics_betting.cpp
     tests/test_betting_handler.cpp
     tests/test_round_dealer.cpp
+    tests/test_replay_layout.cpp
     tests/test_session_lifecycle.cpp
     tests/test_achievement_feeder.cpp
     tests/test_analytics_charts.cpp

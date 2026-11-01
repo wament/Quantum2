@@ -7,6 +7,7 @@
 #include "Graphics.hpp"
 #include "Constants.hpp"
 #include "BasicStrategy.hpp"
+#include "ReplayLayout.hpp"
 #include <sstream>
 #include <iomanip>
 #include <string>
@@ -37,8 +38,6 @@ void ReplayView::drawHistoryList()
         return;
     }
 
-    const float topStart = 120.f; // row origin matches replay.hoveredHistoryRow
-    const float lineHeight = 40.f;
     int maxOffset = replay.maxHistoryScrollOffset();
 
     int hovered = replay.hoveredHistoryRow(replay.replayCursorPos);
@@ -48,12 +47,13 @@ void ReplayView::drawHistoryList()
         const auto &entry = replay.historyEntries[i];
 
         // Scroll offset shifts every row up so off-screen entries are drawn and selectable in view.
-        float rowTop = topStart + static_cast<float>(i) * lineHeight -
-                       static_cast<float>(replay.historyScrollOffset) * lineHeight;
+        // Geometry is shared with Replay::hoveredHistoryRow via ReplayLayout, so a drawn row and its
+        // hover target use identical math (helper returns -1 for a row scrolled into the header).
+        float rowTop = ReplayLayout::historyRowTop(i, replay.historyScrollOffset);
 
         // Clip rows that have scrolled up into the header: once a row's top reaches the top of
         // the scroll area it disappears, so list text never draws over the title/instructions.
-        if (rowTop < topStart) continue;
+        if (rowTop < 0.f) continue;
 
         // Highlight both the keyboard-selected row and whichever row is under the cursor so a
         // hover then left-click gives the same feedback as every other menu.
@@ -70,7 +70,7 @@ void ReplayView::drawHistoryList()
 
         if (selected)
         {
-            sf::RectangleShape bg(sf::Vector2f(1200.f, lineHeight));
+            sf::RectangleShape bg(sf::Vector2f(1200.f, ReplayLayout::kRowHeight));
             bg.setPosition({50.f, rowTop - 5.f});
             bg.setFillColor(sf::Color(30, 30, 50));
             bg.setOutlineColor(sf::Color(255, 215, 0));
@@ -87,10 +87,10 @@ void ReplayView::drawHistoryList()
     {
         float trackX = 1258.f;
         float trackW = 10.f;
-        float trackH = window.getSize().y - topStart;
+        float trackH = window.getSize().y - ReplayLayout::kRowTopStart;
 
         sf::RectangleShape track(sf::Vector2f(trackW, trackH));
-        track.setPosition({trackX, topStart});
+        track.setPosition({trackX, ReplayLayout::kRowTopStart});
         track.setFillColor(sf::Color(60, 60, 80));
         window.draw(track);
 
@@ -99,7 +99,7 @@ void ReplayView::drawHistoryList()
         float scrollFrac = maxOffset > 0 ? static_cast<float>(replay.historyScrollOffset) /
                                            static_cast<float>(maxOffset) : 0.f;
         float thumbH = std::max(16.f, trackH * thumbFrac);
-        float thumbTop = (trackH - thumbH) > 0.f ? topStart + scrollFrac * (trackH - thumbH) : topStart;
+        float thumbTop = (trackH - thumbH) > 0.f ? ReplayLayout::kRowTopStart + scrollFrac * (trackH - thumbH) : ReplayLayout::kRowTopStart;
 
         sf::RectangleShape thumb(sf::Vector2f(trackW, thumbH));
         thumb.setPosition({trackX, thumbTop});
