@@ -99,6 +99,7 @@ target_sources(Blackjack2 PRIVATE
     src/InputHandler.cpp
     src/HandEvaluator.cpp
     src/RoundDealer.cpp
+    src/SessionLifecycle.cpp
     src/Logger.cpp
     src/SoundManager.cpp
     src/SideBet.cpp
@@ -150,6 +151,7 @@ add_executable(Blackjack2Tests
     src/InputHandler.cpp
     src/HandEvaluator.cpp
     src/RoundDealer.cpp
+    src/SessionLifecycle.cpp
     src/Logger.cpp
     src/SoundManager.cpp
     src/SideBet.cpp
@@ -172,6 +174,7 @@ add_executable(Blackjack2Tests
     tests/test_analytics_betting.cpp
     tests/test_betting_handler.cpp
     tests/test_round_dealer.cpp
+    tests/test_session_lifecycle.cpp
     tests/test_analytics_charts.cpp
     tests/test_shoe_analytics.cpp
     tests/test_blackjack_settlement.cpp

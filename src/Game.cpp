@@ -123,7 +123,8 @@ Game::Game()
                static_cast<float>(Constants::WINDOW_HEIGHT)})),
       inputHandler(*this),
       evaluator(*this),
-      roundDealer_(*this)
+      roundDealer_(*this),
+      sessionLifecycle_(*this)
 {
     window.setView(gameView);
     players.push_back(Player("William"));
@@ -212,114 +213,10 @@ void Game::run()
     }
 }
 
-// Feature 2 (Strategy Trainer): begin/restart a training session. Guards against nullptr so headless construction,
-// which never builds the trainer, can't crash when the menu calls this.
-void Game::startTrainerSession(int deckCount, int secondsPerSession)
-{
-    if (!trainer)
-        trainer = std::make_unique<StrategyTrainer>();
-    trainer->startSession(deckCount, secondsPerSession);
-}
-
+// Feature 2/4/9 + table-settings persistence: the session entry points and profile-driven table settings moved into the
+// composed SessionLifecycle helper (Follow-up #8). Game keeps one thin delegator per method below; all mutable state stays in
+// Game, so every entry point behaves byte-for-byte identically to before the split. Test accessors are retained unchanged.
 float Game::trainerElapsedSecondsForTest() const { return trainer->elapsedSecondsForTest(); }
-
-// Feature 9 (Tournament Mode): begin/restart a tournament. Guards against nullptr so headless construction - which
-// never builds the tournament - can't crash when the menu calls this; on first entry it allocates the state machine.
-void Game::startTournamentSession(const Tournament::TournamentConfig& config)
-{
-    if (!tournament)
-        tournament = std::make_unique<Tournament>();
-    tournament->start(config);
-}
-
-// Feature 4 (Statistics Dashboard): begin/restart the dashboard from the main menu. Guards against nullptr so headless
-// construction (which never builds the dashboard) can't crash when the menu calls this; on first entry it seeds the
-// dashboard by flattening every shoe's rounds into one history list and pairing it with the player's career stats.
-void Game::startStatsSession()
-{
-    if (!statsDashboard)
-        statsDashboard = std::make_unique<StatsDashboard>();
-
-    // Flatten completed-shoe history from the profile plus any rounds played in the current (in-progress) shoe, into one
-    // round-history list — exactly what the dashboard feeds on. Reading through getProfile().getLongHistory() keeps this
-    // additive to existing persistence; nothing is rewritten here. getProfile() returns a copy by value, so we own that
-    // copy for the whole function: binding const& longHistory to it (rather than to getProfile()'s temporary) keeps the
-    // history reference valid and avoids a stack-use-after-scope once startStatsSession runs against a populated history.
-    PlayerProfile profile = players[0].getProfile();
-
-    std::vector<RoundRecord> rounds;
-    const auto& longHistory = profile.getLongHistory();
-    for (const auto& shoe : longHistory)
-        for (const auto& round : shoe.rounds)
-            rounds.push_back(round);
-    // A round settles into BOTH profile.currentHistory (addRoundRecord) and game.currentShoeRecord.rounds. On a later
-    // QuitToMenu/Restart, addShoeRecord() moves currentHistory -> longHistory but leaves the live mirror in
-    // currentShoeRecord.rounds in place, so reopening stats after quitting-to-menu would otherwise feed that round twice
-    // (once from longHistory, once from the stale current record). Skip any current-record round whose content already
-    // appears in history — dealerCards + playerHands fully fingerprint a round's consumed outcome — so every round feeds
-    // exactly once regardless of how many times it was stored. RoundRecord has no operator==, so compare members directly.
-    auto cardsMatch = [](const Card& a, const Card& b) { return a.value == b.value && a.suit == b.suit; };
-    auto roundOverlap = [&](const RoundRecord& candidate) -> bool
-    {
-        for (const auto& existing : rounds)
-        {
-            if (existing.dealerCards.size() != candidate.dealerCards.size())
-                continue;
-            bool dealerMatch = true;
-            for (int i = 0; i < static_cast<int>(existing.dealerCards.size()); ++i)
-            {
-                if (!cardsMatch(existing.dealerCards[i], candidate.dealerCards[i]))
-                {
-                    dealerMatch = false;
-                    break;
-                }
-            }
-            if (!dealerMatch)
-                continue;
-
-            if (existing.playerHands.size() != candidate.playerHands.size())
-                continue;
-            bool handsMatch = true;
-            for (int i = 0; i < static_cast<int>(existing.playerHands.size()); ++i)
-            {
-                const HandOutcome& e = existing.playerHands[i];
-                const HandOutcome& c = candidate.playerHands[i];
-                if (e.wager != c.wager || e.payout != c.payout || e.won != c.won ||
-                    e.surrendered != c.surrendered || e.insuranceBet != c.insuranceBet ||
-                    e.insuranceTaken != c.insuranceTaken || e.playerIndex != c.playerIndex ||
-                    e.playerName != c.playerName || e.sideBetKind != c.sideBetKind ||
-                    e.sideBetWager != c.sideBetWager || e.sideBetPayout != c.sideBetPayout)
-                {
-                    handsMatch = false;
-                    break;
-                }
-                if (e.cards.size() != c.cards.size())
-                {
-                    handsMatch = false;
-                    break;
-                }
-                for (int k = 0; k < static_cast<int>(e.cards.size()); ++k)
-                {
-                    if (!cardsMatch(e.cards[k], c.cards[k]))
-                    {
-                        handsMatch = false;
-                        break;
-                    }
-                }
-                if (!handsMatch)
-                    break;
-            }
-            if (handsMatch)
-                return true;
-        }
-        return false;
-    };
-    for (const auto& round : currentShoeRecord.rounds)
-        if (!roundOverlap(round))
-            rounds.push_back(round);
-
-    statsDashboard->feed(players[0].getStats(), rounds);
-}
 
 int Game::statsPerRoundCountForTest() const
 {
@@ -327,116 +224,34 @@ int Game::statsPerRoundCountForTest() const
     return statsDashboard ? static_cast<int>(statsDashboard->computed().perRoundProfit.size()) : 0;
 }
 
+void Game::startTrainerSession(int deckCount, int secondsPerSession)
+{
+    sessionLifecycle_.startTrainerSession(deckCount, secondsPerSession);
+}
+
+void Game::startTournamentSession(const Tournament::TournamentConfig& config)
+{
+    sessionLifecycle_.startTournamentSession(config);
+}
+
+void Game::startStatsSession()
+{
+    sessionLifecycle_.startStatsSession();
+}
+
 void Game::startNewGame()
 {
-    Logger::info("Starting new game");
-
-    // Remember what was just chosen before the profile is re-read below, so the next launch opens on it.
-    rememberTableSettings();
-
-    players.clear();
-
-    // Human player (William) - always first
-    players.push_back(Player("William"));
-
-    for (int i = 0; i < GameConfig::NPC_COUNT && i + 1 < playerCount; i++)
-    {
-        const auto& cfg = GameConfig::NPC_CONFIGS[i];
-        // Fresh in-memory NPC: no disk read, no JSON parse, no persistence. The human player above loads the real profile.
-        players.push_back(Player(cfg.name, cfg.bankroll));
-        players[i + 1].setBettingStrategy(static_cast<BettingStrategy>(cfg.strategy), cfg.baseBet);
-        Logger::info() << players[i + 1].getName() << " starts with $" << cfg.bankroll
-                       << " using " << cfg.strategy << " strategy";
-    }
-
-    auto profile = players[0].getProfile();
-
-    deck.create(gameRules_.numDecks);
-    deck.shuffle();
-    currentShoeRecord.initialDeck = deck.getCards();
-    currentShoeRecord.rounds.clear();
-
-    // A brand-new shoe: every per-shoe readout starts from zero, so the stat boxes and the bankroll/edge charts
-    // reflect only this shoe. (The bankroll itself is deliberately kept — it is the one value that persists.)
-    resetShoeAnalytics();
-    sessionCumulativeWinLoss = 0;
-    handActions.clear();
-    handActions.resize(1);
-    handDeviations_.clear();
-    handDeviations_.resize(1);
-    advisorFeedback = AdvisorFeedback::None;
-    advisorAction = 0;
-    dealer.clear();
-    players[0].resetRound(0);
-    nextRound();
-
-    appMode = AppMode::Playing;
+    sessionLifecycle_.startNewGame();
 }
 
 void Game::applySavedTableSettings()
 {
-    if (players.empty())
-        return;
-
-    const PlayerProfile profile = players[0].getProfile();
-
-    // setPlayerCount clamps to [1,6], so a stale or hand-edited value can never ask for a nonexistent seat.
-    setPlayerCount(profile.preferredPlayerCount);
-
-    // An int read off disk can be anything, so validate against the enumerators before trusting it.
-    switch (static_cast<GameSpeed>(profile.preferredSpeed))
-    {
-    case GameSpeed::Fast:
-    case GameSpeed::Normal:
-    case GameSpeed::Slow:
-    case GameSpeed::AutoPlay:
-    case GameSpeed::Hyper:
-    case GameSpeed::Gamer:
-        gameSpeed = static_cast<GameSpeed>(profile.preferredSpeed);
-        break;
-    default:
-        gameSpeed = GameSpeed::Normal;
-        break;
-    }
-
-    switch (static_cast<BasicStrategy::CountingStyle>(profile.preferredCountingStyle))
-    {
-    case BasicStrategy::CountingStyle::HI_LO:
-    case BasicStrategy::CountingStyle::REKO:
-        countingStyle = static_cast<BasicStrategy::CountingStyle>(profile.preferredCountingStyle);
-        break;
-    default:
-        countingStyle = BasicStrategy::CountingStyle::REKO;
-        break;
-    }
-
-    // Feature 3 (Custom Game Rules): restore the saved table rules. The profile's GameRules already carries defaults for
-    // legacy files, so this is a clean no-op unless the player previously changed a rule and it was persisted additively.
-    gameRules_ = profile.gameRules;
-
-    Logger::info() << "Restored table settings: " << playerCount << " players, "
-                   << BasicStrategy::countingStyleName(countingStyle) << " counting.";
+    sessionLifecycle_.applySavedTableSettings();
 }
 
 void Game::rememberTableSettings()
 {
-    if (players.empty())
-        return;
-
-    PlayerProfile profile = players[0].getProfile();
-    profile.preferredPlayerCount = playerCount;
-    profile.preferredSpeed = static_cast<int>(gameSpeed);
-    profile.preferredCountingStyle = static_cast<int>(countingStyle);
-    // Feature 7: persist sound + music prefs alongside the other table settings (called at every existing save point,
-    // so no extra I/O). Written as SFML-unit ints to mirror preferredSpeed.
-    profile.preferredSoundVolume = static_cast<int>(sound_.settings().soundVolume);
-    profile.preferredMusicVolume = static_cast<int>(sound_.settings().musicVolume);
-    profile.preferredMuted = sound_.isMuted();
-    // Feature 3 (Custom Game Rules): stamp the live table rules onto the profile so they survive the session, written on
-    // every existing save point (no extra I/O). Additive schema: unchanged for profiles saved before custom rules.
-    profile.gameRules = gameRules_;
-    players[0].updateProfile(profile);
-    players[0].saveProfile();
+    sessionLifecycle_.rememberTableSettings();
 }
 
 void Game::resetShoeAnalytics()
@@ -785,7 +600,8 @@ Game::Game(bool headless)
       gameView(),
       inputHandler(*this),
       evaluator(*this),
-      roundDealer_(*this)
+      roundDealer_(*this),
+      sessionLifecycle_(*this)
 {
     // Headless mode (unit tests): no SFML window, no asset loading, no replay, no HUD. Only the pure
     // round/state machine is initialized so a full game can be driven deterministically from tests.

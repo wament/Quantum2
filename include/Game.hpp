@@ -63,6 +63,7 @@ class BettingHandler;
 #include "InputHandler.hpp"
 #include "HandEvaluator.hpp"
 #include "RoundDealer.hpp"
+#include "SessionLifecycle.hpp"
 #include "SoundManager.hpp"
 // Feature 5 (Achievement System): pure-logic achievement engine. Included fully (value member, not forward-declared)
 // because Game owns one by value and exposes it via accessors; Achievement.hpp pulls only <string>/<vector>/<map>, so no
@@ -227,6 +228,7 @@ class Game
     friend class InputHandler;
     friend class HandEvaluator;
     friend class RoundDealer;
+    friend class SessionLifecycle;
     friend class RoundEngine;
 
   private:
@@ -251,6 +253,8 @@ class Game
     HandEvaluator evaluator;
     // Follow-up #8 (Settlement/deal()): deals the round's cards + resolves side-bet settlement, composed like the other helpers.
     RoundDealer roundDealer_;
+    // Follow-up #8 (Session lifecycle): session entry points + table-settings persistence, composed like the other helpers.
+    SessionLifecycle sessionLifecycle_;
     // ---------------- SFML ----------------
 
     sf::RenderWindow window;
