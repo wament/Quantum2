@@ -94,25 +94,6 @@ namespace
 static float detectMonitorRefreshHz() { return GameTiming::DEFAULT_REFRESH_HZ; }
 #endif
 
-namespace
-{
-    // Feature 5 (Achievement System): given a list of just-unlocked achievement ids, set the HUD popup to the
-    // highest-priority one (first in definition order). Uses only the public AchievementManager API + Achievement fields,
-    // so it needs no friendship and is safe at either call site.
-    void setPendingUnlocked(const AchievementManager& mgr, const std::vector<Achievement::Id>& newly, std::string& pending)
-    {
-        if (newly.empty())
-            return;
-        for (const auto& def : mgr.all())
-            for (auto id : newly)
-                if (def.id == id)
-                {
-                    pending = def.name;
-                    return;
-                }
-    }
-}
-
 Game::Game()
     : window(
           sf::VideoMode({Constants::WINDOW_WIDTH, Constants::WINDOW_HEIGHT}), Constants::WINDOW_TITLE),
@@ -124,7 +105,8 @@ Game::Game()
       inputHandler(*this),
       evaluator(*this),
       roundDealer_(*this),
-      sessionLifecycle_(*this)
+      sessionLifecycle_(*this),
+      achievementFeeder_(*this)
 {
     window.setView(gameView);
     players.push_back(Player("William"));
@@ -280,7 +262,7 @@ void Game::resetShoeAnalytics()
 
     // Feature 5: a new shoe begins — resolve the finished shoe's end-of-shoe achievements (Deviation Free / Comeback King /
     // Perfect Shoe / Kelly Master) via onNewShoe(), which then resets every per-shoe counter for this fresh shoe.
-    setPendingUnlocked(achievementManager_, achievementManager_.onNewShoe(), hudState.pendingAchievementName);
+    achievementFeeder_.surfaceNewlyUnlocked(achievementManager_.onNewShoe());
 }
 
 void Game::startNewShoe()
@@ -295,34 +277,12 @@ void Game::startNewShoe()
     resetShoeAnalytics();
 }
 
-// Feature 5 (Achievement System): feed one settled round's human-seat outcome into the achievement engine and surface any
-// just-unlocked popup. The human seat is index 0; a split yields multiple seat-0 outcomes on the record, so their signals
-// are OR'd. True count comes straight from the settled round; bankroll is read live. Shoe-end achievements resolve in
-// resetShoeAnalytics() via onNewShoe(), not here.
+// Feature 5 (Achievement System): thin delegator over the composed AchievementFeeder helper
+// (Follow-up #8 settlement/aftermath stage). Aggregates the human seat outcome into one HandEvent and feeds
+// the achievement engine; all mutable state stays in Game.
 void Game::recordHandAchievements(const RoundRecord& round)
 {
-    AchievementManager::HandEvent e;
-    int bet = 0;
-    int seat0Outcomes = 0;
-    for (const auto& h : round.playerHands)
-    {
-        if (h.playerIndex != 0)
-            continue;
-        ++seat0Outcomes;
-        const Hand hand(h.cards);
-        e.isBlackjack = e.isBlackjack || hand.isBlackjack();
-        e.busted = e.busted || hand.getValue() > 21;
-        e.wonAny = e.wonAny || h.won;
-        bet += h.wager;
-    }
-    e.splitHand = seat0Outcomes > 1;                 // a split produces more than one seat-0 outcome on the record
-    e.followedStrategy = (deviationsThisRound_ == 0); // whole round matched basic strategy if no deviation was logged
-    e.bet = bet;
-    e.bankrollAfter = players.empty() ? 0.0f : static_cast<float>(players[0].getBankroll());
-    e.positiveTrueCount = round.trueCount > 0.0f;
-
-    std::vector<Achievement::Id> newly = achievementManager_.recordHand(e);
-    setPendingUnlocked(achievementManager_, newly, hudState.pendingAchievementName);
+    achievementFeeder_.recordHandAchievements(round);
 }
 
 void Game::setPlayerCount(int count)
@@ -601,7 +561,8 @@ Game::Game(bool headless)
       inputHandler(*this),
       evaluator(*this),
       roundDealer_(*this),
-      sessionLifecycle_(*this)
+      sessionLifecycle_(*this),
+      achievementFeeder_(*this)
 {
     // Headless mode (unit tests): no SFML window, no asset loading, no replay, no HUD. Only the pure
     // round/state machine is initialized so a full game can be driven deterministically from tests.

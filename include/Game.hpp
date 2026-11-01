@@ -64,6 +64,9 @@ class BettingHandler;
 #include "HandEvaluator.hpp"
 #include "RoundDealer.hpp"
 #include "SessionLifecycle.hpp"
+// Follow-up #8 (settlement/aftermath): AchievementFeeder drives settlement bookkeeping off game.* members; its own header only
+// pulls Achievement/GameRecord (no Game dependency), so no cycle even though it holds a Game& reference.
+#include "AchievementFeeder.hpp"
 #include "SoundManager.hpp"
 // Feature 5 (Achievement System): pure-logic achievement engine. Included fully (value member, not forward-declared)
 // because Game owns one by value and exposes it via accessors; Achievement.hpp pulls only <string>/<vector>/<map>, so no
@@ -228,6 +231,8 @@ class Game
     friend class InputHandler;
     friend class HandEvaluator;
     friend class RoundDealer;
+    // Follow-up #8 (settlement/aftermath): AchievementFeeder drives settlement bookkeeping off game.* members.
+    friend class AchievementFeeder;
     friend class SessionLifecycle;
     friend class RoundEngine;
 
@@ -255,6 +260,9 @@ class Game
     RoundDealer roundDealer_;
     // Follow-up #8 (Session lifecycle): session entry points + table-settings persistence, composed like the other helpers.
     SessionLifecycle sessionLifecycle_;
+    // Follow-up #8 (settlement/aftermath): feeds a settled round's human-seat outcome into the achievement engine and surfaces
+    // any just-unlocked popup; composed like the other helpers.
+    AchievementFeeder achievementFeeder_;
     // ---------------- SFML ----------------
 
     sf::RenderWindow window;
