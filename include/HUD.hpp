@@ -5,9 +5,58 @@
 #include <vector>
 #include <utility>
 
-#include "Panel.hpp"
+#include <string>
+
 #include "HUDState.hpp"
 #include "StatBox.hpp"
+
+// Folded out of Panel: the HUD now owns its three panels directly as HudPanel units (a background rectangle plus the
+// StatBoxes it lays out). The old separate Panel class was a one-level-of-indirection that only HUD ever used, so
+// removing it drops two files and brings HUD's widgets under HUD itself. HudPanel mirrors Panel's exact API, so every
+// per-panel call site in HUD.cpp is unchanged -- only this header changes (and Panel.* is deleted).
+struct HudPanel {
+    sf::RectangleShape background;      // dim rounded backing behind the boxes
+
+    std::vector<StatBox*> boxes;        // StatBoxes owned by this panel; HUD keeps ownership through them
+
+    void initialize(sf::Font& font)
+    {
+        background.setFillColor(sf::Color(40, 40, 40));
+        background.setOutlineThickness(2.f);
+        background.setOutlineColor(sf::Color(80, 80, 80));
+        for (auto* box : boxes)
+            box->initialize(font, box->getTitle());
+    }
+
+    void setBounds(sf::Vector2f position, sf::Vector2f size)
+    {
+        background.setPosition(position);
+        background.setSize(size);
+    }
+
+    // World-space rect of this panel's backing (position + size), so layout reads the real panel bounds.
+    sf::Rect<float> bounds() const
+    {
+        return sf::Rect<float>(background.getPosition(), background.getSize());
+    }
+
+    const std::vector<StatBox*>& statBoxes() const { return boxes; }
+
+    StatBox* addStatBox(const std::string& title)
+    {
+        auto* box = new StatBox();
+        box->setTitle(title);
+        boxes.push_back(box);
+        return box;
+    }
+
+    void draw(sf::RenderWindow& window) const
+    {
+        window.draw(background);
+        for (auto* box : boxes)
+            box->draw(window);
+    }
+};
 
 class HUD
 {
@@ -58,9 +107,9 @@ private:
     bool m_showLeft = true;
     bool m_showRight = true;
 
-    Panel m_leftPanel;
-    Panel m_rightPanel;
-    Panel m_bottomPanel;
+    HudPanel m_leftPanel;
+    HudPanel m_rightPanel;
+    HudPanel m_bottomPanel;
 
     StatBox *m_bankrollBox = nullptr;
     StatBox *m_betBox = nullptr;

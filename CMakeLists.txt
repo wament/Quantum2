@@ -90,7 +90,6 @@ target_sources(Blackjack2 PRIVATE
     src/Player.cpp
     src/PlayerProfile.cpp
     src/HUD.cpp
-    src/Panel.cpp
     src/StatBox.cpp
     src/FontManager.cpp
     src/Replay.cpp
@@ -143,7 +142,6 @@ add_executable(Blackjack2Tests
     src/Player.cpp
     src/PlayerProfile.cpp
     src/HUD.cpp
-    src/Panel.cpp
     src/StatBox.cpp
     src/FontManager.cpp
     src/Replay.cpp

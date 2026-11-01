@@ -253,6 +253,18 @@ translation unit. This pass folded each categorical group into ONE themed TU (re
   (`tournament_mode` rotated deck, `card_animation` configurable-seat setup, HUD/layout/profile/sound/tournament/session/
   replay/trainer) don't share a category cleanly; merging them would mix strategies. They stay as their own files.
 
+   (`tournament_mode` rotated deck, `card_animation` configurable-seat setup, HUD/layout/profile/sound/tournament/session/
+   replay/trainer) don't share a category cleanly; merging them would mix strategies. They stay as their own files.
+
+### #9c Panel folded into HUD — visualization consolidation (this pass)
+The HUD owned three separate `Panel` objects (`m_left/m_right/bottomPanel`), each just a dim background rectangle plus a
+`std::vector<StatBox*>`. No class used `Panel` except `HUD` itself, so it was a one-level-of-indirection with no reuse — the
+exact "one-off helper that could be folded into another class in a similar category" pattern. Folded it out: added an
+internal `HudPanel` struct (same API) to `HUD.hpp`, changed the three member types, and **deleted `include/Panel.hpp` +
+`src/Panel.cpp`** (−2 files). CMakeLists source lists updated in both targets; HUD.cpp is byte-for-byte unchanged because
+every per-panel call site maps 1:1. All 257 tests green.
+
+### #10 HandEvaluator::evaluateHands() — repeated case+logger block (third pass, exhaustive scan)
 ### #10 HandEvaluator::evaluateHands() — repeated case+logger block (third pass, exhaustive scan)
 `HandEvaluator.cpp:355` evaluateHands() `switch(result)` lines 68-92 has three near-identical cases (Surrender/Lose/Win), each doing a stats counter increment, an `if(pIdx == 0){roundLost|roundWon = true;}` flag assignment, and a nearly identical logger line ("surrendered"/"lost"/"won hand …"). Push is the odd one out.
 - **Before:** ~3 duplicated case+logger blocks in the settlement switch.
