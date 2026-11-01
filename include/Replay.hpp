@@ -186,9 +186,6 @@ private:
     int findRoundEndStep(int roundIndex) const;
     int findNextDecisionStep(int fromStepIndex) const;
 
-    // Rendering helpers
-    void drawHistoryList();
-
     // --- History list scrolling ---
     // Number of rows currently fitting above the window bottom edge (rows start at y=120, 40px tall).
     int historyVisibleRowCount() const;
@@ -196,12 +193,6 @@ private:
     int maxHistoryScrollOffset() const;
     // After arrow-key navigation, clamp the scroll offset so the selected row stays within view.
     void adjustHistorySelectionVisibility();
-    void drawReplayView();
-    void drawTable(const ReplayInternals::ReplayState &state);
-    void drawControls(const ReplayInternals::ReplayState &state);
-    void drawAnalysisOverlay(const ReplayInternals::ReplayState &state);
-    void drawRoundSlider(const ReplayInternals::ReplayState &state);
-    void drawStepSummary(const ReplayInternals::ReplayState &state);
 
     // Basic strategy lookup (mirrors Game::giveBasicStrategyAdvice)
     char getBasicStrategyAction(const ReplayInternals::ReplayState &state) const;
