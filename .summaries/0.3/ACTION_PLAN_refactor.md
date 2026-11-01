@@ -128,13 +128,13 @@ Do these as separate small changes OR leave them as explicit TODOs — each need
 
 These are larger structural changes, not shrink-now steps. Sequence them deliberately once every phase is green:
 
-- **Game.cpp god-class split (biggest remaining win).** Even after Phases 0-8, Game.cpp stays large because it owns dispatch + betting + settlement + analytics + session lifecycle + persistence hooks. Separate `Betting`, `Settlement`/`HandResult`, and a `SessionLifecycle` helper into focused classes that Game composes — this alone can drop Game.cpp under 800. Requires new test scaffolding; guard with the full suite.
+- **Game.cpp god-class split (biggest remaining win).** Even after Phases 0-8, Game.cpp stays large because it owns dispatch + betting + settlement + analytics + session lifecycle + persistence hooks. Stage 1 extracted `Betting` into composed BettingHandler; Stage 2 moved Settlement/deal() into composed RoundDealer (deal + resolveSideBets, value-member+friend pattern like HandEvaluator — see tests/test_round_dealer.cpp); Stage 3 moved the session entry points + table-settings persistence into composed SessionLifecycle (startNewGame/startTrainerSession/startTournamentSession/startStatsSession/applySavedTableSettings/rememberTableSettings), same composition pattern; Game keeps thin delegators. This alone drops Game.cpp from 1727 to ~1493.
 - **Test-scaffolding review.** `startTestRound()` is called ~60× across `tests/*.cpp`; many tests repeat an identical
   `Game(bool)` + `setDeck(...)` preamble (plus a per-file local tickOnce/settleRound frame driver). STATUS: consolidated
   into header-only shared fixture `tests/test_support.hpp` (`make_card`, `seed_deck`, `start_round`, plus frame-drivers
   `tickFrame`/`advanceToDealerTurn`/`settleRound`). Readability > DRY — generic helpers only; bespoke setups
-  (card_animation/tournament/unit files) left in place. Future #8 stages (Settlement/deal(), SessionLifecycle) build on
-  this shared scaffolding instead of re-deriving it each time.
+  (card_animation/tournament/unit files) left in place. Settlement/deal() is now Stage 2 (RoundDealer); the remaining
+  future stage SessionLifecycle builds on this shared scaffolding instead of re-deriving it each time.
 
 ## Definition of done for the whole refactor
 
