@@ -8,6 +8,7 @@
 #include <functional>
 
 #include "Hand.hpp"
+#include "GameRecord.hpp"   // computeCareerStats: single record-derived source of truth for dashboard career totals
 #include "FontManager.hpp"
 
 using json = nlohmann::json;
@@ -49,7 +50,7 @@ namespace
 void StatsDashboard::feed(const PlayerStats& career, const std::vector<RoundRecord>& rounds)
 {
     computed_ = ComputedStats{};
-    // Career-context numbers come straight from the saved profile; per-round / per-hand metrics are recomputed below.
+    // Career-context numbers that aren't record-derived still come straight from the saved profile (splits/doubles/shoesFinished).
     computed_.shoesFinished = career.shoesFinished;
     computed_.splits = career.splits;
     computed_.doubles = career.doubles;
@@ -70,38 +71,33 @@ void StatsDashboard::feed(const PlayerStats& career, const std::vector<RoundReco
         const int drawdown = peak - static_cast<int>(cumulative);
         if (drawdown > worstDrawdown)
             worstDrawdown = drawdown;
-
-        // Per-hand granularity for win/loss/bust/natural, matching how PlayerStats tallies each played hand.
-        for (const auto& hand : round.playerHands)
-        {
-            const int netHand = hand.payout - hand.wager;   // single-hand net profit vs its own stake
-
-            if (hand.surrendered)
-                computed_.pushes++;
-            else if (hand.won)
-                computed_.wins++;
-            else
-                computed_.losses++;
-
-            const Hand h = handFromCards(hand.cards);
-            if (h.isBlackjack())
-                computed_.blackjacks++;
-            if (h.isBust())
-                computed_.busts++;
-
-            if (netHand > computed_.greatestHandProfit)
-                computed_.greatestHandProfit = netHand;
-            if (netHand < computed_.worstHandLoss)
-                computed_.worstHandLoss = netHand;
-        }
     }
 
+    // Career totals come from the single record-derived source of truth: computeCareerStats. This removes the duplicate
+    // win/loss/push/blackjack/handsFinished/greatest-hand recompute that used to live here and makes the dashboard match the
+    // profile's human-seat accounting exactly -- the old loop tallied every seat AND folded pushes into wins (records never
+    // flag surrender, so a pushed hand with won=true was counted as a win). busts is chart-level card detection kept out of
+    // PlayerStats; per-round bankroll/profit stay here because they're round-over-seat chart data, not career totals.
+    ShoeRecord shoe;
+    shoe.rounds = rounds;
+    const PlayerStats cs = computeCareerStats(shoe);
+    computed_.wins = cs.wins;
+    computed_.losses = cs.losses;
+    computed_.pushes = cs.pushes;
+    computed_.blackjacks = cs.blackjacks;
+    computed_.handsFinished = cs.handsFinished;
+    computed_.greatestHandProfit = cs.greatestHand;
+    computed_.worstHandLoss = cs.greatestHandLoss;
+
+    for (const auto& round : rounds)
+        for (const auto& hand : round.playerHands)
+            if (handFromCards(hand.cards).isBust())
+                computed_.busts++;
+
     const int decisive = computed_.wins + computed_.losses;
-    const int handsFinished = decisive + computed_.pushes;
-    computed_.handsFinished = handsFinished;
     computed_.winRate = decisive > 0 ? static_cast<double>(computed_.wins) / decisive : 0.0;
-    computed_.bjFrequency = handsFinished > 0 ? static_cast<double>(computed_.blackjacks) / handsFinished : 0.0;
-    computed_.bustFrequency = handsFinished > 0 ? static_cast<double>(computed_.busts) / handsFinished : 0.0;
+    computed_.bjFrequency = cs.handsFinished > 0 ? static_cast<double>(cs.blackjacks) / cs.handsFinished : 0.0;
+    computed_.bustFrequency = cs.handsFinished > 0 ? static_cast<double>(computed_.busts) / cs.handsFinished : 0.0;
     if (career.strategyTotal > 0)
         computed_.strategyAccuracy = static_cast<double>(career.strategyHits) / career.strategyTotal;
 

@@ -60,8 +60,53 @@ void PlayerProfile::save(const std::string& filename) const
         return;
     }
 
-    json j = *this;
+    // Streamline persistence around a single source of truth. When there is recorded history, the career stats written to disk are
+    // recomputed from those shoes via computeCareerStatsHistory -- so the profile can never drift from what was actually played and
+    // load == save stays round-trip stable. Only record-derivable fields are overwritten; the live-tracked, non-recordable trackers
+    // (splits/doubles/betsPlaced/betSum/betDistribution/strategy deviations) stay exactly as they were on the in-memory profile. A
+    // profile with no shoes yet has nothing to recompute and is written verbatim -- unchanged from before this refactor.
+    PlayerProfile reconciled = *this;
+    if (!longHistory.empty())
+    {
+        const PlayerStats authoritative = careerStatsFromHistory();
+        reconciled.stats.wins = authoritative.wins;
+        reconciled.stats.losses = authoritative.losses;
+        reconciled.stats.pushes = authoritative.pushes;
+        reconciled.stats.handsFinished = authoritative.handsFinished;
+        reconciled.stats.blackjacks = authoritative.blackjacks;
+        reconciled.stats.greatestHand = authoritative.greatestHand;
+        reconciled.stats.greatestHandLoss = authoritative.greatestHandLoss;
+        reconciled.stats.handProfitCount = authoritative.handProfitCount;
+        reconciled.stats.handProfitSum = authoritative.handProfitSum;
+        reconciled.stats.handProfitSumSq = authoritative.handProfitSumSq;
+        reconciled.stats.greatestWin = authoritative.greatestWin;
+        reconciled.stats.greatestLoss = authoritative.greatestLoss;
+        reconciled.stats.greatestSessionWin = authoritative.greatestSessionWin;
+        reconciled.stats.greatestSessionLoss = authoritative.greatestSessionLoss;
+        reconciled.stats.longestWinningStreak = authoritative.longestWinningStreak;
+        reconciled.stats.longestLosingStreak = authoritative.longestLosingStreak;
+        reconciled.stats.sideBetWins = authoritative.sideBetWins;
+        reconciled.stats.sideBetLosses = authoritative.sideBetLosses;
+        reconciled.stats.sideBetProfitSum = authoritative.sideBetProfitSum;
+    }
+
+    json j = reconciled;
     file << j.dump(2);
 }
 
 const std::vector<ShoeRecord>& PlayerProfile::getLongHistory() const { return longHistory; }
+
+PlayerStats PlayerProfile::careerStatsFromHistory() const
+{
+    // Stitch the completed shoes (longHistory) with the in-progress shoe's rounds (currentHistory), so a quit mid-shoe still books
+    // those hands. The synthetic current shoe needs only .rounds -- computeCareerStatsHistory reads no other ShoeRecord field.
+    std::vector<ShoeRecord> history = longHistory;
+    if (!currentHistory.empty())
+    {
+        ShoeRecord inProgress;
+        inProgress.rounds = currentHistory;
+        inProgress.completed = false;
+        history.push_back(std::move(inProgress));
+    }
+    return computeCareerStatsHistory(history);
+}

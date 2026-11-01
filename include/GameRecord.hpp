@@ -192,6 +192,92 @@ inline bool RoundRecord::overallWin() const
 {
     return netProfit() >= 0;
 }
+// Aggregates career PlayerStats across every ShoeRecord in a session -- the source of truth for profile persistence. Unlike
+// computeCareerStats (one shoe), this stitches shoes together using the exact boundary rules live play uses: greatestWin/
+// greatestLoss track each shoe's running cumulative separately but persist as a career-long max/min over those per-shoe peaks,
+// while greatestSession* accumulate across all shoes. Streaks reset their running pair at every shoe boundary (a run never
+// crosses one -- game.shoe_.currentWinStreak lives in the per-shoe ShoeAnalytics) yet the longest run stays career-long.
+inline PlayerStats computeCareerStatsHistory(const std::vector<ShoeRecord>& history)
+{
+    PlayerStats out;  // zero defaults match a profile with no hands played.
+    long long shoeCumulative = 0;     // running net profit within one shoe (greatestWin/greatestLoss); resets per shoe boundary.
+    long long sessionCumulative = 0;  // session-wide running net profit (never resets -> greatestSession* fields).
+    int winStreak = 0, loseStreak = 0;
+
+    for (const auto& shoe : history)
+    {
+        shoeCumulative = 0;   // live resets game.shoeCumulativeWinLoss at every shoe boundary.
+        for (const auto& round : shoe.rounds)
+        {
+            for (const auto& hand : round.playerHands)
+            {
+                if (hand.playerIndex != 0)
+                    continue;   // human seat only, matching HandEvaluator::settleHand's pIdx == 0 gating.
+
+                const long long net = static_cast<long long>(hand.payout) - hand.wager;
+                const bool isWin = hand.won && net > 0;
+                const bool isPush = hand.won && net == 0;   // a winning side bet leaves the MAIN result unchanged
+
+                if (isWin) ++out.wins;
+                else if (!hand.won) ++out.losses;   // Lose OR Surrender both count as a loss
+                else ++out.pushes;                  // Push
+
+                // Natural blackjacks: two cards forming 21, i.e. one Ace (value 1) plus a ten-value card (>= 10). Records hold no
+                // split flag, so this counts every natural; live excludes split naturals -- an edge case the golden test covers.
+                if (hand.cards.size() == 2 &&
+                    ((hand.cards[0].value == 1 && hand.cards[1].value >= 10) ||
+                     (hand.cards[1].value == 1 && hand.cards[0].value >= 10)))
+                    ++out.blackjacks;
+
+                // Per-hand advanced analytics: variance accumulators, worst single-hand loss, best single-hand win. Career-long.
+                out.handProfitCount++;
+                out.handProfitSum += net;
+                out.handProfitSumSq += net * net;
+                if (net < out.greatestHandLoss) out.greatestHandLoss = static_cast<int>(net);   // most-negative <= 0
+                if (net > out.greatestHand)     out.greatestHand = static_cast<int>(net);
+
+                // Longest win/lose streaks: Win extends the run, Lose/Surrender the losing run, Push breaks both. The running
+                // pair resets per shoe below; longest* is career-long, matching game.shoe_.longestWinningStreak bookkeeping.
+                if (isWin) { ++winStreak; loseStreak = 0; }
+                else if (!hand.won) { ++loseStreak; winStreak = 0; }
+                else { winStreak = 0; loseStreak = 0; }   // Push breaks both streaks
+                out.longestWinningStreak = std::max(out.longestWinningStreak, winStreak);
+                out.longestLosingStreak = std::max(out.longestLosingStreak, loseStreak);
+
+                shoeCumulative += net;
+                sessionCumulative += net;
+                if (shoeCumulative > out.greatestWin)      out.greatestWin = static_cast<int>(shoeCumulative);
+                if (shoeCumulative < out.greatestLoss)     out.greatestLoss = static_cast<int>(shoeCumulative);
+                if (sessionCumulative > out.greatestSessionWin)  out.greatestSessionWin = static_cast<int>(sessionCumulative);
+                if (sessionCumulative < out.greatestSessionLoss) out.greatestSessionLoss = static_cast<int>(sessionCumulative);
+
+                // Side bets: every placed side bet resolves to a win or a loss (no push). Net is payout - wager in both cases.
+                if (hand.sideBetWager > 0)
+                {
+                    if (hand.sideBetPayout > 0)
+                    {
+                        ++out.sideBetWins;
+                        out.sideBetProfitSum += static_cast<long long>(hand.sideBetPayout) - hand.sideBetWager;
+                    }
+                    else
+                    {
+                        ++out.sideBetLosses;
+                        out.sideBetProfitSum -= hand.sideBetWager;
+                    }
+                }
+            }
+        }
+        // A run never crosses a shoe boundary -- mirrors game.shoe_.currentWinStreak/currentLoseStreak reset at each boundary.
+        winStreak = 0;
+        loseStreak = 0;
+    }
+
+    // Every settled human hand: decisive (win+loss) plus pushes, which equals the live count-of-human-hands and feed_'s definition.
+    const int decisive = out.wins + out.losses;
+    out.handsFinished = decisive + out.pushes;
+    return out;
+}
+
 
 // Aggregates a single shoe's recorded rounds into the career PlayerStats fields fully determined by the record -- the dedup
 // target of the stats-batching refactor (CONTEXT_refactor.md #9e). Pure logic over GameRecord types, so it is headless-testable;
@@ -203,87 +289,8 @@ inline bool RoundRecord::overallWin() const
 //   - cumulative    = human seat (playerIndex==0) only; greatestWin/greatestLoss reset per shoe, session-wide otherwise
 inline PlayerStats computeCareerStats(const ShoeRecord& shoe)
 {
-    PlayerStats out;  // zero-initialised defaults match every live tracker at the start of play.
-    long long cumulative = 0;   // per-shoe running net profit (human seat); resets each shoe == the live reset.
-    int winStreak = 0, loseStreak = 0;
-
-    for (const auto& round : shoe.rounds)
-    {
-        for (const auto& hand : round.playerHands)
-        {
-            // Human seat only: HandEvaluator gates every PlayerStats increment it makes with `if (pIdx == 0)` inside settleHand,
-            // so each player's own profile reflects only their hands. Records carry the seat in HandOutcome.playerIndex.
-            if (hand.playerIndex != 0)
-                continue;
-
-            const long long net = static_cast<long long>(hand.payout) - hand.wager;   // per-hand net, == netProfitOnHand
-
-            // Result reconstruction: Win / Push / Lose(+Surrender). Surrender has won=false in the record, so !won captures it.
-            // A winning side bet does not change this -- a pushed MAIN hand stays a push because its net is zero here.
-            const bool isWin = hand.won && net > 0;
-            const bool isPush = hand.won && net == 0;
-
-            // Career win/loss/push counters, exactly as HandEvaluator tallies each played human hand.
-            if (isWin)
-                ++out.wins;
-            else if (!hand.won)
-                ++out.losses;   // Lose OR Surrender both count as a loss
-            else
-                ++out.pushes;   // Push
-
-            // Natural blackjacks: exactly two cards forming 21, i.e. one Ace (value 1) plus a ten-value card (>= 10). Records
-            // hold no split flag, so this counts every natural; live excludes split naturals -- an edge case the golden test covers.
-            if (hand.cards.size() == 2 &&
-                ((hand.cards[0].value == 1 && hand.cards[1].value >= 10) ||
-                 (hand.cards[1].value == 1 && hand.cards[0].value >= 10)))
-                ++out.blackjacks;
-
-            // Per-hand advanced analytics: variance accumulators, worst single-hand loss, best single-hand win.
-            out.handProfitCount++;
-            out.handProfitSum += net;
-            out.handProfitSumSq += net * net;
-            if (net < out.greatestHandLoss)
-                out.greatestHandLoss = static_cast<int>(net);   // most-negative <= 0
-            if (net > out.greatestHand)
-                out.greatestHand = static_cast<int>(net);
-
-            // Longest win/lose streaks: Win extends the run, Lose/Surrender the losing run, Push breaks both. Feeds the same
-            // game.shoe_.currentWinStreak/currentLoseStreak bookkeeping that the HUD's Long Win / Long Loss boxes read.
-            if (isWin) { ++winStreak; loseStreak = 0; }
-            else if (!hand.won) { ++loseStreak; winStreak = 0; }
-            else { winStreak = 0; loseStreak = 0; }   // Push breaks both streaks
-            out.longestWinningStreak = std::max(out.longestWinningStreak, winStreak);
-            out.longestLosingStreak = std::max(out.longestLosingStreak, loseStreak);
-
-            // Running cumulative win/loss (human seat): greatestWin/greatestLoss reset per shoe; the session fields track this
-            // same sequence across shoes at the wiring layer. For one shoe they coincide with the per-shoe running extremes.
-            cumulative += net;
-            if (cumulative > out.greatestWin)      out.greatestWin = static_cast<int>(cumulative);
-            if (cumulative < out.greatestLoss)     out.greatestLoss = static_cast<int>(cumulative);
-            if (cumulative > out.greatestSessionWin)  out.greatestSessionWin = static_cast<int>(cumulative);
-            if (cumulative < out.greatestSessionLoss) out.greatestSessionLoss = static_cast<int>(cumulative);
-
-            // Side bets: every placed side bet resolves to a win or a loss (no push). Net is payout - wager in both cases.
-            if (hand.sideBetWager > 0)
-            {
-                if (hand.sideBetPayout > 0)
-                {
-                    ++out.sideBetWins;
-                    out.sideBetProfitSum += static_cast<long long>(hand.sideBetPayout) - hand.sideBetWager;
-                }
-                else
-                {
-                    ++out.sideBetLosses;
-                    out.sideBetProfitSum -= hand.sideBetWager;
-                }
-            }
-        }
-    }
-
-    // Every settled human hand: decisive (win+loss) plus pushes, which equals the live count-of-human-hands and feed_'s definition.
-    const int decisive = out.wins + out.losses;
-    out.handsFinished = decisive + out.pushes;
-    return out;
+    // Delegating to computeCareerStatsHistory guarantees a one-shoe history reproduces this result exactly (single-shoe == history of one).
+    return computeCareerStatsHistory({shoe});
 }
 
 // Reconstructs the deck state at the start of a specific round

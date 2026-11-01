@@ -54,6 +54,13 @@ class PlayerProfile
 
     const std::vector<ShoeRecord>& getLongHistory() const;
 
+    // Career stats recomputed from the recorded shoe history -- the authoritative source of truth that save() writes to disk, so
+    // the persisted profile can never drift from what was actually played. The in-progress shoe's rounds (currentHistory) are
+    // folded in too, so a quit mid-shoe still books those hands. Only record-derivable fields come back here; the live-tracked,
+    // non-recordable trackers (splits/doubles/betsPlaced/betSum/betDistribution/strategy deviations) stay on the in-memory profile
+    // and are preserved verbatim by save().
+    PlayerStats careerStatsFromHistory() const;
+
   private:
     std::string name;
     int bankroll = 1000;
