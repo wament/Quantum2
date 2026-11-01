@@ -3,7 +3,6 @@
 #include "GameRenderer.hpp"
 #include "Constants.hpp"
 #include "Graphics.hpp"
-#include "CardAnimation.hpp"
 #include "Replay.hpp"
 #include "StrategyTrainer.hpp"
 #include "Tournament.hpp"
@@ -348,7 +347,7 @@ void GameRenderer::drawDealer(Game& game)
         // Feature 8: slide the up card and the (face-down) hole card in from the shoe over their staggered reveal window.
         // The two end-points match the settled DealerTurn layout (DEALER_X, then +card spacing), so entering that state is
         // a seamless flip rather than a jump -- and the gap leaves the up card fully visible instead of overlapping it.
-        CardDealTween upTween;
+        Graphics::CardDealTween upTween;
         upTween.start = sf::Vector2f(Constants::SHOE_X, Constants::SHOE_Y);
         upTween.end = sf::Vector2f(Constants::DEALER_X, Constants::DEALER_Y);
         upTween.duration = dealSlideSeconds(game);
@@ -357,7 +356,7 @@ void GameRenderer::drawDealer(Game& game)
         up.setPosition(upTween.position());
         game.window.draw(up);
 
-        CardDealTween holeTween;
+        Graphics::CardDealTween holeTween;
         holeTween.start = sf::Vector2f(Constants::SHOE_X, Constants::SHOE_Y);
         holeTween.end = sf::Vector2f(Constants::DEALER_X + Constants::CARD_WIDTH + 8.f, Constants::DEALER_Y);
         holeTween.duration = dealSlideSeconds(game);
@@ -380,7 +379,7 @@ void GameRenderer::drawDealer(Game& game)
     {
         // Feature 8: slide each revealed card in from the shoe over its staggered reveal window. Cards are spaced one
         // width plus a small gap apart, matching the PlayerTurn end-points so there is no jump between states.
-        CardDealTween tween;
+        Graphics::CardDealTween tween;
         tween.start = sf::Vector2f(Constants::SHOE_X, Constants::SHOE_Y);
         tween.end = sf::Vector2f(Constants::DEALER_X + i * (Constants::CARD_WIDTH + 8.f), Constants::DEALER_Y);
         tween.duration = dealSlideSeconds(game);
@@ -581,7 +580,7 @@ void GameRenderer::drawPlayers(Game& game, const std::vector<PlayerHandLayout>& 
 
                 // Feature 8: ease this card in from the shoe over its staggered reveal window. A fully-arrived card sits
                 // exactly on (cardX, cardY), so settled frames are pixel-for-pixel identical to the pre-animation layout.
-                CardDealTween tween;
+                Graphics::CardDealTween tween;
                 tween.start = sf::Vector2f(Constants::SHOE_X, Constants::SHOE_Y);
                 tween.end = sf::Vector2f(cardX, cardY);
                 tween.duration = dealSlideSeconds(game);
@@ -878,7 +877,7 @@ float GameRenderer::dealerRevealAtFor(Game &game, int i, float now)
 
 // Feature 8 (speed-linked dealing animation): effective durations for the selected game speed. Each base Feature-8
 // constant is scaled by GameTiming::dealDurationScale(game.gameSpeed), so Slow stretches, Fast/AutoPlay compress, and
-// Hyper/Gamer collapse to 0 (CardDealTween::progress() then returns exactly 1 -> no visible animation). Presentation-only.
+// Hyper/Gamer collapse to 0 (Graphics::CardDealTween::progress() then returns exactly 1 -> no visible animation). Presentation-only.
 float GameRenderer::dealSlideSeconds(Game &game) const { return Constants::DEAL_SLIDE_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }
 float GameRenderer::dealStaggerSeconds(Game &game) const { return Constants::DEAL_STAGGER_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }
 float GameRenderer::holeFlipSeconds(Game &game) const { return Constants::DEALER_HOLE_FLIP_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }

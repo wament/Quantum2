@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <deque>
+#include <utility>
 
 #include "GameRecord.hpp"
 #include "Hand.hpp"
@@ -170,6 +171,13 @@ public:
     void update(float deltaTime);
     void draw();
 
+    // Card-deal animation (Feature 8-style, mirrored from GameRenderer): expose the shared reveal clock and seed + return the
+    // reveal-start time for a card slot. ReplayView calls these while drawing so arriving cards ease into their resting slot;
+    // the first sight of a slot seeds it at `now + ordinal*stagger`, so its progress grows from 0 instead of popping in.
+    float replayClock() const { return replayDealClock_; }
+    float dealerRevealAt(int i);
+    float playerRevealAt(int handIndex, int cardIndex);
+
     // Allow the extracted view layer to read this class's private step/state data for rendering.
     friend class ReplayView;
 
@@ -245,4 +253,12 @@ private:
     // Set when loadShoe is called from Game (Game knows the real bankroll)
     int startingBankroll = 1000;
     int currentBankroll = 1000;
+
+    // --- Card-deal animation in replay playback (Feature 8-style, mirrored from GameRenderer). A shared reveal clock plus
+    // per-slot reveal times so arriving cards slide/flip into their resting slot over time instead of popping; settled frames
+    // are pixel-for-pixel identical to the pre-animation layout. Presentation-only: the step/tick logic above is untouched.
+    float replayDealClock_ = 0.f;
+    std::map<int, float> dealerRevealAt_;      // dealer card index -> reveal-start time (seconds)
+    std::map<std::pair<int, int>, float> playerRevealAt_; // (handIndex, cardIndex) -> reveal-start time (seconds)
+    int prevTotalCards_ = -1;                  // previous frame's shown-card count, for step-boundary reset detection
 };

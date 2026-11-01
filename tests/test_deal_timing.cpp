@@ -3,7 +3,7 @@
 #include <catch2/catch_all.hpp>
 #include "test_support.hpp"
 #include "Card.hpp"
-#include "CardAnimation.hpp"
+#include "Graphics.hpp"
 #include "Game.hpp"
 #include "GameRenderer.hpp"
 #include "Hand.hpp"
@@ -87,7 +87,7 @@ TEST_CASE("dealDurationScale keys card-deal tempo to game speed", "[GameSpeed][A
     CHECK(GameTiming::dealDurationScale(GameSpeed::Normal) > GameTiming::dealDurationScale(GameSpeed::Fast));
     CHECK(GameTiming::dealDurationScale(GameSpeed::Fast) > GameTiming::dealDurationScale(GameSpeed::AutoPlay));
 
-    // Hyper and Gamer deliver no animation: the factor collapses to 0, so every CardDealTween settles instantly on its
+    // Hyper and Gamer deliver no animation: the factor collapses to 0, so every Graphics::CardDealTween settles instantly on its
     // resting slot (progress()==1 when duration==0), i.e. cards snap into place with no visible sweep.
     CHECK(GameTiming::dealDurationScale(GameSpeed::Hyper) == Approx(0.0f));
     CHECK(GameTiming::dealDurationScale(GameSpeed::Gamer) == Approx(0.0f));
@@ -158,46 +158,46 @@ TEST_CASE("Hyper and Gamer suppress card/bet sound effects; other speeds keep th
 }
 
 
-TEST_CASE("easeOutCubic has correct endpoints and clamps out-of-range input", "[card-animation]")
+TEST_CASE("Graphics::easeOutCubic has correct endpoints and clamps out-of-range input", "[card-animation]")
 {
-    REQUIRE(easeOutCubic(0.0f) == Approx(0.0f)); // starts at rest
-    REQUIRE(easeOutCubic(1.0f) == Approx(1.0f)); // ends exactly settled
-    REQUIRE(easeOutCubic(-5.0f) == Approx(0.0f)); // clamps below 0
-    REQUIRE(easeOutCubic(99.0f) == Approx(1.0f)); // clamps above 1
+    REQUIRE(Graphics::easeOutCubic(0.0f) == Approx(0.0f)); // starts at rest
+    REQUIRE(Graphics::easeOutCubic(1.0f) == Approx(1.0f)); // ends exactly settled
+    REQUIRE(Graphics::easeOutCubic(-5.0f) == Approx(0.0f)); // clamps below 0
+    REQUIRE(Graphics::easeOutCubic(99.0f) == Approx(1.0f)); // clamps above 1
 }
 
-TEST_CASE("easeOutCubic is monotonic increasing and hits its known mid value", "[card-animation]")
+TEST_CASE("Graphics::easeOutCubic is monotonic increasing and hits its known mid value", "[card-animation]")
 {
     float prev = -1.0f;
     for (int s = 0; s <= 20; ++s)
     {
         const float t = static_cast<float>(s) / 20.0f;
-        const float v = easeOutCubic(t);
+        const float v = Graphics::easeOutCubic(t);
         REQUIRE(v >= prev - 1e-6f); // never goes backwards: smooth, decelerating sweep
         prev = v;
     }
     // Standard cubic-ease-out at the midpoint: 1 - (0.5)^3 == 0.875.
-    REQUIRE(easeOutCubic(0.5f) == Approx(0.875f));
+    REQUIRE(Graphics::easeOutCubic(0.5f) == Approx(0.875f));
 }
 
-TEST_CASE("easeInCubic starts at rest, ends flat and is monotonic", "[card-animation]")
+TEST_CASE("Graphics::easeInCubic starts at rest, ends flat and is monotonic", "[card-animation]")
 {
-    REQUIRE(easeInCubic(0.0f) == Approx(0.0f));
-    REQUIRE(easeInCubic(1.0f) == Approx(1.0f));
+    REQUIRE(Graphics::easeInCubic(0.0f) == Approx(0.0f));
+    REQUIRE(Graphics::easeInCubic(1.0f) == Approx(1.0f));
     float prev = -1.0f;
     for (int s = 0; s <= 20; ++s)
     {
-        const float v = easeInCubic(static_cast<float>(s) / 20.0f);
+        const float v = Graphics::easeInCubic(static_cast<float>(s) / 20.0f);
         REQUIRE(v >= prev - 1e-6f);
         prev = v;
     }
     // Cubic ease-in at the midpoint: (0.5)^3 == 0.125.
-    REQUIRE(easeInCubic(0.5f) == Approx(0.125f));
+    REQUIRE(Graphics::easeInCubic(0.5f) == Approx(0.125f));
 }
 
-TEST_CASE("CardDealTween progress ramps from 0 to exactly 1 and clamps", "[card-animation]")
+TEST_CASE("Graphics::CardDealTween progress ramps from 0 to exactly 1 and clamps", "[card-animation]")
 {
-    CardDealTween tween;
+    Graphics::CardDealTween tween;
     tween.duration = 1.0f;
 
     REQUIRE(tween.progress() == Approx(0.0f));   // nothing elapsed -> fully at the start
@@ -209,15 +209,15 @@ TEST_CASE("CardDealTween progress ramps from 0 to exactly 1 and clamps", "[card-
     REQUIRE(tween.progress() == Approx(1.0f));
 
     // A zero-duration tween is already settled regardless of elapsed.
-    CardDealTween instant;
+    Graphics::CardDealTween instant;
     instant.duration = 0.f;
     instant.elapsed = 100.f;
     REQUIRE(instant.progress() == Approx(1.0f));
 }
 
-TEST_CASE("CardDealTween position starts on `start` and settles exactly on `end`", "[card-animation]")
+TEST_CASE("Graphics::CardDealTween position starts on `start` and settles exactly on `end`", "[card-animation]")
 {
-    CardDealTween tween;
+    Graphics::CardDealTween tween;
     tween.start = sf::Vector2f(0.f, 0.f);
     tween.end = sf::Vector2f(100.f, 50.f);
     tween.duration = 1.0f;
@@ -236,9 +236,9 @@ TEST_CASE("CardDealTween position starts on `start` and settles exactly on `end`
     REQUIRE(tween.position().y == Approx(43.75f));
 }
 
-TEST_CASE("CardDealTween flip envelope is inert until flipping and then eases to 1", "[card-animation]")
+TEST_CASE("Graphics::CardDealTween flip envelope is inert until flipping and then eases to 1", "[card-animation]")
 {
-    CardDealTween tween;
+    Graphics::CardDealTween tween;
     tween.flipping = false;
     REQUIRE(tween.flipProgress() == Approx(0.0f)); // face-down / edge-on while not flipping
 

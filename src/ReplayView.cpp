@@ -11,6 +11,7 @@
 #include <sstream>
 #include <iomanip>
 #include <string>
+#include <algorithm>  // std::max for per-card animation elapsed time in the deal-animation draw loops below
 
 ReplayView::ReplayView(sf::RenderWindow &window, sf::Texture &cardTexture, sf::Font &font, Replay &replay)
     : window(window), cardTexture(cardTexture), font(font), replay(replay)
@@ -153,16 +154,26 @@ void ReplayView::drawTable(const ReplayInternals::ReplayState &state)
     {
         float x = centerX + static_cast<float>(i) * 60.f;
 
+        // Feature 8-style card-deal animation in replay playback: ease this card from the shoe to its slot over a short
+        // window so arriving cards slide/flip into place instead of popping. Settled frames (elapsed >= duration) land exactly
+        // on (x, dealerY), matching the pre-animation layout pixel-for-pixel.
+        const float revealAt = replay.dealerRevealAt(static_cast<int>(i));
+        Graphics::CardDealTween tween;
+        tween.start = sf::Vector2f(Constants::SHOE_X, Constants::SHOE_Y);
+        tween.end = sf::Vector2f(x, dealerY);
+        tween.duration = Constants::DEAL_SLIDE_SECONDS;
+        tween.elapsed = std::max(0.f, replay.replayClock() - revealAt);
+
         if (i == 0 && !state.dealerHoleCardVisible)
         {
             sf::Sprite back = Graphics::makeCardBackSprite(cardTexture);
-            back.setPosition({x, dealerY});
+            back.setPosition(tween.position());
             window.draw(back);
         }
         else
         {
             sf::Sprite card = Graphics::makeCardSprite(state.dealerHand.getCard(i), cardTexture);
-            card.setPosition({x, dealerY});
+            card.setPosition(tween.position());
             window.draw(card);
         }
     }
@@ -187,8 +198,18 @@ void ReplayView::drawTable(const ReplayInternals::ReplayState &state)
 
         for (size_t c = 0; c < hand.cards.size(); ++c)
         {
+            // Feature 8-style card-deal animation in replay playback: ease each player card from the shoe to its slot so
+            // arriving cards slide into place instead of popping; settled frames land exactly on-slot.
+            const sf::Vector2f slot{handX + static_cast<float>(c) * 16.f, playerY - c * 16.f};
+            const float revealAt = replay.playerRevealAt(static_cast<int>(h), static_cast<int>(c));
+            Graphics::CardDealTween tween;
+            tween.start = sf::Vector2f(Constants::SHOE_X, Constants::SHOE_Y);
+            tween.end = slot;
+            tween.duration = Constants::DEAL_SLIDE_SECONDS;
+            tween.elapsed = std::max(0.f, replay.replayClock() - revealAt);
+
             sf::Sprite card = Graphics::makeCardSprite(hand.cards.getCard(c), cardTexture);
-            card.setPosition({handX + static_cast<float>(c) * 16.f, playerY - c * 16.f});
+            card.setPosition(tween.position());
             window.draw(card);
         }
 

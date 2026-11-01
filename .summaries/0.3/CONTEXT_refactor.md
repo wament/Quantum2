@@ -268,6 +268,7 @@ every per-panel call site maps 1:1. All 257 tests green.
 `Replay::draw()` clears the window and delegates ALL rendering to a local `ReplayView`, so the seven helpers it declared (`drawHistoryList`, `drawReplayView`, `drawTable`, `drawControls`, `drawAnalysisOverlay`, `drawRoundSlider`, `drawStepSummary`) are defined only in `ReplayView.cpp` and called nowhere on a Replay object — leftover declarations from before the view layer was extracted. Removed them from `Replay.hpp`; the history-list-scrolling helpers (visibleRowCount/maxScrollOffset/adjustHistorySelectionVisibility) are real engine code and kept. Build EXIT=0; ctest 257/257 green.
 
 ### #10 HandEvaluator::evaluateHands() — repeated case+logger block (third pass, exhaustive scan)
+### #10 HandEvaluator::evaluateHands() — repeated case+logger block (third pass, exhaustive scan)
 `HandEvaluator.cpp:355` evaluateHands() `switch(result)` lines 68-92 has three near-identical cases (Surrender/Lose/Win), each doing a stats counter increment, an `if(pIdx == 0){roundLost|roundWon = true;}` flag assignment, and a nearly identical logger line ("surrendered"/"lost"/"won hand …"). Push is the odd one out.
 - **Before:** ~3 duplicated case+logger blocks in the settlement switch.
 - **After:** build ONE outcome log string from `result` after the switch (a small result->verb mapping), keep the tiny per-result counter/flag deltas, then emit a single `if(pIdx==0){flag}` + one Logger call. Collapse only the repeated logging structure — never change which counter/flag each result sets.

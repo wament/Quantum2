@@ -108,7 +108,6 @@ target_sources(Blackjack2 PRIVATE
     src/Achievement.cpp
     src/GameRules.cpp
     src/StatsDashboard.cpp
-    src/CardAnimation.cpp
 )
 
 # Copy assets to build output (for local testing)
@@ -160,7 +159,6 @@ add_executable(Blackjack2Tests
     src/Achievement.cpp
     src/GameRules.cpp
     src/StatsDashboard.cpp
-    src/CardAnimation.cpp
     tests/test_card.cpp
     tests/test_deck.cpp
     tests/test_hand.cpp

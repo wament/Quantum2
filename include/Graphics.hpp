@@ -22,4 +22,34 @@ namespace Graphics
         const Card& card,
         float x,
         float y);
+
+    // --- Card-deal animation (folded in from the former standalone CardAnimation module). Presentation-only tween math:
+    // an elapsed time maps to an eased fraction so arriving cards slide/flip into their resting slot instead of popping. No
+    // game state is held here -- every draw site owns its own reveal clock, exactly mirroring GameRenderer's Feature-8 deal animation.
+
+    // Ease-out cubic (Feature 8): fast start decelerating to rest, giving arriving cards weight so they "land". Input t is
+    // any float; it is clamped to [0,1] before the curve is applied. Pure math, headless-testable over the Graphics-only binary.
+    float easeOutCubic(float t);
+
+    // Ease-in cubic: accelerates from rest, used for the dealer hole-card flip rotating edge-on -> flat. Same clamp rule.
+    float easeInCubic(float t);
+
+    // A single card's arrival animation (Feature 8): eases position along a straight line from `start` (the shoe) to `end`
+    // (its resting slot) over `duration` seconds with an ease-out curve, and -- when flipping is requested -- drives a separate
+    // flip angle via an ease-in envelope. Independent slide + flip timelines so the slide never waits on the turn. Settled frames
+    // (elapsed >= duration) return position()==end exactly, so settled cards are pixel-for-pixel identical to the pre-animation layout.
+    struct CardDealTween {
+        sf::Vector2f start;                 // screen position where the card begins (the shoe)
+        sf::Vector2f end;                   // resting screen position (its slot); when complete, position()==end exactly
+        float duration = 0.32f;             // seconds over which the card slides from start to end
+        float elapsed = 0.f;                // seconds spent animating so far (driven per frame by the drawing site)
+
+        bool flipping = false;              // when true, flipProgress() eases a turn-from-edge -> flat rotation for the hole card
+        float flipDuration = 0.4f;          // seconds over which the flip completes once flipping is enabled
+        float flipElapsed = 0.f;            // seconds spent on the flip so far
+
+        [[nodiscard]] float progress() const;
+        [[nodiscard]] sf::Vector2f position() const;
+        [[nodiscard]] float flipProgress() const;
+    };
 }

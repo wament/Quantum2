@@ -1,4 +1,37 @@
 #include "Replay.hpp"
+
+#include <algorithm>  // std::max for the reveal-clock reset detection in update() below
+#include "Constants.hpp"  // DEAL_STAGGER_SECONDS: per-card reveal staggering for playback card-deal animation
+
+// Card-deal animation (Feature 8-style, mirrored from GameRenderer): seed + return the reveal-start time for a card slot so
+// arriving cards ease into their resting slot over playback instead of popping. On first sight a slot's reveal time is `now
+// + ordinal*stagger` (earlier deal-ordinal -> earlier start), then frozen so its progress grows smoothly; settled frames reach
+// the end exactly, matching the pre-animation layout. Presentation-only: seeding happens lazily during draw via ReplayView.
+float Replay::dealerRevealAt(int i)
+{
+    auto it = dealerRevealAt_.find(i);
+    if (it != dealerRevealAt_.end())
+        return it->second;
+    const float revealAt = replayDealClock_ + static_cast<float>(i) * Constants::DEAL_STAGGER_SECONDS;
+    dealerRevealAt_[i] = revealAt;
+    return revealAt;
+}
+
+float Replay::playerRevealAt(int handIndex, int cardIndex)
+{
+    const auto key = std::make_pair(handIndex, cardIndex);
+    auto it = playerRevealAt_.find(key);
+    if (it != playerRevealAt_.end())
+        return it->second;
+    // Stable deal-order ordinal: all earlier hands' cards come first, then this card's index, so earlier hands sweep in first.
+    int ordinal = 0;
+    for (int k = 0; k < handIndex; ++k)
+        ordinal += static_cast<int>(currentState.playerHands[k].cards.size());
+    ordinal += cardIndex;
+    const float revealAt = replayDealClock_ + static_cast<float>(ordinal) * Constants::DEAL_STAGGER_SECONDS;
+    playerRevealAt_[key] = revealAt;
+    return revealAt;
+}
 #include "Constants.hpp"
 #include "BasicStrategy.hpp"
 #include "Graphics.hpp"
@@ -852,6 +885,21 @@ void Replay::update(float deltaTime)
     sliderBounds.position.y = static_cast<float>(size.y) - 150.0f;
     sliderBounds.size.x = static_cast<float>(size.x - 120);
     sliderBounds.size.y = 16.0f;
+
+    // Feature 8-style card-deal animation for replay playback: advance a shared reveal clock each frame so arriving cards
+    // slide/flip into their resting slot over time instead of popping. Mirror GameRenderer's model exactly -- one clock, per-slot
+    // reveal times seeded on first sight (see dealerRevealAt()/playerRevealAt()), reset only when the shown-card count drops
+    // (stepping back) so re-appearing cards sweep in rather than pop. Presentation-only: the step/tick logic above is untouched.
+    int total = static_cast<int>(currentState.dealerHand.size());
+    for (const auto& ph : currentState.playerHands)
+        total += static_cast<int>(ph.cards.size());
+    if (prevTotalCards_ >= 0 && total < prevTotalCards_)
+    {
+        dealerRevealAt_.clear();
+        playerRevealAt_.clear();
+    }
+    prevTotalCards_ = std::max(prevTotalCards_, total);
+    replayDealClock_ += deltaTime;
 }
 
 void Replay::draw()
