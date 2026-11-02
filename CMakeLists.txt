@@ -192,6 +192,11 @@ target_include_directories(Blackjack2Tests PRIVATE include)
 # test target needs it, and each test_*.cpp already compiles as its own translation unit.
 target_include_directories(Blackjack2Tests PRIVATE tests)
 
+# test_achievements.cpp uses C++20 designated initializers (e.g. recordHand({ .isBlackjack = true })), which MSVC rejects
+# under the project-wide C++17 standard with "C7555: use of designated initializers requires at least '/std:c++20'". Those
+# constructs are test-only, so upgrade just this target to C++20 and leave the production app (Blackjack2) on C++17.
+set_target_properties(Blackjack2Tests PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+
 # For tests, always use dynamic SFML (simpler with Catch2)
 if(GITHUB_BUILD OR CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg")
     find_package(SFML 3.0 REQUIRED COMPONENTS Graphics)
