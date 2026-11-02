@@ -1,4 +1,5 @@
 #include "AchievementFeeder.hpp"
+#include "GameRecord.hpp"  // handIsNaturalBJ: single record-derived source of truth for every blackjack tally
 #include "Game.hpp"  // complete type: RoundRecord, HandOutcome, Hand — needed to qualify game.* members used below.
 
 AchievementFeeder::AchievementFeeder(Game& game) : game(game) {}
@@ -18,7 +19,7 @@ void AchievementFeeder::recordHandAchievements(const RoundRecord& round)
             continue;
         ++seat0Outcomes;
         const Hand hand(h.cards);
-        e.isBlackjack = e.isBlackjack || hand.isBlackjack();
+        e.isBlackjack = e.isBlackjack || handIsNaturalBJ(h.cards);   // same record-derived predicate computeCareerStats uses
         e.busted = e.busted || hand.getValue() > 21;
         e.wonAny = e.wonAny || h.won;
         bet += h.wager;

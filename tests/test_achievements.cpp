@@ -4,6 +4,7 @@
 #include "test_support.hpp"
 #include "Achievement.hpp"
 #include "Card.hpp"
+#include "GameRecord.hpp"  // computeCareerStatsHistory: single record-derived source of truth for career blackjacks
 #include "Constants.hpp"
 #include "Game.hpp"
 #include "Hand.hpp"
@@ -470,4 +471,57 @@ TEST_CASE("#8 delegation: a shoe boundary surfaces the just-unlocked popup via A
     CHECK(game.achievementsForTest().isUnlocked(Achievement::Id::DeviationFree));
     // surfaceNewlyUnlocked preserves the first-in-definition-order priority exactly as it did from Game.cpp.
     CHECK(game.hudStateForTest().pendingAchievementName == "Deviation Free");
+}
+
+// Reconciliation (Phase 4 follow-up): the achievement engine's incrementally-maintained blackjacks and the record-derived
+// PlayerStats::blackjacks must agree -- both count naturals through the single predicate handIsNaturalBJ (CONTEXT_refactor.md
+// §5 #157/#158). This drives real rounds through the LIVE feeder path and cross-checks against computeCareerStatsHistory over
+// the same shoe, locking "incrementally-maintained == record-recomputed" for blackjacks exactly as the persistence/dashboard
+// tests lock it. It also locks human-seat gating parity: an NPC natural is ignored by both paths.
+TEST_CASE("Achievement blackjacks read the same record-derived source as PlayerStats", "[Achievement][stats-batching]")
+{
+    Game game(true);   // headless: no window/assets/audio device
+
+    auto seat0 = [](std::vector<Card> cards, int wager, int payout, bool won)
+    {
+        HandOutcome h;
+        h.cards = std::move(cards);
+        h.wager = wager;
+        h.payout = payout;
+        h.won = won;
+        h.playerIndex = 0;   // human seat only
+        return h;
+    };
+
+    RoundRecord a; a.playerHands.push_back(seat0({test_support::make_card(1, Suit::Hearts), test_support::make_card(10, Suit::Spades)}, 10, 30, true));   // natural BJ (+20)
+    RoundRecord b; { HandOutcome npc; npc.cards = {test_support::make_card(1, Suit::Clubs), test_support::make_card(10, Suit::Hearts)}; npc.playerIndex = 1; npc.won = true; b.playerHands.push_back(npc); }   // NPC natural -> ignored by both paths (human seat only)
+    RoundRecord c; c.playerHands.push_back(seat0({test_support::make_card(7, Suit::Hearts), test_support::make_card(8, Suit::Diamonds), test_support::make_card(9, Suit::Clubs)}, 10, 0, false));   // human bust -> not BJ
+    RoundRecord d; d.playerHands.push_back(seat0({test_support::make_card(10, Suit::Hearts), test_support::make_card(1, Suit::Diamonds)}, 10, 30, true));   // natural BJ (+20)
+
+    // Feed incrementally through the LIVE path (AchievementFeeder -> AchievementManager), asserting each boundary so we also
+    // lock human-seat gating parity: an NPC natural is ignored here exactly as it is by computeCareerStats.
+    game.recordHandAchievements(a);   // first human natural
+    CHECK(game.achievementsForTest().careerBlackjacks() == 1);
+    CHECK(game.achievementsForTest().isUnlocked(Achievement::Id::Natural21));
+
+    game.recordHandAchievements(b);   // NPC natural -> ignored by both paths (human seat only)
+    CHECK(game.achievementsForTest().careerBlackjacks() == 1);
+
+    game.recordHandAchievements(c);   // human bust -> not a natural
+    CHECK(game.achievementsForTest().careerBlackjacks() == 1);
+
+    game.recordHandAchievements(d);   // second human natural
+    CHECK(game.achievementsForTest().careerBlackjacks() == 2);
+
+    // The record-derived source of truth over the same shoe agrees: two naturals, NPC natural excluded by human-seat gating.
+    ShoeRecord shoe;
+    shoe.rounds.push_back(a);
+    shoe.rounds.push_back(b);
+    shoe.rounds.push_back(c);
+    shoe.rounds.push_back(d);
+    const PlayerStats cs = computeCareerStats(shoe);
+    CHECK(cs.blackjacks == 2);
+
+    // The invariant Phase-4 locks for persistence/dashboard: incrementally-maintained == record-recomputed.
+    CHECK(game.achievementsForTest().careerBlackjacks() == cs.blackjacks);
 }

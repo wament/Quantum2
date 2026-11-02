@@ -192,6 +192,18 @@ inline bool RoundRecord::overallWin() const
 {
     return netProfit() >= 0;
 }
+// A natural 21: exactly two cards totalling 21 = one Ace (value 1) plus a ten-value card (>= 10). This is the single,
+// record-derived source of truth for every blackjack tally in the game -- computeCareerStatsHistory uses it for
+// PlayerStats::blackjacks and AchievementFeeder derives event.isBlackjack from it, so the achievement careerBlackjacks()
+// counter can never drift from the persisted/dashboard career record. Records carry no split flag, so a split-ace-turned-21
+// is counted here just as live play counts it; natural detection now lives in one place instead of two (CONTEXT_refactor.md §5 #157/#158).
+inline bool handIsNaturalBJ(const std::vector<Card>& cards)
+{
+    return cards.size() == 2 &&
+        ((cards[0].value == 1 && cards[1].value >= 10) ||
+         (cards[1].value == 1 && cards[0].value >= 10));
+}
+
 // Aggregates career PlayerStats across every ShoeRecord in a session -- the source of truth for profile persistence. Unlike
 // computeCareerStats (one shoe), this stitches shoes together using the exact boundary rules live play uses: greatestWin/
 // greatestLoss track each shoe's running cumulative separately but persist as a career-long max/min over those per-shoe peaks,
@@ -222,11 +234,8 @@ inline PlayerStats computeCareerStatsHistory(const std::vector<ShoeRecord>& hist
                 else if (!hand.won) ++out.losses;   // Lose OR Surrender both count as a loss
                 else ++out.pushes;                  // Push
 
-                // Natural blackjacks: two cards forming 21, i.e. one Ace (value 1) plus a ten-value card (>= 10). Records hold no
-                // split flag, so this counts every natural; live excludes split naturals -- an edge case the golden test covers.
-                if (hand.cards.size() == 2 &&
-                    ((hand.cards[0].value == 1 && hand.cards[1].value >= 10) ||
-                     (hand.cards[1].value == 1 && hand.cards[0].value >= 10)))
+                // Natural blackjacks read from the single record-derived predicate above, never a parallel definition.
+                if (handIsNaturalBJ(hand.cards))
                     ++out.blackjacks;
 
                 // Per-hand advanced analytics: variance accumulators, worst single-hand loss, best single-hand win. Career-long.
