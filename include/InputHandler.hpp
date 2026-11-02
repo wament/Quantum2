@@ -3,8 +3,20 @@
 #include <SFML/Graphics.hpp>
 
 class Game;
-enum class MenuOption;
-enum class PauseOption;
+namespace GameCore
+{
+    // Forward-declared here (not included) so InputHandler can reference these in its method signatures without pulling
+    // in Game.hpp. They must live in the same namespace as their definitions in Game.hpp, or they would be different types.
+    enum class MenuOption;
+    enum class PauseOption;
+} // namespace GameCore
+
+// Bring the forward-declared enums into unqualified scope here (mirrors Game.hpp) so method signatures and bodies can
+// write bare MenuOption/PauseOption. These using-declarations are visible to this header and to InputHandler.cpp, which
+// includes it before it pulls in Game.hpp's own definitions/using-declarations; redundant using-decls of the same entity
+// are allowed, so there is no conflict with Game.hpp.
+using GameCore::MenuOption;
+using GameCore::PauseOption;
 
 class InputHandler
 {

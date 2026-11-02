@@ -1,6 +1,5 @@
 #include "Game.hpp"
 #include "BasicStrategy.hpp"
-#include "RoundEngine.hpp"
 #include "SideBet.hpp"
 
 #include <sstream>
@@ -10,6 +9,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <chrono>
 
 #include "FontManager.hpp"
 #include "Logger.hpp"
@@ -102,11 +102,7 @@ Game::Game()
               {0.f, 0.f},
               {static_cast<float>(Constants::WINDOW_WIDTH),
                static_cast<float>(Constants::WINDOW_HEIGHT)})),
-      inputHandler(*this),
-      evaluator(*this),
-      roundDealer_(*this),
-      sessionLifecycle_(*this),
-      achievementFeeder_(*this)
+      inputHandler(*this)
 {
     window.setView(gameView);
     players.push_back(Player("William"));
@@ -208,32 +204,218 @@ int Game::statsPerRoundCountForTest() const
 
 void Game::startTrainerSession(int deckCount, int secondsPerSession)
 {
-    sessionLifecycle_.startTrainerSession(deckCount, secondsPerSession);
+    // Built in the full mode only; headless tests drive the trainer directly. nullptr-guarded so a menu call before any
+    // session can't crash. State (the Trainer's own AppMode machine) stays in Game's `trainer` member.
+    if (!trainer)
+        trainer = std::make_unique<StrategyTrainer>();
+    trainer->startSession(deckCount, secondsPerSession);
 }
 
 void Game::startTournamentSession(const Tournament::TournamentConfig& config)
 {
-    sessionLifecycle_.startTournamentSession(config);
+    // Built in the full mode only; nullptr-guarded so a menu call before any tournament can't crash. State stays in Game's
+    // `tournament` member, so timing/behavior is unchanged by folding this out of SessionLifecycle.
+    if (!tournament)
+        tournament = std::make_unique<Tournament>();
+    tournament->start(config);
 }
 
 void Game::startStatsSession()
 {
-    sessionLifecycle_.startStatsSession();
+    if (!statsDashboard)
+        statsDashboard = std::make_unique<StatsDashboard>();
+
+    // Flatten completed-shoe history from the profile plus any rounds played in the current (in-progress) shoe, into one
+    // round-history list — exactly what the dashboard feeds on. Reading through getProfile().getLongHistory() keeps this
+    // additive to existing persistence; nothing is rewritten here. getProfile() returns a copy by value, so we own that
+    // copy for the whole function: binding const& longHistory to it (rather than to getProfile()'s temporary) keeps the
+    // history reference valid and avoids a stack-use-after-scope once startStatsSession runs against a populated history.
+    PlayerProfile profile = players[0].getProfile();
+
+    std::vector<RoundRecord> rounds;
+    const auto& longHistory = profile.getLongHistory();
+    for (const auto& shoe : longHistory)
+        for (const auto& round : shoe.rounds)
+            rounds.push_back(round);
+    // A round settles into BOTH profile.currentHistory (addRoundRecord) and currentShoeRecord.rounds. On a later
+    // QuitToMenu/Restart, addShoeRecord() moves currentHistory -> longHistory but leaves the live mirror in
+    // currentShoeRecord.rounds in place, so reopening stats after quitting-to-menu would otherwise feed that round twice
+    // (once from longHistory, once from the stale current record). Skip any current-record round whose content already
+    // appears in history — dealerCards + playerHands fully fingerprint a round's consumed outcome — so every round feeds
+    // exactly once regardless of how many times it was stored. RoundRecord has no operator==, so compare members directly.
+    auto cardsMatch = [](const Card& a, const Card& b) { return a.value == b.value && a.suit == b.suit; };
+    auto roundOverlap = [&](const RoundRecord& candidate) -> bool
+    {
+        for (const auto& existing : rounds)
+        {
+            if (existing.dealerCards.size() != candidate.dealerCards.size())
+                continue;
+            bool dealerMatch = true;
+            for (int i = 0; i < static_cast<int>(existing.dealerCards.size()); ++i)
+            {
+                if (!cardsMatch(existing.dealerCards[i], candidate.dealerCards[i]))
+                {
+                    dealerMatch = false;
+                    break;
+                }
+            }
+            if (!dealerMatch)
+                continue;
+
+            if (existing.playerHands.size() != candidate.playerHands.size())
+                continue;
+            bool handsMatch = true;
+            for (int i = 0; i < static_cast<int>(existing.playerHands.size()); ++i)
+            {
+                const HandOutcome& e = existing.playerHands[i];
+                const HandOutcome& c = candidate.playerHands[i];
+                if (e.wager != c.wager || e.payout != c.payout || e.won != c.won ||
+                    e.surrendered != c.surrendered || e.insuranceBet != c.insuranceBet ||
+                    e.insuranceTaken != c.insuranceTaken || e.playerIndex != c.playerIndex ||
+                    e.playerName != c.playerName || e.sideBetKind != c.sideBetKind ||
+                    e.sideBetWager != c.sideBetWager || e.sideBetPayout != c.sideBetPayout)
+                {
+                    handsMatch = false;
+                    break;
+                }
+                if (e.cards.size() != c.cards.size())
+                {
+                    handsMatch = false;
+                    break;
+                }
+                for (int k = 0; k < static_cast<int>(e.cards.size()); ++k)
+                {
+                    if (!cardsMatch(e.cards[k], c.cards[k]))
+                    {
+                        handsMatch = false;
+                        break;
+                    }
+                }
+                if (!handsMatch)
+                    break;
+            }
+            if (handsMatch)
+                return true;
+        }
+        return false;
+    };
+    for (const auto& round : currentShoeRecord.rounds)
+        if (!roundOverlap(round))
+            rounds.push_back(round);
+
+    statsDashboard->feed(players[0].getStats(), rounds);
 }
 
 void Game::startNewGame()
 {
-    sessionLifecycle_.startNewGame();
+    Logger::info("Starting new game");
+
+    // Remember what was just chosen before the profile is re-read below, so the next launch opens on it.
+    rememberTableSettings();
+
+    players.clear();
+
+    // Human player (William) - always first
+    players.push_back(Player("William"));
+
+    for (int i = 0; i < GameConfig::NPC_COUNT && i + 1 < playerCount; i++)
+    {
+        const auto& cfg = GameConfig::NPC_CONFIGS[i];
+        // Fresh in-memory NPC: no disk read, no JSON parse, no persistence. The human player above loads the real profile.
+        players.push_back(Player(cfg.name, cfg.bankroll));
+        players[i + 1].setBettingStrategy(static_cast<BettingStrategy>(cfg.strategy), cfg.baseBet);
+        Logger::info() << players[i + 1].getName() << " starts with $" << cfg.bankroll
+                       << " using " << cfg.strategy << " strategy";
+    }
+
+    auto profile = players[0].getProfile();
+
+    deck.create(gameRules_.numDecks);
+    deck.shuffle();
+    currentShoeRecord.initialDeck = deck.getCards();
+    currentShoeRecord.rounds.clear();
+
+    // A brand-new shoe: every per-shoe readout starts from zero, so the stat boxes and the bankroll/edge charts
+    // reflect only this shoe. (The bankroll itself is deliberately kept — it is the one value that persists.)
+    resetShoeAnalytics();
+    sessionCumulativeWinLoss = 0;
+    handActions.clear();
+    handActions.resize(1);
+    handDeviations_.clear();
+    handDeviations_.resize(1);
+    advisorFeedback = AdvisorFeedback::None;
+    advisorAction = 0;
+    dealer.clear();
+    players[0].resetRound(0);
+    nextRound();
+
+    appMode = AppMode::Playing;
 }
 
 void Game::applySavedTableSettings()
 {
-    sessionLifecycle_.applySavedTableSettings();
+    if (players.empty())
+        return;
+
+    const PlayerProfile profile = players[0].getProfile();
+
+    // setPlayerCount clamps to [1,6], so a stale or hand-edited value can never ask for a nonexistent seat.
+    setPlayerCount(profile.preferredPlayerCount);
+
+    // An int read off disk can be anything, so validate against the enumerators before trusting it.
+    switch (static_cast<GameSpeed>(profile.preferredSpeed))
+    {
+    case GameSpeed::Fast:
+    case GameSpeed::Normal:
+    case GameSpeed::Slow:
+    case GameSpeed::AutoPlay:
+    case GameSpeed::Hyper:
+    case GameSpeed::Gamer:
+        gameSpeed = static_cast<GameSpeed>(profile.preferredSpeed);
+        break;
+    default:
+        gameSpeed = GameSpeed::Normal;
+        break;
+    }
+
+    switch (static_cast<BasicStrategy::CountingStyle>(profile.preferredCountingStyle))
+    {
+    case BasicStrategy::CountingStyle::HI_LO:
+    case BasicStrategy::CountingStyle::REKO:
+        countingStyle = static_cast<BasicStrategy::CountingStyle>(profile.preferredCountingStyle);
+        break;
+    default:
+        countingStyle = BasicStrategy::CountingStyle::REKO;
+        break;
+    }
+
+    // Feature 3 (Custom Game Rules): restore the saved table rules. The profile's GameRules already carries defaults for
+    // legacy files, so this is a clean no-op unless the player previously changed a rule and it was persisted additively.
+    gameRules_ = profile.gameRules;
+
+    Logger::info() << "Restored table settings: " << playerCount << " players, "
+                   << BasicStrategy::countingStyleName(countingStyle) << " counting.";
 }
 
 void Game::rememberTableSettings()
 {
-    sessionLifecycle_.rememberTableSettings();
+    if (players.empty())
+        return;
+
+    PlayerProfile profile = players[0].getProfile();
+    profile.preferredPlayerCount = playerCount;
+    profile.preferredSpeed = static_cast<int>(gameSpeed);
+    profile.preferredCountingStyle = static_cast<int>(countingStyle);
+    // Feature 7: persist sound + music prefs alongside the other table settings (called at every existing save point,
+    // so no extra I/O). Written as SFML-unit ints to mirror preferredSpeed.
+    profile.preferredSoundVolume = static_cast<int>(sound_.settings().soundVolume);
+    profile.preferredMusicVolume = static_cast<int>(sound_.settings().musicVolume);
+    profile.preferredMuted = sound_.isMuted();
+    // Feature 3 (Custom Game Rules): stamp the live table rules onto the profile so they survive the session, written on
+    // every existing save point (no extra I/O). Additive schema: unchanged for profiles saved before custom rules.
+    profile.gameRules = gameRules_;
+    players[0].updateProfile(profile);
+    players[0].saveProfile();
 }
 
 void Game::resetShoeAnalytics()
@@ -262,7 +444,7 @@ void Game::resetShoeAnalytics()
 
     // Feature 5: a new shoe begins — resolve the finished shoe's end-of-shoe achievements (Deviation Free / Comeback King /
     // Perfect Shoe / Kelly Master) via onNewShoe(), which then resets every per-shoe counter for this fresh shoe.
-    achievementFeeder_.surfaceNewlyUnlocked(achievementManager_.onNewShoe());
+    surfaceNewlyUnlocked(achievementManager_.onNewShoe());
 }
 
 void Game::startNewShoe()
@@ -282,7 +464,28 @@ void Game::startNewShoe()
 // the achievement engine; all mutable state stays in Game.
 void Game::recordHandAchievements(const RoundRecord& round)
 {
-    achievementFeeder_.recordHandAchievements(round);
+    AchievementManager::HandEvent e;
+    int bet = 0;
+    int seat0Outcomes = 0;
+    for (const auto& h : round.playerHands)
+    {
+        if (h.playerIndex != 0)
+            continue;
+        ++seat0Outcomes;
+        const Hand hand(h.cards);
+        e.isBlackjack = e.isBlackjack || handIsNaturalBJ(h.cards);   // same record-derived predicate computeCareerStats uses
+        e.busted = e.busted || hand.getValue() > 21;
+        e.wonAny = e.wonAny || h.won;
+        bet += h.wager;
+    }
+    e.splitHand = seat0Outcomes > 1;                   // a split produces more than one seat-0 outcome on the record
+    e.followedStrategy = (deviationsThisRound_ == 0);  // whole round matched basic strategy if no deviation was logged
+    e.bet = bet;
+    e.bankrollAfter = players.empty() ? 0.0f : static_cast<float>(players[0].getBankroll());
+    e.positiveTrueCount = round.trueCount > 0.0f;
+
+    std::vector<Achievement::Id> newly = achievementManager_.recordHand(e);
+    surfaceNewlyUnlocked(newly);
 }
 
 void Game::setPlayerCount(int count)
@@ -401,9 +604,8 @@ void Game::update(float deltaTime)
     if (appMode != AppMode::Playing)
         return;
 
-    // Delegate the turn/round state machine to RoundEngine.
-    RoundEngine engine;
-    engine.tick(deltaTime, *this);
+    // Advance the turn/round state machine (folded from RoundEngine::tick). Only Playing reaches here.
+    advanceTurnState(deltaTime);
 }
 
 // Shared HUD timer countdown used by update().
@@ -558,11 +760,7 @@ void Game::syncShoeAnalytics()
 Game::Game(bool headless)
     : window(),
       gameView(),
-      inputHandler(*this),
-      evaluator(*this),
-      roundDealer_(*this),
-      sessionLifecycle_(*this),
-      achievementFeeder_(*this)
+      inputHandler(*this)
 {
     // Headless mode (unit tests): no SFML window, no asset loading, no replay, no HUD. Only the pure
     // round/state machine is initialized so a full game can be driven deterministically from tests.
@@ -1050,7 +1248,7 @@ void Game::advanceToNextInsurancePlayer()
     if (activePlayerIndex >= players.size())
     {
         activePlayerIndex = 0;
-        evaluator.evaluateBlackjack();
+        evaluateBlackjack();
     }
 }
 
@@ -1146,18 +1344,100 @@ bool Game::canPlaceBets() const
     return roundState == RoundState::PlaceBets && activePlayerIndex == 0 && !GameTiming::isAutoPlaying(gameSpeed);
 }
 
-// Feature 1 (Side Bets): delegate to RoundDealer (Follow-up #8) — evaluates + bankrolls every seat's side bet once all cards
-// are known, BEFORE main-hand settlement. The logic moved out of the god class; this stays a thin delegating entry point.
+// Feature 1 (Side Bets): evaluate + bankroll every seat's side bet once all cards are known, BEFORE main-hand settlement.
+// Side bets pay out / lose independently of the main hand, so this runs for all seats here — before evaluateHands() settles
+// them. Folded directly back into Game from the former RoundDealer (no state is owned; all mutable state stays in Game).
 void Game::resolveSideBets()
 {
-    roundDealer_.resolveSideBets();
+    if (players.empty() || dealer.size() < 1)
+        return;
+
+    const Card& dealerUp = dealer.getCard(0);
+    for (size_t i = 0; i < players.size(); ++i)
+    {
+        auto& p = players[i];
+        Hand& hand = p.hands[0]; // the main hand carries the side bet; split hands do not in this mode
+        if (hand.getSideBetKind() == SideBetKind::None || hand.getSideBetWager() <= 0 || hand.size() < 2)
+            continue;
+
+        const Card& c0 = hand.getCard(0);
+        const Card& c1 = hand.getCard(1);
+        int wager = hand.getSideBetWager();
+        SideBetResult result = (hand.getSideBetKind() == SideBetKind::PerfectPairs)
+                                   ? SideBetEvaluator::perfectPairs(c0, c1)
+                                   : SideBetEvaluator::twentyOneThree(c0, c1, dealerUp);
+
+        PlayerStats& stats = p.getStats();
+        if (result.won())
+        {
+            // Net gain is wager * ratio. The stake was never removed at placement (placeBet only guards), so winning adds
+            // exactly the winnings here; gross payout for replay/analytics is stake returned + winnings.
+            p.winBet(wager * result.multiplier);
+            hand.setSideBetPayout(wager * (1 + result.multiplier));
+            stats.sideBetWins++;
+            stats.sideBetProfitSum += static_cast<long long>(wager) * result.multiplier;
+            Logger::info() << p.getName() << "'s side bet wins " << result.multiplier << ":1 on $" << wager
+                           << " (+" << (wager * result.multiplier) << ".";
+        }
+        else
+        {
+            // Nothing qualified: the whole side-bet wager is lost. Gross payout 0 => net -wager, matching the bankroll move.
+            p.loseBet(wager);
+            hand.setSideBetPayout(0);
+            stats.sideBetLosses++;
+            stats.sideBetProfitSum -= wager;
+            Logger::info() << p.getName() << "'s side bet of $" << wager << " lost.";
+        }
+    }
 }
 
-// Deck / Deal: delegate card dealing + side-bet application/resolution to RoundDealer (Follow-up #8). Thin delegator over the
-// extracted logic; game.dealCardToPlayer/dealCardToDealer and evaluator.evaluateBlackjack() are reached through it.
+// Deck / Deal: deal the initial two player cards + dealer up/hole card, apply the human seat's pending side-bet choice and
+// resolve every placed side bet — after all cards are known but BEFORE main-hand settlement. Side bets pay / lose
+// independently of the main hand, so a natural blackjack still resolves its side bet here (the round then flows through the
+// BJ or dealer path below). Folded directly back into Game from the former RoundDealer; no state is owned.
 void Game::deal()
 {
-    roundDealer_.deal();
+    for (auto& p : players)
+    {
+        if (p.hands[0].getBet() > 0)
+        {
+            dealCardToPlayer(p.hands[0]);
+        }
+    }
+    dealCardToDealer(); // dealer's first card: index 0, the face-up UP card (see Hand::getDealerUpCard)
+    for (auto& p : players)
+    {
+        if (p.hands[0].getBet() > 0)
+        {
+            dealCardToPlayer(p.hands[0]);
+        }
+    }
+    dealCardToDealer(); // dealer's second card: the face-down hole card, revealed on the dealer's turn
+
+    // Feature 1 (Side Bets): apply the human seat's pending side-bet choice to its main hand and resolve every placed side
+    // bet now — after all cards are known but BEFORE any main-hand settlement. Side bets pay / lose independently of the main
+    // hand, so a natural blackjack still resolves its side bet immediately (the round then flows through the BJ or dealer path
+    // below). The intent is consumed here so it is never re-applied on the next round.
+    if (sideBetIntentWager_ > 0 && sideBetIntentKind_ != SideBetKind::None)
+    {
+        players[0].hands[0].setSideBet(sideBetIntentKind_, sideBetIntentWager_);
+        sideBetIntentKind_ = SideBetKind::None;
+        sideBetIntentWager_ = 0;
+    }
+    resolveSideBets();
+
+    roundState = RoundState::PlayerTurn;
+
+    if (dealer.getDealerUpCard().isAce())
+    {
+        Logger::info("Dealer shows an Ace. Insurance offered.");
+        roundState = RoundState::OfferInsurance;
+    }
+    else
+        evaluateBlackjack();
+
+    Logger::info() << players[0].getName() << " has a " << players[0].hands[0].getValue()
+                   << " against dealer's " << dealer.getDealerUpCardToString() << ".";
 }
 
 void Game::npcTakeTurn()
@@ -1420,7 +1700,7 @@ void Game::dealerTurn()
         }
     }
 
-    evaluator.evaluateHands();
+    evaluateHands();
 
     if (gameState ==
         GameState::LastHand)
@@ -1450,6 +1730,502 @@ void Game::dealerTurn()
         else
         {
             Logger::info() << "New shoe required. Press R.";
+        }
+    }
+}
+void Game::evaluateHands()
+{
+    // The round streak is per-shoe (Game::shoe_) and human-seat-only: roundWon/roundLost below are set from seat
+    // 0's hands alone, so an NPC's result can never flip the Streak box.
+    bool roundWon = false;
+    bool roundLost = false;
+
+    currentRoundRecord.dealerCards.clear();
+    for (size_t i = 0; i < dealer.size(); i++)
+        currentRoundRecord.dealerCards.push_back(dealer.getCard(i));
+
+    currentRoundRecord.playerHands.clear();
+    currentRoundRecord.runningCount = runningCount;
+    currentRoundRecord.trueCount = BasicStrategy::computeTrueCount(runningCount, deck.size());
+    currentRoundRecord.cardsRemaining = deck.size();
+    currentRoundRecord.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                                           std::chrono::system_clock::now().time_since_epoch())
+                                           .count();
+
+    for (size_t pIdx = 0; pIdx < players.size(); pIdx++)
+    {
+        auto& p = players[pIdx];
+        // Every counter in this loop belongs to the seat being settled. It used to be taken once, outside the
+        // loop, from players[0] — so each NPC win/loss/push was being written into the human player's record.
+        PlayerStats& stats = p.getStats();
+        for (size_t handIndex = 0; handIndex < p.hands.size(); handIndex++)
+        {
+            const Hand& hand = p.hands[handIndex];
+
+            Logger::debug() << "Entering evaluateHands() on hand " << (handIndex + 1)
+                            << " for " << p.getName() << ". Bankroll = " << p.getBankroll();
+
+            HandOutcome outcome;
+            outcome.wager = hand.getBet();
+            outcome.playerIndex = static_cast<int>(pIdx);
+            outcome.playerName = p.getName();
+            outcome.actions = handActions[getGlobalHandIndexForPlayer(pIdx, handIndex)];
+            for (size_t c = 0; c < hand.size(); c++)
+                outcome.cards.push_back(hand.getCard(c));
+
+            // Feature 1 (Side Bets): record this hand's resolved side bet so replay/analytics can see it. Net contribution
+            // to a round is sideBetPayout - sideBetWager (folded into humanNet/playerNet below).
+            outcome.sideBetKind = hand.getSideBetKind();
+            outcome.sideBetWager = hand.getSideBetWager();
+            outcome.sideBetPayout = hand.getSideBetPayout();
+
+            stats.handsFinished++;
+            int payout = 0;
+            // dealer.isBlackjack() is only true for the dealer's original two cards, so by the time the
+            // dealer has drawn to 21 it is false and a player natural is paid 3:2 instead of pushing.
+            SettlementResult result = p.settle(hand, dealer.getValue(), dealer.isBust(),
+                                               dealer.isBlackjack(), payout);
+            outcome.payout = payout;
+            outcome.won = (result == SettlementResult::Win || result == SettlementResult::Push);
+
+            // Surrender/Lose/Win share a near-identical body (counter + human-seat streak flag + log line). Route the
+            // per-result counter and streak flag by outcome: Surrender+Lose both count as a loss / roundLost, Win as a
+            // win. The streak box is the human seat's rounds only, so an NPC result never extends or flips it (below).
+            if (result == SettlementResult::Win)
+                stats.wins++;
+            else if (result == SettlementResult::Surrender || result == SettlementResult::Lose)
+                stats.losses++;
+            else
+                stats.pushes++; // Push: neither win nor loss.
+
+            if (pIdx == 0 && result != SettlementResult::Push)
+            {
+                if (result == SettlementResult::Win)
+                    roundWon = true;
+                else
+                    roundLost = true;
+            }
+
+            // One log line per logged outcome, byte-for-byte identical to the collapsed cases above: Surrender/Lose use a
+            // result-specific verb with no payout; only a Win appends the payout. Push has no log line.
+            const char* verb = "won";
+            if (result == SettlementResult::Surrender)
+                verb = "surrendered";
+            else if (result == SettlementResult::Lose)
+                verb = "lost";
+            if (result != SettlementResult::Push)
+            {
+                if (result == SettlementResult::Win)
+                    Logger::info() << p.getName() << " " << verb << " hand " << (handIndex + 1)
+                                   << " (bet: " << hand.getBet() << ", payout: " << payout << ").";
+                else
+                    Logger::info() << p.getName() << " " << verb << " hand " << (handIndex + 1)
+                                   << " (bet: " << hand.getBet() << ").";
+            }
+
+            int netProfitOnHand = payout - hand.getBet();
+
+            // Feature 1 + 3 (human seat only): attribute deviations to their hand and stamp won, count wins after a
+            // deviation, maintain per-hand win/lose streaks (+ running max for the dashboard), and feed the variance
+            // accumulators used to derive standard deviation. NPCs are tracked separately via recordRoundResult().
+            if (pIdx == 0)
+            {
+                size_t gidx = getGlobalHandIndexForPlayer(pIdx, handIndex);
+                // handDeviations_ is sized per hand by nextRound()/startNewGame(); grow it defensively so a hand
+                // that never deviated cannot index past the end (logStrategyDeviation only grows it on a
+                // deviation, so an unguarded read here is undefined behaviour otherwise).
+                while (handDeviations_.size() <= gidx)
+                    handDeviations_.emplace_back();
+                bool hadDeviation = !handDeviations_[gidx].empty();
+                for (auto& dev : handDeviations_[gidx])
+                    dev.won = (result == SettlementResult::Win);
+                if (hadDeviation && result == SettlementResult::Win)
+                    stats.winsAfterDeviation++;
+
+                // Per-hand streaks: the running pair plus this shoe's longest runs, which are what the Long Win /
+                // Long Loss boxes show. They live in shoe_, so a run never crosses a shoe boundary; the
+                // PlayerStats copies stay career-long for the saved profile.
+                if (result == SettlementResult::Win)
+                {
+                    ++shoe_.currentWinStreak;
+                    shoe_.currentLoseStreak = 0;
+                }
+                else if (result == SettlementResult::Lose || result == SettlementResult::Surrender)
+                {
+                    ++shoe_.currentLoseStreak;
+                    shoe_.currentWinStreak = 0;
+                }
+                else // a push is neither win nor loss: it breaks both streaks
+                {
+                    shoe_.currentWinStreak = 0;
+                    shoe_.currentLoseStreak = 0;
+                }
+                stats.longestWinningStreak = std::max(stats.longestWinningStreak, shoe_.currentWinStreak);
+                stats.longestLosingStreak = std::max(stats.longestLosingStreak, shoe_.currentLoseStreak);
+                shoe_.longestWinningStreak = std::max(shoe_.longestWinningStreak, shoe_.currentWinStreak);
+                shoe_.longestLosingStreak = std::max(shoe_.longestLosingStreak, shoe_.currentLoseStreak);
+
+                long long net = static_cast<long long>(netProfitOnHand);
+                stats.handProfitCount++;
+                stats.handProfitSum += net;
+                stats.handProfitSumSq += net * net;
+                if (net < stats.greatestHandLoss)
+                    stats.greatestHandLoss = net;
+
+                // The Std Dev box derives from these per-shoe accumulators, so it measures this shoe's swing and
+                // not every hand the profile has ever played.
+                shoe_.handProfitCount++;
+                shoe_.handProfitSum += net;
+                shoe_.handProfitSumSq += net * net;
+            }
+
+            currentRoundRecord.playerHands.push_back(outcome);
+
+            // Record result for NPC progressive betting strategies
+            if (pIdx > 0)
+            {
+                p.recordRoundResult(outcome.won);
+            }
+
+            if (netProfitOnHand > stats.greatestHand)
+                stats.greatestHand = netProfitOnHand;
+
+            // The shoe/session running win-loss (and the records built from them) are the human seat's own. They
+            // used to sum the whole table, so NPC results were booked as the player's shoe/session profit.
+            if (pIdx == 0)
+            {
+                shoeCumulativeWinLoss += netProfitOnHand;
+                sessionCumulativeWinLoss += netProfitOnHand;
+
+                if (shoeCumulativeWinLoss > stats.greatestWin)
+                    stats.greatestWin = shoeCumulativeWinLoss;
+                if (shoeCumulativeWinLoss < stats.greatestLoss)
+                    stats.greatestLoss = shoeCumulativeWinLoss;
+
+                if (sessionCumulativeWinLoss > stats.greatestSessionWin)
+                    stats.greatestSessionWin = sessionCumulativeWinLoss;
+                if (sessionCumulativeWinLoss < stats.greatestSessionLoss)
+                    stats.greatestSessionLoss = sessionCumulativeWinLoss;
+            }
+        }
+    }
+
+    // Refresh the "last 10 deviations" display now that every record's win/loss outcome is finalized (Feature 1). Only
+    // player-seat 0's hands belong to this seat; their records live in handDeviations_ slots [0, p0Hands).
+    {
+        PlayerStats& dstats = getStats();
+        dstats.recentDeviations.clear();
+        const size_t p0Hands = players[0].hands.size();
+        for (size_t slot = 0; slot < p0Hands && slot < handDeviations_.size(); ++slot)
+        {
+            for (const auto& dev : handDeviations_[slot])
+            {
+                dstats.recentDeviations.push_back(dev);
+                if (dstats.recentDeviations.size() > 10)
+                    dstats.recentDeviations.erase(dstats.recentDeviations.begin());
+            }
+        }
+    }
+
+    // Round-to-round streak for the Streak box. Human seat only (roundWon/roundLost ignore the NPCs) and per-shoe
+    // (shoe_ is zeroed at every boundary), so it reads as your current run in this shoe rather than a session tally
+    // that a reshuffle never interrupts.
+    if (roundWon && !roundLost)
+    {
+        if (shoe_.roundStreakIsWin)
+            shoe_.roundStreak++;
+        else
+        {
+            shoe_.roundStreak = 1;
+            shoe_.roundStreakIsWin = true;
+        }
+    }
+    else if (roundLost && !roundWon)
+    {
+        if (!shoe_.roundStreakIsWin)
+            shoe_.roundStreak++;
+        else
+        {
+            shoe_.roundStreak = 1;
+            shoe_.roundStreakIsWin = false;
+        }
+    }
+    else
+    {
+        shoe_.roundStreak = 0;
+    }
+
+    hudState.playerSummaries.clear();
+    for (size_t i = 0; i < players.size(); i++)
+    {
+        std::ostringstream oss;
+        int playerNet = 0;
+        for (auto& outcome : currentRoundRecord.playerHands)
+        {
+            if (outcome.playerIndex != static_cast<int>(i))
+                continue;
+            int handProfit = outcome.payout - outcome.wager;
+            playerNet += handProfit;
+            playerNet += outcome.sideBetPayout - outcome.sideBetWager; // Feature 1: side-bet net (independent of main-hand payout)
+        } 
+        if (playerNet > 0)
+            oss << "Win +" << playerNet;
+        else if (playerNet < 0)
+            oss << "Loss " << playerNet;
+        else
+            oss << "Push";
+        hudState.playerSummaries.push_back(oss.str());
+    }
+    // End-of-round summary display time and AutoPlay inter-hand hold both come from the single timing table
+    // (GameTiming), keyed by speed. Non-AutoPlay speeds wait 0s between hands, so there is no artificial delay.
+    // Gamer mode overrides this with its refresh-rate-derived interval instead of a fixed table value.
+    hudState.summaryTimer = (gameSpeed == GameSpeed::Gamer) ? GameTiming::gamerStepInterval(refreshRateHz) : GameTiming::summaryDisplayTime(gameSpeed);
+    hudState.afterHandTimer = GameTiming::afterHandWait(gameSpeed);
+
+    // The bankroll curve is YOUR profit and loss, so only seat 0's hands feed it. Summing every seat here used to
+    // drag the NPCs' wins and losses onto the player's curve.
+    int humanNet = 0;
+    for (const auto& outcome : currentRoundRecord.playerHands)
+    {
+        if (outcome.playerIndex != 0)
+            continue;
+        humanNet += outcome.payout - outcome.wager;
+        humanNet += outcome.sideBetPayout - outcome.sideBetWager; // Feature 1: side-bet net so the bankroll curve reflects it too
+    }
+
+    // Feature 3 analytics: extend the bankroll curve (your cumulative net profit) and sample the edge, one point
+    // per completed round. The edge is a LEVEL, not a running total: every round re-estimates the player's edge
+    // from the count as it stands right now, because that is what actually happens at a table - the house edge
+    // moves with the shoe, it does not stack up hand over hand. Integrating it instead is what made the curve
+    // read -13% after ten rounds of an ordinary shoe. Both series live in shoe_, which resetShoeAnalytics()
+    // zeroes at every shoe boundary.
+    {
+        const float lastBank = shoe_.bankrollSeries.empty() ? 0.f : shoe_.bankrollSeries.back();
+        shoe_.bankrollSeries.push_back(lastBank + static_cast<float>(humanNet));
+        shoe_.edgeSeries.push_back(static_cast<double>(BasicStrategy::estimateEdgePercent(hiLoTrueCount())));
+    }
+
+    Logger::info() << "Round complete. Net: " << (humanNet >= 0 ? "+" : "") << humanNet
+                   << ". Bankroll: " << players[0].getBankroll() << ".";
+
+    // Feature 5: feed this settled round into the achievement engine (sets a HUD popup for any just-unlocked achievement)
+    // before persisting. Persistence stays additive — the manager's unlocked set rides along on the same profile save path.
+    recordHandAchievements(currentRoundRecord);
+
+    PlayerProfile profile = players[0].getProfile();
+    // Feature 5: stamp the current unlocked-achievement ids onto the profile so they survive (additive schema).
+    achievementManager_.persistUnlockedTo(profile.unlockedAchievementIds);
+    profile.addRoundRecord(currentRoundRecord);
+    players[0].updateProfile(profile);
+    players[0].saveProfile();
+
+    currentShoeRecord.rounds.push_back(currentRoundRecord);
+
+    handActions.clear();
+    roundState = RoundState::Cleanup;
+}
+
+void Game::evaluateBlackjack()
+{
+    bool dealerHasBJ = dealer.isBlackjack();
+
+    for (size_t pIdx = 0; pIdx < players.size(); pIdx++)
+    {
+        auto& p = players[pIdx];
+        for (size_t handIndex = 0; handIndex < p.hands.size(); handIndex++)
+        {
+            Hand& hand = p.hands[handIndex];
+
+            // Insurance pays 2:1 and settles independently of the hand's win/loss, so it is paid whenever
+            // it was taken. An own natural blackjack then just pushes versus a dealer blackjack.
+            //
+            // The hand's own wager is NOT moved here. The dealer's natural still runs the round through
+            // DealerTurn -> evaluateHands, and settle() already scores it (loss, or push against the
+            // player's own natural). Charging it in both places used to take the wager twice.
+            if (dealerHasBJ)
+            {
+                if (hand.getInsuranceBet() > 0)
+                {
+                    p.winBet(hand.getInsuranceBet() * 2);
+                    Logger::info() << p.getName() << " insurance wins!";
+                }
+
+                if (hand.isBlackjack())
+                {
+                    Logger::info() << p.getName() << " pushes blackjack vs dealer blackjack.";
+                }
+                else
+                {
+                    Logger::info() << p.getName() << " loses to dealer blackjack.";
+                }
+            }
+            else
+            {
+                if (hand.getInsuranceBet() > 0)
+                {
+                    Logger::info() << p.getName() << " insurance lost.";
+                    hand.setInsuranceBet(0);
+                }
+
+                if (hand.isBlackjack() && !hand.isSplit())
+                {
+                    Logger::info() << p.getName() << " has Blackjack!";
+                    p.getStats().blackjacks++;
+                    hand.setFinished(true);
+                }
+            }
+        }
+    }
+
+    if (dealerHasBJ)
+    {
+        roundState = RoundState::DealerTurn;
+    }
+    else
+    {
+        roundState = RoundState::PlayerTurn;
+    }
+}
+void Game::surfaceNewlyUnlocked(const std::vector<Achievement::Id>& newly)
+{
+    if (newly.empty())
+        return;
+    for (const auto& def : achievementManager_.all())
+        for (auto id : newly)
+            if (def.id == id)
+            {
+                hudState.pendingAchievementName = def.name;
+                return;
+            }
+}
+
+void Game::advanceTurnState(float deltaTime)
+{
+    tickTimer(hudState.summaryTimer, deltaTime);
+    tickTimer(hudState.afterHandTimer, deltaTime);
+    tickTimer(hudState.afterShoeTimer, deltaTime);
+
+    if (gameState == GameState::GameOver && GameTiming::isAutoPlaying(gameSpeed))
+    {
+        if (hudState.afterShoeTimer <= 0.0f)
+        {
+            Logger::info() << "Auto-play: starting new shoe.";
+            startNewShoe();
+            nextRound();
+        }
+    }
+
+    if (roundState == RoundState::PlaceBets && GameTiming::isAutoPlaying(gameSpeed))
+    {
+        float tc = activeTrueCount();
+        int optimal = calculateOptimalBet(tc, GameConfig::KELLY_FRACTION, players[0].getBankroll(),
+                                          Constants::MINIMUM_BET, Constants::MAXIMUM_BET);
+        players[0].hands[0].setBet(optimal);
+        Logger::info() << "Auto-play betting " << optimal << " (TC=" << tc << ")";
+        confirmBet();
+    }
+
+    if (roundState == RoundState::OfferInsurance)
+    {
+        offerInsurance();
+    }
+
+    if (roundState == RoundState::PlayerTurn)
+    {
+        bool allDone = true;
+        for (auto& p : players)
+        {
+            if (p.hands[0].getBet() == 0)
+                continue;
+            for (auto& hand : p.hands)
+            {
+                if (!hand.isFinished())
+                {
+                    allDone = false;
+                    break;
+                }
+            }
+            if (!allDone)
+                break;
+        }
+        if (allDone)
+        {
+            roundState = RoundState::DealerTurn;
+            return;
+        }
+
+        while (activePlayerIndex < players.size())
+        {
+            auto& p = players[activePlayerIndex];
+            if (p.hands[0].getBet() == 0)
+            {
+                ++activePlayerIndex;
+                continue;
+            }
+            while (p.currentHand < p.hands.size() && p.hands[p.currentHand].isFinished())
+            {
+                ++p.currentHand;
+            }
+            if (p.currentHand < p.hands.size())
+            {
+                break;
+            }
+            ++activePlayerIndex;
+        }
+
+        if (activePlayerIndex >= players.size())
+        {
+            roundState = RoundState::DealerTurn;
+            return;
+        }
+
+        auto& p = players[activePlayerIndex];
+
+        if (p.hands[p.currentHand].size() == 1)
+        {
+            dealCardToPlayer(p.hands[p.currentHand]);
+            if (p.hands[p.currentHand].isSplitAce())
+            {
+                bool canResplit = gameRules_.resplitAcesAllowed &&
+                                  p.hands[p.currentHand].canSplit() &&
+                                  p.hands.size() < gameRules_.maxSplitHands;
+                if (!canResplit)
+                {
+                    p.hands[p.currentHand].setFinished(true);
+                }
+            }
+        }
+
+        if (activePlayerIndex > 0 || GameTiming::isAutoPlaying(gameSpeed))
+        {
+            if (gameSpeed == GameSpeed::Gamer)
+                npcActionDelay = GameTiming::gamerStepInterval(refreshRateHz);
+            else
+                npcActionDelay = GameTiming::npcActionDelay(gameSpeed);
+
+            npcActionTimer -= deltaTime;
+            if (npcActionTimer <= 0.0f)
+            {
+                npcTakeTurn();
+                npcActionTimer = npcActionDelay;
+            }
+        }
+        else
+        {
+            npcActionTimer = npcActionDelay;
+        }
+    }
+
+    if (roundState == RoundState::DealerTurn)
+    {
+        dealerTurn();
+    }
+
+    if (roundState == RoundState::Cleanup && GameTiming::isAutoPlaying(gameSpeed))
+    {
+        if (gameState != GameState::GameOver && hudState.afterHandTimer <= 0.0f)
+        {
+            nextRound();
         }
     }
 }

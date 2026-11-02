@@ -4,37 +4,48 @@
 #include <vector>
 #include <memory>
 
-enum class AppMode
+namespace GameCore
 {
-    MainMenu,
-    Playing,
-    Paused,
-    ReplayHistory,
-    ReplayPlaying,
-    StrategyTrainer,
-    Tournament,
-    Achievements,
-    GameRules,
-    StatsDashboard
-};
-enum class MenuOption
-{
-    PlayGame,
-    PlayerCount,
-    GameSpeed,
-    ReviewHistory,
-    StrategyTrainer,
-    Tournament,
-    Achievements,
-    GameRules,
-    Statistics
-};
-enum class PauseOption
-{
-    Resume,
-    Restart,
-    QuitToMenu
-};
+    enum class AppMode
+    {
+        MainMenu,
+        Playing,
+        Paused,
+        ReplayHistory,
+        ReplayPlaying,
+        StrategyTrainer,
+        Tournament,
+        Achievements,
+        GameRules,
+        StatsDashboard
+    };
+
+    enum class MenuOption
+    {
+        PlayGame,
+        PlayerCount,
+        GameSpeed,
+        ReviewHistory,
+        StrategyTrainer,
+        Tournament,
+        Achievements,
+        GameRules,
+        Statistics
+    };
+
+    enum class PauseOption
+    {
+        Resume,
+        Restart,
+        QuitToMenu
+    };
+} // namespace GameCore
+
+// These app-control enums are defined above; the using-declarations keep every existing unqualified call site
+// (Game.hpp itself and all includers) working while grouping them under one domain namespace.
+using GameCore::AppMode;
+using GameCore::MenuOption;
+using GameCore::PauseOption;
 #include "Constants.hpp"
 #include "BasicStrategy.hpp"
 #include "Deck.hpp"
@@ -61,12 +72,6 @@ class BettingHandler;
 #include "Tournament.hpp"
 #include "GameRenderer.hpp"
 #include "InputHandler.hpp"
-#include "HandEvaluator.hpp"
-#include "RoundDealer.hpp"
-#include "SessionLifecycle.hpp"
-// Follow-up #8 (settlement/aftermath): AchievementFeeder drives settlement bookkeeping off game.* members; its own header only
-// pulls Achievement/GameRecord (no Game dependency), so no cycle even though it holds a Game& reference.
-#include "AchievementFeeder.hpp"
 #include "SoundManager.hpp"
 // Feature 5 (Achievement System): pure-logic achievement engine. Included fully (value member, not forward-declared)
 // because Game owns one by value and exposes it via accessors; Achievement.hpp pulls only <string>/<vector>/<map>, so no
@@ -77,21 +82,28 @@ class BettingHandler;
 // Game owns a value member and exposes it through *ForTest() accessors. It pulls in Constants only, no new cycle.
 #include "GameRules.hpp"
 
-enum class RoundState
+namespace GameCore
 {
-    PlaceBets,
-    OfferInsurance,
-    PlayerTurn,
-    DealerTurn,
-    Cleanup
-};
+    enum class RoundState
+    {
+        PlaceBets,
+        OfferInsurance,
+        PlayerTurn,
+        DealerTurn,
+        Cleanup
+    };
 
-enum class GameState
-{
-    Started,
-    LastHand,
-    GameOver
-};
+    enum class GameState
+    {
+        Started,
+        LastHand,
+        GameOver
+    };
+} // namespace GameCore
+
+// Same domain namespace; the using-declarations preserve every unqualified RoundState/GameState call site.
+using GameCore::RoundState;
+using GameCore::GameState;
 
 class Game
 {
@@ -208,6 +220,11 @@ class Game
 
     void run();
 
+    // Per-frame turn/round advancement — the folded RoundEngine::tick body. Advances betting, insurance, each player's turn,
+    // the dealer turn and cleanup exactly as before; update() calls it only while Playing. Exposed publicly so unit tests can
+    // drive a full round deterministically without constructing a wrapper or setting an AppMode (mirrors the old tick()).
+    void advanceTurnState(float deltaTime);
+
     // Click the count-style label ("Count (Hi-Lo)") to toggle between counting systems. Both are always
     // counted in the background; this swaps which buffer drives the active count and flips the style.
     void toggleCountingStyle();
@@ -229,12 +246,6 @@ class Game
 
     friend class GameRenderer;
     friend class InputHandler;
-    friend class HandEvaluator;
-    friend class RoundDealer;
-    // Follow-up #8 (settlement/aftermath): AchievementFeeder drives settlement bookkeeping off game.* members.
-    friend class AchievementFeeder;
-    friend class SessionLifecycle;
-    friend class RoundEngine;
 
   private:
     AppMode appMode = AppMode::MainMenu;
@@ -255,14 +266,6 @@ class Game
     std::unique_ptr<BettingHandler> betting_;
     GameRenderer renderer;
     InputHandler inputHandler;
-    HandEvaluator evaluator;
-    // Follow-up #8 (Settlement/deal()): deals the round's cards + resolves side-bet settlement, composed like the other helpers.
-    RoundDealer roundDealer_;
-    // Follow-up #8 (Session lifecycle): session entry points + table-settings persistence, composed like the other helpers.
-    SessionLifecycle sessionLifecycle_;
-    // Follow-up #8 (settlement/aftermath): feeds a settled round's human-seat outcome into the achievement engine and surfaces
-    // any just-unlocked popup; composed like the other helpers.
-    AchievementFeeder achievementFeeder_;
     // ---------------- SFML ----------------
 
     sf::RenderWindow window;
@@ -389,6 +392,9 @@ class Game
     // resetShoeAnalytics() via onNewShoe().
     void recordHandAchievements(const RoundRecord& round);
 
+    // Stamp the highest-priority just-unlocked achievement onto the HUD popup — folded from the former AchievementFeeder.
+    void surfaceNewlyUnlocked(const std::vector<Achievement::Id>& newly);
+
     // ---------------- Setup ----------------
 
     void startNewGame();
@@ -488,6 +494,12 @@ class Game
 
     void dealCardToPlayer(Hand& hand);
     void dealCardToDealer();
+
+    // Settle every seat's hands (record, streaks, analytics, persistence) — folded from the former HandEvaluator.
+    void evaluateHands();
+
+    // Natural-blackjack resolution for all seats + insurance payouts on a dealer ace — folded from the former HandEvaluator.
+    void evaluateBlackjack();
 
     void dealerTurn();
 
