@@ -14,9 +14,9 @@ namespace BasicStrategy
 
     char getRecommendedAction(int playerValue,int dealerUpValue,bool hasAce,bool isPair,int pairValue);
 
-    // Feature 3 (Custom Game Rules): rules-aware advisor. Identical decision tables to the plain overload, but the
+    // rules-aware advisor. Identical decision tables to the plain overload, but the
     // double-after-split ('M' pairs) and surrender gates read from `rules` instead of compile-time Constants. The plain
-    // overload above delegates here with default rules so every existing advisor test keeps passing unchanged.
+    // overload above delegates here with default rules
     char getRecommendedAction(const GameRules& rules,int playerValue,int dealerUpValue,bool hasAce,bool isPair,int pairValue);
 
     int calculateKellyBet(float trueCount, float kellyFraction, int bankroll, int minBet, int maxBet);
@@ -41,10 +41,10 @@ namespace BasicStrategy
     // Generic per-card updater that dispatches on the active counting style.
     int updateCount(int currentCount, const int bjValue, CountingStyle style);
 
-    float computeTrueCount(int runningCount, int cardsRemaining); //hi-lo
+    float computeTrueCount(int runningCount, int cardsRemaining); // hi-lo
 
     // The player's estimated edge, as a percentage, at a given true count. This is a LEVEL, not a total: the
-    // Edge Over Time chart re-estimates it every round from the count as it stands, so the curve wobbles around
+    // Edge Over Time chart re-estimates it every round from the count as it stands
     // the baseline instead of ramping up round after round. At true count 0 it is the fresh-shoe figure
     // (Constants::BASE_PLAYER_EDGE_PERCENT, about -0.5% for basic strategy), moving by
     // Constants::EDGE_PERCENT_PER_TRUE_COUNT per point of count.

@@ -7,10 +7,10 @@
 #include "Logger.hpp"
 #include "StrategyTrainer.hpp"
 #include "Tournament.hpp"
-// Feature 4 (Statistics Dashboard): included here so activateMainMenuOption can start it and processStatsDashboardEvents can
+// included here so activateMainMenuOption can start it and processStatsDashboardEvents can
 // drive its tab switching. Pure-logic + no new include cycle.
 #include "StatsDashboard.hpp"
-// Feature 3 (Custom Game Rules): processRulesEvents edits the in-game rules-config panel's selected row via applyGameRuleEdit,
+// processRulesEvents edits the in-game rules-config panel's selected row via applyGameRuleEdit,
 // so it needs these helpers. Pure-logic header, no include cycle.
 #include "GameRules.hpp"
 
@@ -26,8 +26,8 @@ void InputHandler::returnToMainMenu(Game& game, const char* fromMode)
     game.menuSelection = MenuOption::PlayGame;
 }
 
-// Single code path for keyboard (Enter) and mouse (left-click) menu activation, so every option
-// behaves identically. Reads Game's private members directly — hence the friendship access that
+// Single code path for keyboard (Enter) and mouse (left-click) menu activation
+// behaves identically. Reads Game's private members directly: hence the friendship access that
 // lets the other process* methods touch them too. This is the source of truth for selection.
 void InputHandler::activateMainMenuOption(Game &game, MenuOption option)
 {
@@ -87,7 +87,7 @@ void InputHandler::activateMainMenuOption(Game &game, MenuOption option)
     }
 }
 
-// Pause-menu activation for Enter/click — see activateMainMenuOption(). Only runs while paused
+// Pause-menu activation for Enter/click: see activateMainMenuOption(). Only runs while paused
 // (AppMode::Paused); Restart/QuitToMenu persist the finished shoe record before changing mode.
 void InputHandler::activatePauseOption(Game &game, PauseOption option)
 {
@@ -107,13 +107,13 @@ void InputHandler::activatePauseOption(Game &game, PauseOption option)
     }
     case PauseOption::QuitToMenu:
     {
-        // Stamp the current table settings first: this is the last save on the way out, so it is what makes
+        // Stamp the current table settings first: this is the last save on the way out
         // the player count / speed / counting style survive to the next launch.
         game.rememberTableSettings();
 
         PlayerProfile profile = game.players[0].getProfile();
         profile.addShoeRecord(game.currentShoeRecord);
-        // Feature 5: stamp the current unlocked-achievement ids onto the profile too, so exiting cleanly persists them.
+        // stamp the current unlocked-achievement ids onto the profile too
         game.achievementManager_.persistUnlockedTo(profile.unlockedAchievementIds);
         game.players[0].updateProfile(profile);
         game.players[0].saveProfile();
@@ -176,7 +176,7 @@ void InputHandler::navigateMenu(bool forward)
 }
 
 // Single source of truth for cycling the main menu's Speed row (Fast -> Normal -> Slow -> AutoPlay -> Fast).
-// Shared by arrow keys, the mouse wheel, and Left/Right so every input wraps around identically instead of
+// Shared by arrow keys, the mouse wheel, and Left/Right
 // stopping at either end. `direction` is +1 to advance or -1 to step back; +4 keeps the index positive
 // before modulo so wraparound works in both directions.
 void InputHandler::cycleGameSpeed(Game &game, int direction)
@@ -212,7 +212,7 @@ void InputHandler::cycleGameSpeed(Game &game, int direction)
 
 // Advances a value option (player count or game speed) in the given direction, matching the
 // Left/Right handling so mouse-wheel scrolling changes values exactly like the arrow keys do.
-// `option` is whichever row is under the cursor when called from scroll handling, so scrolling
+// `option` is whichever row is under the cursor when called from scroll handling
 // changes a value without that row having to be keyboard-selected first (game.menuSelection).
 void InputHandler::adjustValue(bool forward, MenuOption option)
 {
@@ -225,7 +225,7 @@ void InputHandler::adjustValue(bool forward, MenuOption option)
             game.setPlayerCount(game.playerCount - 1);
         break;
     case MenuOption::GameSpeed:
-        // Cycle Fast -> Normal -> Slow -> AutoPlay -> Fast (and reverse) with wraparound — see cycleGameSpeed().
+        // Cycle Fast -> Normal -> Slow -> AutoPlay -> Fast (and reverse) with wraparound: see cycleGameSpeed().
         cycleGameSpeed(game, forward ? 1 : -1);
         break;
     }
@@ -233,7 +233,7 @@ void InputHandler::adjustValue(bool forward, MenuOption option)
 
 void InputHandler::processEvents()
 {
-    // Decay the rules-config mouse-wheel rate-limit cooldown by this frame's real elapsed time (once per frame), so fast
+    // Decay the rules-config mouse-wheel rate-limit cooldown by this frame's real elapsed time (once per frame)
     // scrolling is throttled to at most one action per SCROLL_RATE_LIMIT_SECONDS regardless of frame rate. See processRulesEvents().
     scrollCooldown_ = scrollCooldown_ > game.deltaTime ? scrollCooldown_ - game.deltaTime : 0.f;
 
@@ -248,7 +248,7 @@ void InputHandler::processEvents()
         {
             Logger::info("=== Closing game ===");
             PlayerProfile closeProfile = game.players[0].getProfile();
-            // Feature 5: stamp the current unlocked-achievement ids before saving on exit.
+            // stamp the current unlocked-achievement ids before saving on exit.
             game.achievementManager_.persistUnlockedTo(closeProfile.unlockedAchievementIds);
             game.players[0].updateProfile(closeProfile);
             game.players[0].saveProfile();
@@ -306,12 +306,12 @@ void InputHandler::processEvents()
     }
 }
 
-// Feature 2 (Strategy Trainer): keyboard drives the trainer directly. H/S/D/P/Y/I choose the play to grade; Enter/Space starts or restarts a fresh shoe; Escape returns to the main menu. Grading uses submitAction(char) so no extra state-machine method is needed, and game.startTrainerSession() begins a new shoe.
+// keyboard drives the trainer directly. H/S/D/P/Y/I choose the play to grade; Enter/Space starts or restarts a fresh shoe; Escape returns to the main menu. Grading uses submitAction(char)
 void InputHandler::processTrainerEvents(const sf::Event& event)
 {
     // Mouse clicks on the action buttons (drawn by the trainer). The five plays remain available via keyboard below; this lets
-    // either input grade an answer. buttonIndexAt() recomputes the same button geometry draw() renders, so click boxes match
-    // exactly. submitAction() is a no-op while no question is live, so stray clicks during start/summary are harmless.
+    // either input grade an answer. buttonIndexAt() recomputes the same button geometry draw() renders
+    // exactly. submitAction() is a no-op while no question is live
     if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
     {
         if (clicked->button == sf::Mouse::Button::Left)
@@ -348,8 +348,8 @@ void InputHandler::processTrainerEvents(const sf::Event& event)
     }
 }
 
-// Feature 9 (Tournament Mode): keyboard drives the tournament. Enter/Space steps to the next round immediately (the mode
-// also auto-advances hands via Game::update); Escape returns to the main menu. Guards the shared tournament so headless
+// keyboard drives the tournament. Enter/Space steps to the next round immediately (the mode
+// also auto-advances hands via Game::update); Escape returns to the main menu. Guards the shared tournament
 // games - which never build it - can't crash when input is processed.
 void InputHandler::processTournamentEvents(const sf::Event& event)
 {
@@ -369,8 +369,8 @@ void InputHandler::processTournamentEvents(const sf::Event& event)
     }
 }
 
-// Feature 4 (Statistics Dashboard): keyboard drives the tabbed browse view. Left/Right cycle tabs (advanceTab); Escape
-// returns to the main menu. Guards the shared dashboard so headless games - which never build it - can't crash when input
+// keyboard drives the tabbed browse view. Left/Right cycle tabs (advanceTab); Escape
+// returns to the main menu. Guards the shared dashboard
 // is processed, mirroring processTournamentEvents().
 void InputHandler::processStatsDashboardEvents(const sf::Event& event)
 {
@@ -393,7 +393,7 @@ void InputHandler::processStatsDashboardEvents(const sf::Event& event)
     }
 }
 
-// Feature 5 (Achievement System): the achievements list is a read-only view. There are no live controls beyond returning to
+// the achievements list is a read-only view. There are no live controls beyond returning to
 // the main menu with Escape, so this mirrors processTrainerEvents()'s escape path only.
 void InputHandler::processAchievementEvents(const sf::Event& event)
 {
@@ -406,7 +406,7 @@ void InputHandler::processAchievementEvents(const sf::Event& event)
     }
 }
 
-// Feature 3 (Custom Game Rules): drives the rules-config panel using the SAME baseline as the main menu -- pointing at a row
+// drives the rules-config panel using the SAME baseline as the main menu
 // selects it (applyMenuRowSelection + getHoveredGameRulesRowIndex) and the wheel edits that row's value forward/back, exactly like
 // Left/Right. Esc persists changes and returns to the main menu as an edge trigger. Up/Down/Left/Right navigation stay in
 // Game::update() because they are held-key state (not edge-triggered). Sharing applyMenuRowSelection() is why future menus inherit
@@ -419,8 +419,8 @@ void InputHandler::processRulesEvents(const sf::Event& event)
     if (event.getIf<sf::Event::MouseMoved>())
         applyMenuRowSelection(game.renderer.getHoveredGameRulesRowIndex(game), game.gameRulesSelectedRow);
 
-    // Mouse wheel edits whichever rule is under the cursor, else the arrow-selected one -- the same hovered-or-selected row
-    // resolution as processMenuEvents' wheel. Rate-limited so one physical scroll is at most one edit even when several events
+    // Mouse wheel edits whichever rule is under the cursor, else the arrow-selected one
+    // resolution as processMenuEvents' wheel. Rate-limited
     // land in a frame or the wheel spins fast (cooldown decays by real time once per frame in processEvents()).
     if (auto wheel = event.getIf<sf::Event::MouseWheelScrolled>())
     {
@@ -453,7 +453,7 @@ void InputHandler::processMenuEvents(const sf::Event& event)
     {
         if (clicked->button == sf::Mouse::Button::Left)
         {
-            // Left-click activates whichever row the cursor hovers over — see activateMainMenuOption().
+            // Left-click activates whichever row the cursor hovers over: see activateMainMenuOption().
             int hoveredIndex = game.renderer.getHoveredMenuItemIndex(game);
             if (hoveredIndex >= 0 && hoveredIndex < static_cast<int>(mainMenuItems().size()))
             {
@@ -465,12 +465,12 @@ void InputHandler::processMenuEvents(const sf::Event& event)
         }
     }
 
-    // Hover selects the menu item under the cursor -- see applyMenuRowSelection(), the shared baseline every list-style menu uses.
+    // Hover selects the menu item under the cursor
     if (auto moved = event.getIf<sf::Event::MouseMoved>())
         applyMenuRowSelection(game.renderer.getHoveredMenuItemIndex(game), game.menuSelection);
 
     // Mouse wheel scrubs PlayerCount / GameSpeed rows via hover authority (hovered row if under the
-    // cursor, else game.menuSelection) — same row-selection rule as click in activateMainMenuOption().
+    // cursor, else game.menuSelection): same row-selection rule as click in activateMainMenuOption().
     // Positive delta scrolls up and increases the value, mirroring the Left/Right keys.
     auto scrolled = event.getIf<sf::Event::MouseWheelScrolled>();
     if (scrolled && game.appMode == AppMode::MainMenu)
@@ -522,7 +522,7 @@ void InputHandler::processGameEvents(const sf::Event& event)
     if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
     {
         // Clicking the count-style label ("Count (Hi-Lo)") toggles which counting system is shown. Both
-        // systems are counted in the background, so this just swaps which buffer drives the active count.
+        // systems are counted in the background
         //
         // This is the only clickable HUD element. The left-panel charts are display-only: their click-to-swap
         // secondary "overlay" views are gone (each one hid the primary series it was drawn over without adding
@@ -545,7 +545,7 @@ void InputHandler::processGameEvents(const sf::Event& event)
             {
                 // Fresh shoe. startNewShoe() is the single shoe-boundary path shared by auto-play, the mid-shoe
                 // reshuffle and a new game: it rebuilds the shoe AND resets the per-shoe analytics (the
-                // shoeGeneration recalibration signal, the bankroll/edge series and the running count), so the
+                // shoeGeneration recalibration signal, the bankroll/edge series and the running count)
                 // Edge % readout and the Edge Over Time curve fall back to their baseline here instead of carrying
                 // the previous shoe's drift forward. The player's bankroll is deliberately kept: this continues the
                 // same session rather than restarting the game.
@@ -693,7 +693,7 @@ void InputHandler::processPauseEvents(const sf::Event& event)
 {
     if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
     {
-        // Hover-highlight drives the paused row; left-click activates — see activateMainMenuOption().
+        // Hover-highlight drives the paused row; left-click activates: see activateMainMenuOption().
         int hoveredIndex = game.renderer.getHoveredPauseMenuItemIndex(game);
         if (clicked->button == sf::Mouse::Button::Left && hoveredIndex >= 0)
         {

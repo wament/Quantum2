@@ -25,7 +25,7 @@ struct HUDState
     bool riskSliderDragging = false;
 
     // The per-shoe analytics snapshot (Game::shoe_): backs the Std Dev / Long Win / Long Loss / Edge % / Strategy
-    // boxes and the Bets Placed histogram. Game zeroes it at every shoe boundary, so every readout except
+    // boxes and the Bets Placed histogram. Game zeroes it at every shoe boundary
     // Bankroll restarts with the new shoe.
     const ShoeAnalytics* shoeAnalytics = nullptr;
 
@@ -33,7 +33,7 @@ struct HUDState
     const ShoeRecord* currentShoe = nullptr;
 
     // Bumped by the game whenever a new shoe begins (fresh deal or a deck reshuffle). The HUD uses it as the
-    // graph-recalibration signal: when it changes every accumulated chart series is cleared so graphs show only
+    // graph-recalibration signal: when it changes every accumulated chart series is cleared
     // this shoe's data instead of drifting persistently upward across shoes/sessions.
     int currentShoeId = 0;
 
@@ -46,7 +46,7 @@ struct HUDState
     // Verdict on the Book box after a completed action: Correct -> green, Deviated -> red. None while advising live.
     AdvisorFeedback advisorFeedback = AdvisorFeedback::None;
 
-    // Advanced Analytics dashboard values (Feature 3), all derived from ShoeAnalytics and therefore all per-shoe:
+    // Advanced Analytics dashboard values, all derived from ShoeAnalytics and therefore all per-shoe:
     // they return to their baseline the moment a new shoe starts.
     double analyticsStdDev = 0.0;   // standard deviation of this shoe's per-hand net profits
     int longestWinningStreak = 0;   // longest winning run this shoe
@@ -61,13 +61,13 @@ struct HUDState
     // True while it's the dealer's turn. The book advisor hides its action during this window.
     bool isDealerTurn = false;
 
-    // Sound & music status (Feature 7), populated from Game::sound_ in updateHUDState() so any UI/HUD layer has
+    // Sound & music status, populated from Game::sound_ in updateHUDState()
     // a single data source of truth to read. Volumes are in SFML's 0..100 units, matching the profile.
     float soundVolume = 100.f;
     float musicVolume = 60.f;
     bool soundMuted = false;
 
-    // Side bets (Feature 1): the human seat's current-round side bet, read off the live hand in Game::updateHUDState so
+    // Side bets: the human seat's current-round side bet, read off the live hand in Game::updateHUDState so
     // the HUD and betting-area renderer share one source of truth. Defaults mean "no side bet this round".
     bool hasSideBet = false;
     SideBetKind sideBetKind = SideBetKind::None;
@@ -78,7 +78,7 @@ struct HUDState
     std::vector<std::string> playerSummaries;
     float summaryTimer = 0.0f;
 
-    // Feature 5 (Achievement System): name of the most recently unlocked achievement, set by Game when an unlock fires so
+    // name of the most recently unlocked achievement, set by Game when an unlock fires so
     // HUDState/GameRenderer can surface a brief popup. Empty means "no notification pending". Cleared after it is shown.
     std::string pendingAchievementName;
 

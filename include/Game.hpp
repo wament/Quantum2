@@ -4,48 +4,37 @@
 #include <vector>
 #include <memory>
 
-namespace GameCore
+enum class AppMode
 {
-    enum class AppMode
-    {
-        MainMenu,
-        Playing,
-        Paused,
-        ReplayHistory,
-        ReplayPlaying,
-        StrategyTrainer,
-        Tournament,
-        Achievements,
-        GameRules,
-        StatsDashboard
-    };
-
-    enum class MenuOption
-    {
-        PlayGame,
-        PlayerCount,
-        GameSpeed,
-        ReviewHistory,
-        StrategyTrainer,
-        Tournament,
-        Achievements,
-        GameRules,
-        Statistics
-    };
-
-    enum class PauseOption
-    {
-        Resume,
-        Restart,
-        QuitToMenu
-    };
-} // namespace GameCore
-
-// These app-control enums are defined above; the using-declarations keep every existing unqualified call site
-// (Game.hpp itself and all includers) working while grouping them under one domain namespace.
-using GameCore::AppMode;
-using GameCore::MenuOption;
-using GameCore::PauseOption;
+    MainMenu,
+    Playing,
+    Paused,
+    ReplayHistory,
+    ReplayPlaying,
+    StrategyTrainer,
+    Tournament,
+    Achievements,
+    GameRules,
+    StatsDashboard
+};
+enum class MenuOption
+{
+    PlayGame,
+    PlayerCount,
+    GameSpeed,
+    ReviewHistory,
+    StrategyTrainer,
+    Tournament,
+    Achievements,
+    GameRules,
+    Statistics
+};
+enum class PauseOption
+{
+    Resume,
+    Restart,
+    QuitToMenu
+};
 #include "Constants.hpp"
 #include "BasicStrategy.hpp"
 #include "Deck.hpp"
@@ -58,7 +47,7 @@ using GameCore::PauseOption;
 // defined in Game.cpp (which includes Replay.hpp) where the type is complete.
 class Replay;
 class StrategyTrainer;
-// Feature 4 (Statistics Dashboard): like Replay / StrategyTrainer, its state machine is built in full mode only; the
+// like Replay / StrategyTrainer, its state machine is built in full mode only; the
 // forward declaration lets Game hold it as a unique_ptr with an incomplete type (destroyed out-of-line in Game.cpp).
 class StatsDashboard;
 
@@ -66,44 +55,43 @@ class StatsDashboard;
 // unique_ptr with an incomplete type and destroyed out-of-line in Game.cpp. Built in both ctors (no SFML dependency),
 // mirroring AchievementManager.
 class BettingHandler;
-// Feature 9 (Tournament Mode): included fully (not just forward-declared) because Game.hpp exposes a public method
+// included fully (not just forward-declared) because Game.hpp exposes a public method
 // that takes `Tournament::TournamentConfig`; the header therefore needs the complete type. Tournament.hpp only pulls in
 // Deck/Hand/Player, which are already part of this include chain, so there is no new cycle.
 #include "Tournament.hpp"
 #include "GameRenderer.hpp"
 #include "InputHandler.hpp"
+#include "HandEvaluator.hpp"
+#include "RoundDealer.hpp"
+#include "SessionLifecycle.hpp"
+// Follow-up #8 (settlement/aftermath): AchievementFeeder drives settlement bookkeeping off game.* members; its own header only
+// pulls Achievement/GameRecord (no Game dependency)
+#include "AchievementFeeder.hpp"
 #include "SoundManager.hpp"
-// Feature 5 (Achievement System): pure-logic achievement engine. Included fully (value member, not forward-declared)
-// because Game owns one by value and exposes it via accessors; Achievement.hpp pulls only <string>/<vector>/<map>, so no
+// pure-logic achievement engine. Included fully (value member, not forward-declared)
+// because Game owns one by value and exposes it via accessors; Achievement.hpp pulls only <string>/<vector>/<map>
 // new include cycle is introduced.
 #include "Achievement.hpp"
 
-// Feature 3 (Custom Game Rules): the per-table rules struct is pure logic and lightweight; included fully here because
+// the per-table rules struct is pure logic and lightweight; included fully here because
 // Game owns a value member and exposes it through *ForTest() accessors. It pulls in Constants only, no new cycle.
 #include "GameRules.hpp"
 
-namespace GameCore
+enum class RoundState
 {
-    enum class RoundState
-    {
-        PlaceBets,
-        OfferInsurance,
-        PlayerTurn,
-        DealerTurn,
-        Cleanup
-    };
+    PlaceBets,
+    OfferInsurance,
+    PlayerTurn,
+    DealerTurn,
+    Cleanup
+};
 
-    enum class GameState
-    {
-        Started,
-        LastHand,
-        GameOver
-    };
-} // namespace GameCore
-
-// Same domain namespace; the using-declarations preserve every unqualified RoundState/GameState call site.
-using GameCore::RoundState;
-using GameCore::GameState;
+enum class GameState
+{
+    Started,
+    LastHand,
+    GameOver
+};
 
 class Game
 {
@@ -127,22 +115,22 @@ class Game
     Player& testPlayer(int index = 0) { return players[index]; }      // mutate/read a player (bankroll etc.)
     std::vector<Player>& playersForTest() { return players; }          // mutate the seat vector for deterministic setup
     const Hand& testDealer() const { return dealer; }
-    // Feature 3 (Custom Game Rules): read the current shoe's card count so a configurable deck count can be asserted
+    // read the current shoe's card count so a configurable deck count can be asserted
     // headlessly after startNewShoeForTest() rebuilds the shoe with gameRules_.numDecks.
     int deckSizeForTest() const { return static_cast<int>(deck.size()); }
     RoundState roundStateForTest() const { return roundState; }
-    // Test-only: drive the round-state machine directly so tests can exercise state-gated predicates (e.g. Game::canPlaceBets)
+    // Test-only: drive the round-state machine directly
     // without running a full deal/turn/settle cycle. Mirrors setGameSpeedForTest / setGameRulesForTest.
     void setRoundStateForTest(RoundState rs) { roundState = rs; }
     GameState gameStateForTest() const { return gameState; }
     size_t activePlayerIndexForTest() const { return activePlayerIndex; }
-    // Feature 1: expose the advisor verdict set by logStrategyDeviation (the source of the Book box color).
+    // expose the advisor verdict set by logStrategyDeviation (the source of the Book box color).
     AdvisorFeedback advisorFeedbackForTest() const { return advisorFeedback; }
     char advisorActionForTest() const { return advisorAction; }
 
-    // Feature 3: the per-shoe analytics + the shoe-recalibration counter, exposed so tests can assert every readout
+    // the per-shoe analytics + the shoe-recalibration counter, exposed
     // (edge readout, Edge Over Time curve, streaks, std dev, strategy %, bet histogram) actually returns to
-    // baseline at a shoe boundary — and that nothing else clears them mid-shoe.
+    // baseline at a shoe boundary: and that nothing else clears them mid-shoe.
     // updateHUDStateForTest/edgePercentForTest/hudStateForTest read back what the stat boxes show.
     const std::vector<double>& edgeSeriesForTest() const { return shoe_.edgeSeries; }
     const std::vector<float>& bankrollSeriesForTest() const { return shoe_.bankrollSeries; }
@@ -151,7 +139,7 @@ class Game
     int backgroundCountForTest() const { return backgroundRunningCount; }
     float hiLoTrueCountForTest() const { return hiLoTrueCount(); }
     const HUDState& hudStateForTest() const { return hudState; }
-    // Feature 1 (Side Bets): the round currently being built, so integration tests can assert each hand's side-bet
+    // the round currently being built, so integration tests can assert each hand's side-bet
     // kind/wager/payout without reaching into private state.
     const RoundRecord& currentRoundRecordForTest() const { return currentRoundRecord; }
     int shoeGenerationForTest() const { return shoeGeneration; }
@@ -172,23 +160,23 @@ class Game
     float refreshRateForTest() const { return refreshRateHz; }
     void setRefreshRateForTest(float hz) { refreshRateHz = hz; }
     int countingStyleForTest() const { return static_cast<int>(countingStyle); }
-    // Feature 3 (Custom Game Rules): read the live ruleset, and in tests override it before startTestRound() so logic can
+    // read the live ruleset, and in tests override it before startTestRound() so logic can
     // be driven headlessly with any rule set (soft-17, DAS, resplit, deck count, surrender) without touching disk.
     const GameRules& getGameRulesForTest() const { return gameRules_; }
     void setGameRulesForTest(const GameRules& rules) { gameRules_ = rules; }
-    // Main-menu highlighted row: read/select it so pure-logic tests can drive main-menu navigation headlessly (see
+    // Main-menu highlighted row: read/select it
     // InputHandler::navigateMenu) without an SFML window or event loop. menuSelection is otherwise private on Game.
     MenuOption menuSelectionForTest() const { return menuSelection; }
     void setMenuSelectionForTest(MenuOption option) { menuSelection = option; }
-    // AppMode is otherwise private on Game. Read it so headless tests can drive InputHandler's per-mode process* methods
+    // AppMode is otherwise private on Game. Read it
     // and assert the Escape -> main-menu path switched modes (see InputHandler::returnToMainMenu) without an event loop.
     AppMode getAppModeForTest() const { return appMode; }
     void setAppModeForTest(AppMode mode) { appMode = mode; }
-    // The StrategyTrainer is otherwise private (built only in the full constructor). Exposed out-of-line so headless tests can
+    // The StrategyTrainer is otherwise private (built only in the full constructor). Exposed out-of-line
     // assert the StrategyTrainer AppMode routes to trainer->update() and advances session time (see Game::trainerElapsedSecondsForTest).
     float trainerElapsedSecondsForTest() const;
 
-    // Feature 7 (Sound): expose SoundManager state so headless tests can assert the event->queue path without SFML.
+    // expose SoundManager state so headless tests can assert the event->queue path without SFML.
     size_t soundPendingForTest() const { return sound_.pendingSounds().size(); }
     const std::vector<std::string>& soundQueueForTest() const { return sound_.pendingSounds(); }
     int soundTotalPlayedForTest() const { return sound_.totalSoundsPlayed(); }
@@ -199,7 +187,7 @@ class Game
     void setMusicVolumeForTest(float v) { sound_.setMusicVolume(v); }
     void setMutedForTest(bool m) { sound_.setMuted(m); }
 
-    // ---------------- Player Actions (public so the round-state machine and tests can drive them) ----
+    // ---------------- Player Actions (public
 
     void hit();
     void stand();
@@ -207,65 +195,74 @@ class Game
     bool split();
     bool surrender();
 
-    // Feature 1 (Side Bets): place an optional side bet on the human seat's main hand before the deal. The payout is
-    // resolved later, inside deal() via resolveSideBets() — BEFORE any main-hand settlement — so this only records the
+    // place an optional side bet on the human seat's main hand before the deal. The payout is
+    // resolved later, inside deal() via resolveSideBets(): BEFORE any main-hand settlement
     // choice (guarded by bankroll). Public + headless-safe: tests drive a full betting->deal cycle with it; the UI calls
     // it from PlaceBets. A zero wager opts out regardless of kind.
     void placeSideBet(SideBetKind kind, int wager);
 
-    // Whether the human seat can currently place bets interactively — round in PlaceBets, active seat is the human
-    // (index 0) and betting isn't auto-advanced by AutoPlay/Hyper/Gamer. Mirrors InputHandler's input gate so rendering
+    // Whether the human seat can currently place bets interactively: round in PlaceBets, active seat is the human
+    // (index 0) and betting isn't auto-advanced by AutoPlay/Hyper/Gamer. Mirrors InputHandler's input gate
     // hints use one shared predicate; returns false outside PlaceBets. Used to decide whether to draw the side-bet control line.
     bool canPlaceBets() const;
 
     void run();
 
-    // Per-frame turn/round advancement — the folded RoundEngine::tick body. Advances betting, insurance, each player's turn,
-    // the dealer turn and cleanup exactly as before; update() calls it only while Playing. Exposed publicly so unit tests can
-    // drive a full round deterministically without constructing a wrapper or setting an AppMode (mirrors the old tick()).
-    void advanceTurnState(float deltaTime);
-
     // Click the count-style label ("Count (Hi-Lo)") to toggle between counting systems. Both are always
     // counted in the background; this swaps which buffer drives the active count and flips the style.
     void toggleCountingStyle();
-    // Feature 2 (Strategy Trainer): begin/restart a training session from the main menu. Guards against nullptr
+    // begin/restart a training session from the main menu. Guards against nullptr
     // so headless construction (which skips building the trainer) never crashes.
     void startTrainerSession(int deckCount = 6, int secondsPerSession = 0);
-    // Feature 9 (Tournament Mode): begin/restart a tournament from the main menu. Guards against nullptr so headless
+    // begin/restart a tournament from the main menu. Guards against nullptr so headless
     // construction (which never builds the tournament) can't crash when the menu calls this; takes config or defaults.
     void startTournamentSession(const Tournament::TournamentConfig& config = {});
-    // Feature 4 (Statistics Dashboard): begin/restart the statistics dashboard from the main menu. Guards against nullptr so
+    // begin/restart the statistics dashboard from the main menu. Guards against nullptr so
     // headless construction (which never builds the dashboard) can't crash when the menu calls this; on first entry it seeds
     // the dashboard from the player's career stats + flattened round history.
     void startStatsSession();
-    // Feature 4 (Statistics Dashboard): headless count of rounds fed to the dashboard through the real startStatsSession ->
-    // feed path (mirrors the *ForTest() convention). Exposed as a plain int so tests can assert each round is counted
+    // headless count of rounds fed to the dashboard through the real startStatsSession ->
+    // feed path (mirrors the *ForTest() convention). Exposed as a plain int
     // exactly once without needing the incomplete StatsDashboard type in Game.hpp. nullptr-guarded for headless builds.
     int statsPerRoundCountForTest() const;
     float deltaTime;
 
     friend class GameRenderer;
     friend class InputHandler;
+    friend class HandEvaluator;
+    friend class RoundDealer;
+    // Follow-up #8 (settlement/aftermath): AchievementFeeder drives settlement bookkeeping off game.* members.
+    friend class AchievementFeeder;
+    friend class SessionLifecycle;
+    friend class RoundEngine;
 
   private:
     AppMode appMode = AppMode::MainMenu;
     std::unique_ptr<Replay> replay;
-    // Feature 2 (Strategy Trainer): its own AppMode state machine. Constructed in the full mode only; headless
+    // its own AppMode state machine. Constructed in the full mode only; headless
     // tests drive the trainer directly. unique_ptr with an incomplete type is fine here (like Replay) because ~Game
     // is defined out-of-line in Game.cpp, where StrategyTrainer.hpp is included.
     std::unique_ptr<StrategyTrainer> trainer;
-    // Feature 9 (Tournament Mode): its own AppMode state machine, built in full mode only. unique_ptr with an incomplete
+    // its own AppMode state machine, built in full mode only. unique_ptr with an incomplete
     // type is fine here (like Replay/StrategyTrainer) because ~Game is defined out-of-line where Tournament.hpp loads.
     std::unique_ptr<Tournament> tournament;
-    // Feature 4 (Statistics Dashboard): its own AppMode state machine, built in full mode only; headless tests drive the
+    // its own AppMode state machine, built in full mode only; headless tests drive the
     // dashboard directly (see test_stats_dashboard.cpp). unique_ptr with an incomplete type is fine here (like
     // Replay/StrategyTrainer) because ~Game is defined out-of-line where StatsDashboard.hpp loads.
     std::unique_ptr<StatsDashboard> statsDashboard;
     // Betting core (Feature): the money-in math (true-count derivation, Kelly/Reko optimal-bet sizing). Pure logic with
-    // no SFML dependency, so Game owns it as a unique_ptr and constructs it in both ctors — like AchievementManager.
+    // no SFML dependency, so Game owns it as a unique_ptr and constructs it in both ctors: like AchievementManager.
     std::unique_ptr<BettingHandler> betting_;
     GameRenderer renderer;
     InputHandler inputHandler;
+    HandEvaluator evaluator;
+    // Follow-up #8 (Settlement/deal()): deals the round's cards + resolves side-bet settlement, composed like the other helpers.
+    RoundDealer roundDealer_;
+    // Follow-up #8 (Session lifecycle): session entry points + table-settings persistence, composed like the other helpers.
+    SessionLifecycle sessionLifecycle_;
+    // Follow-up #8 (settlement/aftermath): feeds a settled round's human-seat outcome into the achievement engine and surfaces
+    // any just-unlocked popup; composed like the other helpers.
+    AchievementFeeder achievementFeeder_;
     // ---------------- SFML ----------------
 
     sf::RenderWindow window;
@@ -283,8 +280,8 @@ class Game
     HUD hud;
     HUDState hudState;
 
-    // Sound & music (Feature 7). Default-constructed in every mode; buffers are only decoded by loadAssets(), which
-    // the headless constructor skips so unit tests never touch an audio device. Head-safe: playSound() just enqueues
+    // Sound & music. Default-constructed in every mode; buffers are only decoded by loadAssets(), which
+    // the headless constructor skips
     // when assets aren't loaded, so Game event hooks can call it unconditionally from both full and headless paths.
     SoundManager sound_;
 
@@ -292,10 +289,10 @@ class Game
     PauseOption pauseSelection = PauseOption::Resume;
     GameSpeed gameSpeed = GameSpeed::Normal;
     // Refresh rate in Hz for Gamer speed mode. Headless-safe default; detected from the monitor at full-mode startup and
-    // injectable via setRefreshRateForTest so pure-logic tests can assert refresh-rate derivation without an SFML window.
+    // injectable via setRefreshRateForTest
     float refreshRateHz = GameTiming::DEFAULT_REFRESH_HZ;
     BasicStrategy::CountingStyle countingStyle = BasicStrategy::CountingStyle::REKO;
-    // Feature 3 (Custom Game Rules): the live table rules. Default-constructed values mirror the compile-time Constants
+    // the live table rules. Default-constructed values mirror the compile-time Constants
     // exactly, so headless tests that never set rules behave identically to before. Restored from the profile in
     // applySavedTableSettings() and written back via rememberTableSettings(). The in-game rules-config panel edits this
     // struct directly (see update()); `gameRulesSelectedRow` is the panel's highlighted row while editing it.
@@ -328,16 +325,16 @@ class Game
 
     int initialBet = 0;
     int runningCount = 0;
-    // Feature 5 (Achievement System): how many human-seat plays in the CURRENT round deviated from basic strategy. Read at
+    // how many human-seat plays in the CURRENT round deviated from basic strategy. Read at
     // settlement to feed strategy-adherence achievements, then reset each round by nextRound(). Kept per-round rather than on
     // shoe_ because Textbook Player needs a continuous career streak while Deviation Free only needs "did this round match".
     int deviationsThisRound_ = 0;
 
-    // Feature 1 (Side Bets): the human seat's pending side-bet choice, consumed once by deal() when it applies + resolves
+    // the human seat's pending side-bet choice, consumed once by deal() when it applies + resolves
     // every placed side bet. Mirrors how insurance is chosen then confirmed: this records intent until the round deals.
     SideBetKind sideBetIntentKind_ = SideBetKind::None;
     int sideBetIntentWager_ = 0;
-    // Other counting system's running count, kept current every draw so toggling between systems is instant.
+    // Other counting system's running count, kept current every draw
     int backgroundRunningCount = 0;
     float trueCount = 0;
 
@@ -361,13 +358,13 @@ class Game
     AdvisorFeedback advisorFeedback = AdvisorFeedback::None;
     char advisorAction = 0; // book's advice letter for the just-completed hand (the green/red target)
 
-    // Per global-hand-index deviation records — source of truth during a round, mirroring handActions' indexing.
-    // Popped into by logStrategyDeviation so evaluation can stamp DeviationRecord.won and count winsAfterDeviation.
+    // Per global-hand-index deviation records: source of truth during a round, mirroring handActions' indexing.
+    // Popped into by logStrategyDeviation
     std::vector<std::vector<DeviationRecord>> handDeviations_;
 
     // Everything the HUD stat boxes + left-panel graphs report for the CURRENT shoe only: std-dev accumulators,
     // the hand-to-hand and round-to-round streaks, strategy accuracy, the bet distribution and both graph series.
-    // resetShoeAnalytics() zeroes the whole struct, which is why the bankroll is the only value that carries over.
+    // resetShoeAnalytics() zeroes the whole struct
     ShoeAnalytics shoe_;
 
     // Bumped every time a new shoe begins (new game, R at end of shoe, auto-play, mid-shoe reshuffle). Exposed to
@@ -376,33 +373,30 @@ class Game
     int shoeGeneration = 0;
 
   public:
-    // Feature 5 (Achievement System): owns the pure-logic achievement engine. Constructed as a plain value in both the
+    // owns the pure-logic achievement engine. Constructed as a plain value in both the
     // full and headless ctors because it has no SFML dependency and must be checkable through *ForTest() after driving a
-    // real game — unlike trainer/tournament, which are display-only modes built just for their own AppMode. Records feed
+    // real game: unlike trainer/tournament
     // via recordHandAchievements()/onNewShoe(); the unlocked set is loaded from the profile at launch and stamped back on save.
     AchievementManager achievementManager_;
 
-    // Feature 5: read/write accessors so tests (headless) can drive the manager directly and inspect the unlocked set; the
+    // read/write accessors so tests (headless) can drive the manager directly and inspect the unlocked set; the
     // UI reads achievementListForTest() to render the list view.
     AchievementManager& achievementsForTest() { return achievementManager_; }
     const std::vector<Achievement>& achievementListForTest() const { return achievementManager_.all(); }
 
-    // Feature 5: feed one settled round's human-seat outcome into the achievement engine (called by HandEvaluator after
+    // feed one settled round's human-seat outcome into the achievement engine (called by HandEvaluator after
     // settlement) and set a HUDState popup for any just-unlocked achievement. Resolving shoe-end achievements happens in
     // resetShoeAnalytics() via onNewShoe().
     void recordHandAchievements(const RoundRecord& round);
-
-    // Stamp the highest-priority just-unlocked achievement onto the HUD popup — folded from the former AchievementFeeder.
-    void surfaceNewlyUnlocked(const std::vector<Achievement::Id>& newly);
 
     // ---------------- Setup ----------------
 
     void startNewGame();
 
     // Table settings persistence. applySavedTableSettings() seeds playerCount / gameSpeed / countingStyle
-    // from the profile loaded at launch, so the main menu opens on what the player last played with.
+    // from the profile loaded at launch
     // rememberTableSettings() writes the current choices back into the profile; it runs at every point the
-    // profile is already being saved, so a settings change survives the session with no extra I/O.
+    // profile is already being saved
     void applySavedTableSettings();
     void rememberTableSettings();
 
@@ -424,10 +418,13 @@ class Game
 
     void update(float deltaTime);
 
+    // Advance the round/turn state machine one frame regardless of AppMode — update()'s Playing path minus the guard, so tests
+    // can drive PlayerTurn -> DealerTurn -> Cleanup directly (no window or input) through RoundEngine::tick().
+    void advanceTurnState(float deltaTime);
     void updateHUDState();
 
-    // Per-concern HUD sync helpers; updateHUDState composes them so each readout (betting/side-bet, player bankrolls,
-    // counting, sound, advisor/turn, shoe analytics) is one self-contained block. Pure refactor — every hudState field's
+    // Per-concern HUD sync helpers; updateHUDState composes them
+    // counting, sound, advisor/turn, shoe analytics) is one self-contained block. Pure refactor: every hudState field's
     // value and type are unchanged; see test_hud_layout.cpp which locks the values through hudStateForTest().
     void syncBettingAndSideBet();
 
@@ -455,7 +452,7 @@ class Game
     void confirmBet();
 
     // Accept or decline insurance on the active seat's current hand. These are public (rather than private like their
-    // InputHandler-facing callers assume) so tests can drive the full InsuranceOffer -> evaluateBlackjack path
+    // InputHandler-facing callers assume)
     // headlessly -- most importantly the dealer-natural regression that fires after a player declines insurance against
     // a natural dealer (see test_dealer_blackjack.cpp).
     void confirmInsurance();
@@ -466,7 +463,7 @@ class Game
 
     // The true count the betting logic should act on for the active counting system: Reko uses the raw running
     // count ("the true count is the running count"), Hi-Lo normalizes by decks remaining. Drives the human's
-    // auto-bet paths (manual Left-arrow bet and AutoPlay) so Reko betting follows its spec tiered pattern.
+    // auto-bet paths (manual Left-arrow bet and AutoPlay)
     float activeTrueCount() const;
 
     // The Hi-Lo true count regardless of which style is on screen: `runningCount` holds the active system's count
@@ -477,7 +474,7 @@ class Game
     float hiLoTrueCount() const;
 
   private:
-    // Feature 1 (Side Bets): evaluate + bankroll every seat's side bet once all cards are known (called from deal()),
+    // evaluate + bankroll every seat's side bet once all cards are known (called from deal()),
     // BEFORE any main-hand settlement via evaluateHands(). Side bets pay out / lose independently of the main hand.
     void resolveSideBets();
 
@@ -494,12 +491,6 @@ class Game
 
     void dealCardToPlayer(Hand& hand);
     void dealCardToDealer();
-
-    // Settle every seat's hands (record, streaks, analytics, persistence) — folded from the former HandEvaluator.
-    void evaluateHands();
-
-    // Natural-blackjack resolution for all seats + insurance payouts on a dealer ace — folded from the former HandEvaluator.
-    void evaluateBlackjack();
 
     void dealerTurn();
 

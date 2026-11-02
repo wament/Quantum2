@@ -7,89 +7,89 @@ namespace BasicStrategy
 {
     const char HARD[10][10] =
         {
-            /*       2    3    4    5    6    7    8    9    T    A */
+            // 2 3 4 5 6 7 8 9 T A
 
-            /*8*/  {'H', 'H', 'H', 'H', 'H', 'H', 'H', 'H', 'H', 'H'},
+            /* 8 */  {'H', 'H', 'H', 'H', 'H', 'H', 'H', 'H', 'H', 'H'},
 
-            /*9*/  {'H', 'D', 'D', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
+            /* 9 */  {'H', 'D', 'D', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
 
-            /*10*/ {'D', 'D', 'D', 'D', 'D', 'D', 'D', 'D', 'H', 'H'},
+            /* 10 */ {'D', 'D', 'D', 'D', 'D', 'D', 'D', 'D', 'H', 'H'},
 
-            /*11*/ {'D', 'D', 'D', 'D', 'D', 'D', 'D', 'D', 'D', 'D'},
+            /* 11 */ {'D', 'D', 'D', 'D', 'D', 'D', 'D', 'D', 'D', 'D'},
 
-            /*12*/ {'H', 'H', 'S', 'S', 'S', 'H', 'H', 'H', 'H', 'H'},
+            /* 12 */ {'H', 'H', 'S', 'S', 'S', 'H', 'H', 'H', 'H', 'H'},
 
-            /*13*/ {'S', 'S', 'S', 'S', 'S', 'H', 'H', 'H', 'H', 'H'},
+            /* 13 */ {'S', 'S', 'S', 'S', 'S', 'H', 'H', 'H', 'H', 'H'},
 
-            /*14*/ {'S', 'S', 'S', 'S', 'S', 'H', 'H', 'H', 'H', 'H'},
+            /* 14 */ {'S', 'S', 'S', 'S', 'S', 'H', 'H', 'H', 'H', 'H'},
 
-            /*15*/ {'S', 'S', 'S', 'S', 'S', 'H', 'H', 'H', 'H', 'H'},
+            /* 15 */ {'S', 'S', 'S', 'S', 'S', 'H', 'H', 'H', 'H', 'H'},
 
-            /*16*/ {'S', 'S', 'S', 'S', 'S', 'H', 'H', 'H', 'H', 'H'},
+            /* 16 */ {'S', 'S', 'S', 'S', 'S', 'H', 'H', 'H', 'H', 'H'},
 
-            /*17*/ {'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S'}
+            /* 17 */ {'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S'}
 
     };
 
     const char SOFT[8][10] =
         {
-            /*       2    3    4    5    6    7    8    9    T    A */
+            // 2 3 4 5 6 7 8 9 T A
 
-            /*A2*/ {'H', 'H', 'H', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
+            /* A2 */ {'H', 'H', 'H', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
 
-            /*A3*/ {'H', 'H', 'H', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
+            /* A3 */ {'H', 'H', 'H', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
 
-            /*A4*/ {'H', 'H', 'D', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
+            /* A4 */ {'H', 'H', 'D', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
 
-            /*A5*/ {'H', 'H', 'D', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
+            /* A5 */ {'H', 'H', 'D', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
 
-            /*A6*/ {'H', 'D', 'D', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
+            /* A6 */ {'H', 'D', 'D', 'D', 'D', 'H', 'H', 'H', 'H', 'H'},
 
-            /*A7*/ {'D', 'D', 'D', 'D', 'D', 'S', 'S', 'H', 'H', 'H'},
+            /* A7 */ {'D', 'D', 'D', 'D', 'D', 'S', 'S', 'H', 'H', 'H'},
 
-            /*A8*/ {'S', 'S', 'S', 'S', 'D', 'S', 'S', 'S', 'S', 'S'},
+            /* A8 */ {'S', 'S', 'S', 'S', 'D', 'S', 'S', 'S', 'S', 'S'},
 
-            /*A9*/ {'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S'}
+            /* A9 */ {'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S', 'S'}
 
     };
 
     // if DAS is not allowed, M = Hit. Otherwise M = Y (split)
     const char PAIRS[10][10] =
         {
-            /*        2    3    4    5    6    7    8    9    T    A */
+            // 2 3 4 5 6 7 8 9 T A
 
-            /*A,A*/ {'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y'},
+            /* A,A */ {'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y'},
 
-            /*10*/  {'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'},
+            /* 10 */  {'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'},
 
-            /*9,9*/ {'Y', 'Y', 'Y', 'Y', 'Y', 'N', 'Y', 'Y', 'N', 'N'},
+            /* 9,9 */ {'Y', 'Y', 'Y', 'Y', 'Y', 'N', 'Y', 'Y', 'N', 'N'},
 
-            /*8,8*/ {'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y'},
+            /* 8,8 */ {'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'Y'},
 
-            /*7,7*/ {'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'N', 'N', 'N', 'N'},
+            /* 7,7 */ {'Y', 'Y', 'Y', 'Y', 'Y', 'Y', 'N', 'N', 'N', 'N'},
 
-            /*6,6*/ {'M', 'Y', 'Y', 'Y', 'Y', 'N', 'N', 'N', 'N', 'N'},
+            /* 6,6 */ {'M', 'Y', 'Y', 'Y', 'Y', 'N', 'N', 'N', 'N', 'N'},
 
-            /*5,5*/ {'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'},
+            /* 5,5 */ {'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N', 'N'},
 
-            /*4,4*/ {'N', 'N', 'N', 'M', 'M', 'N', 'N', 'N', 'N', 'N'},
+            /* 4,4 */ {'N', 'N', 'N', 'M', 'M', 'N', 'N', 'N', 'N', 'N'},
 
-            /*3,3*/ {'M', 'M', 'Y', 'Y', 'Y', 'Y', 'N', 'N', 'N', 'N'},
+            /* 3,3 */ {'M', 'M', 'Y', 'Y', 'Y', 'Y', 'N', 'N', 'N', 'N'},
 
-            /*2,2*/ {'M', 'M', 'Y', 'Y', 'Y', 'Y', 'N', 'N', 'N', 'N'}
+            /* 2,2 */ {'M', 'M', 'Y', 'Y', 'Y', 'Y', 'N', 'N', 'N', 'N'}
 
     };
 
     const char SURRENDER[2][10] =
         {
-            /*15*/
+            // 15
             {' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', 'R', ' '},
-            /*16*/
+            // 16
             {' ', ' ', ' ', ' ', ' ', ' ', ' ', 'R', 'R', 'R'}};
 
     char getRecommendedAction(int playerValue, int dealerUpValue, bool hasAce, bool isPair, int pairValue)
     {
-        // Legacy signature: advise with the default table rules so existing callers/tests behave exactly as before.
+        // Legacy signature: advise with the default table rules
         return getRecommendedAction(GameRules{}, playerValue, dealerUpValue, hasAce, isPair, pairValue);
     }
 
@@ -142,7 +142,7 @@ namespace BasicStrategy
             }
         }
 
-        // Surrender check for 15 and 16 — only offered when surrender is enabled by the active rules.
+        // Surrender check for 15 and 16: only offered when surrender is enabled by the active rules.
         if (rules.surrenderEnabled() && dealerIdx >= 0 && dealerIdx < 10)
         {
             if (playerValue == 15 && SURRENDER[0][dealerIdx] != ' ')
@@ -204,7 +204,7 @@ namespace BasicStrategy
     int calculateRekoValue(const int bjValue)
     {
         // User's Reko variant (unbalanced, compensated by a -4/deck starting offset):
-        //   2-7 -> +1 ; 8,9 -> 0 ; ten-value cards and Aces -> -1.
+        // 2-7 -> +1 ; 8,9 -> 0 ; ten-value cards and Aces -> -1.
         if (bjValue >= 2 && bjValue <= 7)
             return 1;
         else if (bjValue == 8 || bjValue == 9)

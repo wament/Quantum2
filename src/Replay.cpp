@@ -3,9 +3,9 @@
 #include <algorithm>  // std::max for the reveal-clock reset detection in update() below
 #include "Constants.hpp"  // DEAL_STAGGER_SECONDS: per-card reveal staggering for playback card-deal animation
 
-// Card-deal animation (Feature 8-style, mirrored from GameRenderer): seed + return the reveal-start time for a card slot so
+// Card-deal animation (-style, mirrored from GameRenderer): seed + return the reveal-start time for a card slot so
 // arriving cards ease into their resting slot over playback instead of popping. On first sight a slot's reveal time is `now
-// + ordinal*stagger` (earlier deal-ordinal -> earlier start), then frozen so its progress grows smoothly; settled frames reach
+// + ordinal*stagger` (earlier deal-ordinal -> earlier start), then frozen
 // the end exactly, matching the pre-animation layout. Presentation-only: seeding happens lazily during draw via ReplayView.
 float Replay::dealerRevealAt(int i)
 {
@@ -23,7 +23,7 @@ float Replay::playerRevealAt(int handIndex, int cardIndex)
     auto it = playerRevealAt_.find(key);
     if (it != playerRevealAt_.end())
         return it->second;
-    // Stable deal-order ordinal: all earlier hands' cards come first, then this card's index, so earlier hands sweep in first.
+    // Stable deal-order ordinal: all earlier hands' cards come first, then this card's index
     int ordinal = 0;
     for (int k = 0; k < handIndex; ++k)
         ordinal += static_cast<int>(currentState.playerHands[k].cards.size());
@@ -605,7 +605,7 @@ void Replay::selectNextShoe()
 }
 
 // Index of the list row under `mousePos` (window pixels), or -1 if none. Row geometry is shared
-// with ReplayView::drawHistoryList via ReplayLayout so a drawn row and its hover target never drift.
+// with ReplayView::drawHistoryList via ReplayLayout
 int Replay::hoveredHistoryRow(sf::Vector2i mousePos) const
 {
     if (historyEntries.empty())
@@ -707,7 +707,7 @@ void Replay::processEvents(sf::Event &event)
     }
 
     // Mouse wheel scrolls the shoe list: up reveals earlier entries, down reveals later ones. This is
-    // one path shared with keyboard Up/Down and the hover/click selection above -- off-screen rows are
+    // one path shared with keyboard Up/Down and the hover/click selection above
     // selectable once scrolled into view. A positive delta scrolls up (fewer rows past the top).
     if (auto wheel = event.getIf<sf::Event::MouseWheelScrolled>())
     {
@@ -886,8 +886,8 @@ void Replay::update(float deltaTime)
     sliderBounds.size.x = static_cast<float>(size.x - 120);
     sliderBounds.size.y = 16.0f;
 
-    // Feature 8-style card-deal animation for replay playback: advance a shared reveal clock each frame so arriving cards
-    // slide/flip into their resting slot over time instead of popping. Mirror GameRenderer's model exactly -- one clock, per-slot
+    // -style card-deal animation for replay playback: advance a shared reveal clock each frame
+    // slide/flip into their resting slot over time instead of popping. Mirror GameRenderer's model exactly
     // reveal times seeded on first sight (see dealerRevealAt()/playerRevealAt()), reset only when the shown-card count drops
     // (stepping back) so re-appearing cards sweep in rather than pop. Presentation-only: the step/tick logic above is untouched.
     int total = static_cast<int>(currentState.dealerHand.size());

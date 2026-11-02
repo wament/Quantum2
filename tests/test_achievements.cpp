@@ -9,7 +9,6 @@
 #include "Game.hpp"
 #include "Hand.hpp"
 #include "PlayerProfile.hpp"
-#include "RoundEngine.hpp"
 #include "Serialization.hpp"
 #include "test_support.hpp"
 #include <algorithm>

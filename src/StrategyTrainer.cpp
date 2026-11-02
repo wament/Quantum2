@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-// Draw a string centred horizontally at (cx, y) using the shared font. Centralises the origin/position boilerplate so every
+// Draw a string centred horizontally at (cx, y) using the shared font. Centralises the origin/position boilerplate
 // label in draw() lines up consistently and draw() stays readable.
 void centeredText(sf::RenderWindow& window, const std::string& text, unsigned size, sf::Color color, float cx, float y)
 {
@@ -23,7 +23,7 @@ using namespace BasicStrategy;
 namespace
 {
     // Faithful port of Game::giveBasicStrategyAdvice's inputs to the shared advisor primitive. Returns one of
-    // H/D/S/P/R (soft 'Y'->H and pair 'M' resolve inside getRecommendedAction), so grading a player key against it
+    // H/D/S/P/R (soft 'Y'->H and pair 'M' resolve inside getRecommendedAction)
     // is exactly equivalent to what the in-game Book box shows.
     char recommendAction(const Hand& playerHand, const Hand& dealerHand)
     {
@@ -133,8 +133,8 @@ void StrategyTrainer::nextQuestion()
         return;
     }
 
-    // A natural blackjack (2 cards = 21) needs no decision, so keep dealing until the player's hand is a real choice.
-    // Rejected hands are simply removed from this training shoe (it isn't a saved record), which keeps bounds simple.
+    // A natural blackjack (2 cards = 21) needs no decision
+    // Rejected hands are simply removed from this training shoe (it isn't a saved record)
     int attempts = 0;
     do
     {

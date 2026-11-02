@@ -1,11 +1,11 @@
 #include "AchievementFeeder.hpp"
 #include "GameRecord.hpp"  // handIsNaturalBJ: single record-derived source of truth for every blackjack tally
-#include "Game.hpp"  // complete type: RoundRecord, HandOutcome, Hand — needed to qualify game.* members used below.
+#include "Game.hpp"  // complete type: RoundRecord, HandOutcome, Hand: needed to qualify game.* members used below.
 
 AchievementFeeder::AchievementFeeder(Game& game) : game(game) {}
 
-// Feature 5 (Achievement System): feed one settled round's human-seat outcome into the achievement engine and surface any
-// just-unlocked popup. The human seat is index 0; a split yields multiple seat-0 outcomes on the record, so their signals are
+// feed one settled round's human-seat outcome into the achievement engine and surface any
+// just-unlocked popup. The human seat is index 0; a split yields multiple seat-0 outcomes on the record
 // OR'd. True count comes straight from the settled round; bankroll is read live. Shoe-end achievements resolve in
 // Game::resetShoeAnalytics() via AchievementManager::onNewShoe(), not here. Moved verbatim from Game::recordHandAchievements().
 void AchievementFeeder::recordHandAchievements(const RoundRecord& round)
@@ -35,7 +35,7 @@ void AchievementFeeder::recordHandAchievements(const RoundRecord& round)
 }
 
 // Given the just-unlocked achievement ids, set the HUD popup to the highest-priority one (first in definition order) by name.
-// Pure lookup over the manager's fixed name table + a target string; needs no friendship. Lifted verbatim from Game.cpp so both
+// Pure lookup over the manager's fixed name table + a target string; needs no friendship. Lifted verbatim from Game.cpp
 // the recordHandAchievements() path and Game::resetShoeAnalytics()'s onNewShoe() call share this one implementation.
 void AchievementFeeder::surfaceNewlyUnlocked(const std::vector<Achievement::Id>& newly)
 {

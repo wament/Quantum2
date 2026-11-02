@@ -105,7 +105,7 @@ void Hand::setInsuranceBet(int amount) { insuranceBet = amount; }
 
 int Hand::getInsuranceBet() const { return insuranceBet; }
 
-// Records the chosen side-bet kind + wager and clears any prior resolved payout so re-placing a bet starts clean.
+// Records the chosen side-bet kind + wager and clears any prior resolved payout
 void Hand::setSideBet(SideBetKind kind, int wager)
 {
     sideBetKind = kind;

@@ -11,7 +11,7 @@ using namespace BasicStrategy;
 namespace
 {
     // Recompute the book's action for a hand + dealer up-card - exactly what getRecommendedAction (the same advisor
-    // Game::giveBasicStrategyAdvice wraps) prescribes, so a tournament seat plays identically to an in-game one.
+    // Game::giveBasicStrategyAdvice wraps) prescribes
     char recommendAction(const Hand& hand, const Card& dealerUpCard)
     {
         int value = hand.getValue();
@@ -57,7 +57,7 @@ void Tournament::start(const TournamentConfig& config, int deckCount)
 
 void Tournament::setDeck(const std::vector<Card>& cards)
 {
-    // Mirrors Game::setDeck: Deck::draw() pops from the back, so store reversed to honour natural DEAL order
+    // Mirrors Game::setDeck: Deck::draw() pops from the back
     // (the first card in `cards` is the first one drawn). This keeps injected shoes intuitive for deterministic tests.
     shoe.setCards(std::vector<Card>(cards.rbegin(), cards.rend()));
     injectedDeck = true;
@@ -120,7 +120,7 @@ void Tournament::playHand()
     const bool dealerNatural = dealer.isBlackjack();
 
     // Settle every seated hand through the game's own settlement primitive. Player::settle applies the 3:2 natural
-    // blackjack / even-money / push result via winBet/loseBet, so each seat's bankroll moves exactly as in-game and
+    // blackjack / even-money / push result via winBet/loseBet
     // reflects net profit/loss against the starting chip count (no stake was deducted up front).
     for (std::size_t s = 0; s < seats_.size(); ++s)
         if (seated[s])
@@ -144,7 +144,7 @@ void Tournament::playHand()
 
 void Tournament::update(float deltaTime)
 {
-    // Paces automatic in-game progress at a readable rate. Pure-logic tests advance directly with playHand(), so this
+    // Paces automatic in-game progress at a readable rate. Pure-logic tests advance directly with playHand()
     // timer never affects the deterministic path; it exists only to make the mode playable when driven by Game::update().
     if (complete_)
         return;

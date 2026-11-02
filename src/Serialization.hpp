@@ -86,7 +86,7 @@ inline void from_json(const json& j, PlayerStats& s)
     j.at("greatestLoss").get_to(s.greatestLoss);
     j.at("greatestSessionWin").get_to(s.greatestSessionWin);
     j.at("greatestSessionLoss").get_to(s.greatestSessionLoss);
-    // Newer fields: fall back to the struct's default (0) so profiles saved before Feature 1/3 still load.
+    // Newer fields: fall back to the struct's default (0)
     s.winsAfterDeviation = j.value("winsAfterDeviation", int{0});
     s.greatestHandLoss = j.value("greatestHandLoss", int{0});
     s.longestWinningStreak = j.value("longestWinningStreak", int{0});
@@ -96,7 +96,7 @@ inline void from_json(const json& j, PlayerStats& s)
     s.handProfitSumSq = j.value("handProfitSumSq", (long long)0);
     // Backward compatible: older profiles have no bet histogram yet.
     s.betDistribution = j.value("betDistribution", std::map<int, int>{});
-    // Feature 1 (Side Bets): additive — older profiles lack these fields and fall back to the struct defaults.
+    // additive: older profiles lack these fields and fall back to the struct defaults.
     s.sideBetWins = j.value("sideBetWins", int{0});
     s.sideBetLosses = j.value("sideBetLosses", int{0});
     s.sideBetProfitSum = j.value("sideBetProfitSum", (long long)0);
@@ -134,7 +134,7 @@ inline void from_json(const json& j, HandOutcome& h)
     if (j.contains("playerName"))
         j.at("playerName").get_to(h.playerName);
     // else defaults to "" for backward compatibility with existing saves
-    // Feature 1 (Side Bets): additive — older round records lack these and fall back to the struct defaults.
+    // additive: older round records lack these and fall back to the struct defaults.
     h.sideBetKind = static_cast<SideBetKind>(j.value("sideBetKind", int{0}));
     h.sideBetWager = j.value("sideBetWager", int{0});
     h.sideBetPayout = j.value("sideBetPayout", int{0});
@@ -202,12 +202,12 @@ inline void to_json(json& j, const PlayerProfile& p)
         {"preferredMusicVolume", p.preferredMusicVolume},
         {"preferredMuted", p.preferredMuted}
     };
-    // Feature 5 (Achievement System): additive schema — persist the unlocked-achievement ids only when at least one is
+    // additive schema: persist the unlocked-achievement ids only when at least one is
     // owned, so a profile saved before achievements existed keeps serializing with no such key (and still loads).
     if (!p.unlockedAchievementIds.empty())
         j["unlockedAchievementIds"] = p.unlockedAchievementIds;
-    // Feature 3 (Custom Game Rules): persist the player's table rules as a nested object. Written unconditionally so it
-    // round-trips; additive on load (see from_json) so profiles saved before custom rules existed still load unchanged.
+    // persist the player's table rules as a nested object. Written unconditionally so it
+    // round-trips; additive on load (see from_json)
     j["gameRules"] = p.gameRules;
 }
 
@@ -221,15 +221,15 @@ inline void from_json(const json& j, PlayerProfile& p)
     p.preferredPlayerCount = j.value("preferredPlayerCount", GameConfig::DEFAULT_PLAYER_COUNT);
     p.preferredSpeed = j.value("preferredSpeed", static_cast<int>(GameSpeed::Normal));
     p.preferredCountingStyle = j.value("preferredCountingStyle", 1);
-    // Backward compatible: profiles saved before sound settings existed fall back to sensible defaults, so existing
-    // saved profiles keep loading unchanged (additive schema — see CONTEXT.md §4 / §6). Defaults match Constants::Sound.
+    // Backward compatible: profiles saved before sound settings existed fall back to sensible defaults
+    // saved profiles keep loading unchanged (additive schema: see CONTEXT.md §4 / §6). Defaults match Constants::Sound.
     p.preferredSoundVolume = j.value("preferredSoundVolume", 100);
     p.preferredMusicVolume = j.value("preferredMusicVolume", 60);
     p.preferredMuted = j.value("preferredMuted", false);
-    // Feature 5 (Achievement System): additive — profiles saved before achievements existed have no such key and fall back
+    // additive: profiles saved before achievements existed have no such key and fall back
     // to an empty list, so they keep loading unchanged.
     p.unlockedAchievementIds = j.value("unlockedAchievementIds", std::vector<int>{});
-    // Feature 3 (Custom Game Rules): additive — profiles saved before custom rules existed have no "gameRules" key, so
+    // additive: profiles saved before custom rules existed have no "gameRules" key, so
     // the struct keeps its default values and loads unchanged (the nested GameRules hooks fall back field-by-field too).
     if (j.contains("gameRules"))
         j.at("gameRules").get_to(p.gameRules);

@@ -4,9 +4,9 @@
 
 RoundDealer::RoundDealer(Game& game) : game(game) {}
 
-// Feature 1 (Side Bets): evaluate + bankroll every seat's side bet once all cards are known. Each side bet resolves against
-// the seat's two hand cards plus the dealer's up-card, and it pays out / loses INDEPENDENTLY of the main hand, so this runs
-// for all seats here — before evaluateHands() settles the main hands (deal() calls it right after the hole card).
+// evaluate + bankroll every seat's side bet once all cards are known. Each side bet resolves against
+// the seat's two hand cards plus the dealer's up-card, and it pays out / loses INDEPENDENTLY of the main hand
+// for all seats here: before evaluateHands() settles the main hands (deal() calls it right after the hole card).
 void RoundDealer::resolveSideBets()
 {
     if (game.players.empty() || game.dealer.size() < 1)
@@ -30,7 +30,7 @@ void RoundDealer::resolveSideBets()
         PlayerStats& stats = p.getStats();
         if (result.won())
         {
-            // Net gain is wager * ratio. The stake was never removed at placement (placeBet only guards), so winning adds
+            // Net gain is wager * ratio. The stake was never removed at placement (placeBet only guards)
             // exactly the winnings here; gross payout for replay/analytics is stake returned + winnings.
             p.winBet(wager * result.multiplier);
             hand.setSideBetPayout(wager * (1 + result.multiplier));
@@ -71,8 +71,8 @@ void RoundDealer::deal()
     }
     game.dealCardToDealer(); // dealer's second card: the face-down hole card, revealed on the dealer's turn
 
-    // Feature 1 (Side Bets): apply the human seat's pending side-bet choice to its main hand and resolve every placed side
-    // bet now — after all cards are known but BEFORE any main-hand settlement. Side bets pay / lose independently of the main
+    // apply the human seat's pending side-bet choice to its main hand and resolve every placed side
+    // bet now: after all cards are known but BEFORE any main-hand settlement. Side bets pay / lose independently of the main
     // hand, so a natural blackjack still resolves its side bet immediately (the round then flows through the BJ or dealer path
     // below). The intent is consumed here so it is never re-applied on the next round.
     if (game.sideBetIntentWager_ > 0 && game.sideBetIntentKind_ != SideBetKind::None)

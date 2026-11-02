@@ -4,6 +4,7 @@
 #include <Serialization.hpp>
 #include <filesystem>
 #include <fstream>
+#include "test_support.hpp"
 
 using namespace Constants;
 namespace fs = std::filesystem;
@@ -11,17 +12,9 @@ namespace fs = std::filesystem;
 // The main menu opens on the last-used table settings instead of the compile-time defaults, so the values
 // have to survive a save/load round trip -- and profiles written before these fields existed must still load.
 
-namespace
-{
-    fs::path tempProfile(const std::string& name)
-    {
-        return fs::temp_directory_path() / ("bj_settings_test_" + name + ".json");
-    }
-}
-
 TEST_CASE("Table settings survive a profile save/load round trip", "[Profile][Settings]")
 {
-    const fs::path path = tempProfile("roundtrip");
+    const fs::path path = test_support::temp_path("settings", "roundtrip");
 
     {
         PlayerProfile p("William");
@@ -46,7 +39,7 @@ TEST_CASE("Table settings survive a profile save/load round trip", "[Profile][Se
 // cannot drift out of sync with the record format.
 TEST_CASE("Profiles saved before table settings existed still load with defaults", "[Profile][Settings]")
 {
-    const fs::path path = tempProfile("legacy");
+    const fs::path path = test_support::temp_path("settings", "legacy");
 
     {
         PlayerProfile fresh("William");

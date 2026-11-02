@@ -83,7 +83,7 @@ void ReplayView::drawHistoryList()
         window.draw(line);
     }
 
-    // Vertical scrollbar: only drawn when the list overflows so the scroll range is discoverable.
+    // Vertical scrollbar: only drawn when the list overflows
     if (maxOffset > 0 && replay.historyVisibleRowCount() > 0)
     {
         float trackX = 1258.f;
@@ -154,7 +154,7 @@ void ReplayView::drawTable(const ReplayInternals::ReplayState &state)
     {
         float x = centerX + static_cast<float>(i) * 60.f;
 
-        // Feature 8-style card-deal animation in replay playback: ease this card from the shoe to its slot over a short
+        // -style card-deal animation in replay playback: ease this card from the shoe to its slot over a short
         // window so arriving cards slide/flip into place instead of popping. Settled frames (elapsed >= duration) land exactly
         // on (x, dealerY), matching the pre-animation layout pixel-for-pixel.
         const float revealAt = replay.dealerRevealAt(static_cast<int>(i));
@@ -198,7 +198,7 @@ void ReplayView::drawTable(const ReplayInternals::ReplayState &state)
 
         for (size_t c = 0; c < hand.cards.size(); ++c)
         {
-            // Feature 8-style card-deal animation in replay playback: ease each player card from the shoe to its slot so
+            // -style card-deal animation in replay playback: ease each player card from the shoe to its slot so
             // arriving cards slide into place instead of popping; settled frames land exactly on-slot.
             const sf::Vector2f slot{handX + static_cast<float>(c) * 16.f, playerY - c * 16.f};
             const float revealAt = replay.playerRevealAt(static_cast<int>(h), static_cast<int>(c));

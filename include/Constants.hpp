@@ -76,7 +76,7 @@ inline float gamerStepInterval(float refreshRateHz)
 
 // Dealer reveal pacing per speed. Automated-fast tiers (Gamer refresh-rate-derived, Hyper fixed NPC pace) reveal at the
 // same speed players act, so a fast auto-play reads as one continuous deal; every other speed keeps the watchable
-// DEALER_ACTION_DELAY beat for a casual player. Reuses npcActionDelay/gamerStepInterval so dealer and player pacing never
+// DEALER_ACTION_DELAY beat for a casual player. Reuses npcActionDelay/gamerStepInterval
 // drift apart.
 inline float dealerRevealInterval(GameSpeed speed, float refreshRateHz)
 {
@@ -87,8 +87,8 @@ inline float dealerRevealInterval(GameSpeed speed, float refreshRateHz)
     return DEALER_ACTION_DELAY;
 }
 
-// Feature 8 (speed-linked dealing animation): a per-speed scale factor multiplies every base Feature-8 deal duration
-// (DEAL_SLIDE / DEAL_STAGGER / DEALER_HOLE_FLIP) so card-deal tempo tracks the selected action speed instead of one fixed
+// a per-speed scale factor multiplies every base Feature-8 deal duration
+// (DEAL_SLIDE / DEAL_STAGGER / DEALER_HOLE_FLIP)
 // pace. Fixes the Fast desync where seat highlights + sound raced ahead of cards sliding at a constant 0.32s beat: faster
 // speeds compress, slower stretch for visibility. Hyper/Gamer deliver no dealing animation (factor 0 -> tween settles
 // instantly). Mirrors npcActionDelay/summaryDisplayTime's "one timing table" pattern.
@@ -106,12 +106,12 @@ inline float dealDurationScale(GameSpeed speed)
     return 1.0f;
 }
 
-// True only for the pure-speed tiers (Hyper/Gamer) where dealing animations are intentionally not delivered, so all
-// presentation callers can skip them outright — the single source of "no animation here" (mirrors isAutoPlaying's pattern;
+// True only for the pure-speed tiers (Hyper/Gamer) where dealing animations are intentionally not delivered
+// presentation callers can skip them outright: the single source of "no animation here" (mirrors isAutoPlaying's pattern;
 // used by GameRenderer for animations and Game.cpp for sound effects).
 inline bool animationDisabled(GameSpeed speed) { return speed == GameSpeed::Hyper || speed == GameSpeed::Gamer; }
 
-// "Continuous autoplay": every seat acts on basic strategy without waiting for input — AutoPlay plus Hyper and refresh-
+// "Continuous autoplay": every seat acts on basic strategy without waiting for input: AutoPlay plus Hyper and refresh-
 // rate Gamer tiers. Centralized so all state-machine autoplay gates stay consistent (Hyper/Gamer differ from AutoPlay only
 // in pacing, not automation).
 inline bool isAutoPlaying(GameSpeed speed) { return speed == GameSpeed::AutoPlay || speed == GameSpeed::Gamer || speed == GameSpeed::Hyper; }
@@ -130,7 +130,7 @@ constexpr float PANEL_MARGIN = 18.f;
 // HUD text font size
 constexpr int HUD_FONT_SIZE = 24;
 
-// HUD panel geometry. Both side panels read SIDE_WIDTH, so they are always the same width and the table stays centered;
+// HUD panel geometry. Both side panels read SIDE_WIDTH
 // deriving every HUD position from these (rather than hand-placement) is what stopped the left/right panels drifting apart
 // when only one was resized.
 namespace Hud
@@ -139,7 +139,7 @@ constexpr float SIDE_WIDTH = 240.f;   // width of BOTH the left and the right pa
 constexpr float BOTTOM_HEIGHT = 96.f; // height of the bottom bar (spans the full window width)
 constexpr float SIDE_HEIGHT = static_cast<float>(WINDOW_HEIGHT) - BOTTOM_HEIGHT;
 
-// Left-panel chart internals, scaled with the panels so the plots stay proportional at any panel size.
+// Left-panel chart internals, scaled with the panels
 constexpr float CHART_MARGIN = 10.f;         // inset of the stacked charts from the panel edge
 constexpr float CHART_GAP = 18.f;            // vertical gap between stacked charts
 constexpr float CHART_TITLE = 20.f;          // strip reserved at a chart's top for its title
@@ -179,7 +179,7 @@ inline bool RESPLIT_TENS_ALLOWED = true;
 constexpr int MINIMUM_BET = 10;
 constexpr int MAXIMUM_BET = 1000;
 
-// Bets Placed chart: wagers are folded into BET_BUCKET_COUNT evenly spaced ranges spanning [0, MAXIMUM_BET], so the
+// Bets Placed chart: wagers are folded into BET_BUCKET_COUNT evenly spaced ranges spanning [0, MAXIMUM_BET]
 // histogram always shows the same number of evenly spaced bars instead of one bar per distinct bet size.
 constexpr int BET_BUCKET_COUNT = 10;
 constexpr int BET_BUCKET_WIDTH = MAXIMUM_BET / BET_BUCKET_COUNT;
@@ -188,8 +188,8 @@ constexpr int BET_BUCKET_WIDTH = MAXIMUM_BET / BET_BUCKET_COUNT;
 constexpr float BLACKJACK_VARIANCE = 1.37f;
 
 // Edge Over Time model: the house edge is a LEVEL re-estimated each round from the count as it stands, not a running
-// total — it moves with the shoe, it does not accumulate hand over hand. Baseline sits ~0.5% behind on a fresh shoe and
-// each true-count point is ~0.5% in the player's favour, so a +4 TC reads as +1.50% and a shoe stays within +-5%.
+// total: it moves with the shoe, it does not accumulate hand over hand. Baseline sits ~0.5% behind on a fresh shoe and
+// each true-count point is ~0.5% in the player's favour
 // Accumulating per-round edge (vs re-reading) is what used to drive the curve to -13% after ten rounds. Calibration is
 // Hi-Lo's: feed a Hi-Lo true count even if Reko is on screen (Reko is unbalanced and not on this scale).
 constexpr double BASE_PLAYER_EDGE_PERCENT = -0.5;
@@ -207,7 +207,7 @@ constexpr float PLAYER_Y = 470.f;
 constexpr float DECK_X = 10.f;
 constexpr float DECK_Y = 640.f;
 
-// Feature 8 (dealing): the shoe/deck stack sits upper-right near the dealer, so every dealt card -- player hits and
+// the shoe/deck stack sits upper-right near the dealer
 // dealer cards alike -- slides out from one visible stacked deck instead of popping in from a corner. Fractional of
 // window size keeps it inside the usable band [HANDS_LEFT_MARGIN, HANDS_RIGHT_MARGIN] when the window is resized.
 constexpr float SHOE_X = static_cast<float>(WINDOW_WIDTH) * 0.76f;
@@ -217,7 +217,7 @@ constexpr float CHIP_RADIUS = 18.f;
 
 constexpr float CHIP_BET_X_OFFSET = 24.f;
 
-// Split-hand clamp band, tied to side-panel width (not fixed pixels): the HUD draws *after* the table, so a wide split
+// Split-hand clamp band, tied to side-panel width (not fixed pixels): the HUD draws *after* the table
 // clamped inside the old 120px margin would land under a panel and be hidden.
 constexpr float HANDS_LEFT_MARGIN = Hud::SIDE_WIDTH + 20.f;
 constexpr float HANDS_RIGHT_MARGIN = static_cast<float>(WINDOW_WIDTH) - Hud::SIDE_WIDTH - 20.f;
@@ -227,9 +227,9 @@ constexpr float BOX_PAD = 16.f;
 constexpr float SPLIT_SPREAD_X = 80.f;
 constexpr float SPLIT_SPREAD_Y = 80.f;
 
-// Feature 8 (Animated Card Dealing): presentation-only dealing-animation timing (seconds), matching GameTiming /
-// dealer-reveal pacing. Cards ease from shoe to slot over this duration and are staggered so the deal sweeps instead of
-// popping. Pure polish — no effect on logic, settlement or headless determinism; used only in GameRenderer::draw, never
+// presentation-only dealing-animation timing (seconds), matching GameTiming /
+// dealer-reveal pacing. Cards ease from shoe to slot over this duration and are staggered
+// popping. Pure polish: no effect on logic, settlement or headless determinism; used only in GameRenderer::draw, never
 // the logic/tick path.
 constexpr float DEAL_SLIDE_SECONDS = 0.32f;   // per-card slide-in duration from shoe to slot
 constexpr float DEAL_STAGGER_SECONDS = 0.07f; // offset between successive cards' reveal start (the deal sweep)
@@ -238,7 +238,7 @@ constexpr float DEALER_HOLE_FLIP_SECONDS = 0.40f; // hole-card flip-to-face-up d
 // Persistence (fallback path if HOME is not set)
 constexpr const char* PLAYER_FILE_FALLBACK = "saves/player_profile.json";
 
-// Sound & music asset locations + defaults (Feature 7). Volumes use SFML's 0..100 float range so they map
+// Sound & music asset locations + defaults. Volumes use SFML's 0..100 float range
 // directly onto sf::Sound::volume / sf::Music::setVolume with no conversion. Persisted as plain ints in the
 // profile so the schema stays free of any SFML dependency (mirrors preferredSpeed/preferredCountingStyle).
 namespace Sound
@@ -246,8 +246,8 @@ namespace Sound
     constexpr const char* SOUND_DIR = "assets/sounds/";
     constexpr const char* MUSIC_DIR = "assets/music/";
 
-    // Named effect clips, keyed by the event name Game plays. Kept in one place so the asset filenames, the
-    // known-events list (SoundManager) and every playSound() call site all agree — edit here, don't duplicate.
+    // Named effect clips, keyed by the event name Game plays. Kept in one place
+    // known-events list (SoundManager) and every playSound() call site all agree: edit here, don't duplicate.
     constexpr const char* EVENT_CARD = "card";
     constexpr const char* EVENT_BET = "bet";
     constexpr const char* EVENT_CHIP = "chip";

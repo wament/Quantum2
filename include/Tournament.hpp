@@ -8,18 +8,18 @@
 #include "Hand.hpp"
 #include "Player.hpp"
 
-// Feature 9 (Tournament Mode): a fixed-hand, equal-chips blackjack tournament where every seat is forced to the same
+// a fixed-hand, equal-chips blackjack tournament where every seat is forced to the same
 // blind bet each round and the seat with the most chips when the hands run out wins. It reuses the game's own
 // primitives - Deck for the shoe, Hand for dealing/value/soft/pair detection and Player::settle (which applies the
 // standard 3:2 natural-blackjack / even-money / push settlement through winBet/loseBet) - with decisions taken from
-// BasicStrategy::getRecommendedAction, so a tournament hand settles exactly as an in-game one would. The blind bet is
-// FORCED (no user choice of size), which is the whole point of the format: skill/edge comes from playing each hand,
+// BasicStrategy::getRecommendedAction
+// FORCED (no user choice of size)
 // not from betting volume.
 //
 // Like StrategyTrainer this is its own AppMode state machine with pure, headless-safe logic and a graphics-only draw()
-// - no SFML in the play-out path - so it runs over the Graphics-only test binary. Deterministic tests inject an exact
+// - no SFML in the play-out path -
 // card order via setDeck() (mirroring Game::setDeck) and drive one round at a time through playHand(); the on-screen
-// presentation lives only in draw(). It deliberately does NOT touch PlayerProfile, so the JSON schema stays unchanged.
+// presentation lives only in draw(). It deliberately does NOT touch PlayerProfile
 class Tournament
 {
   public:
@@ -40,20 +40,20 @@ class Tournament
     // a real random deal; setDeck() overrides this for deterministic tests.
     void start(const TournamentConfig& config, int deckCount = 6);
 
-    // Replace the shoe with an exact card order so play-out is fully deterministic (tests inject known sequences here;
+    // Replace the shoe with an exact card order
     // the game's auto-shuffle path calls start(deckCount) instead). Must be called before the first playHand().
     void setDeck(const std::vector<Card>& cards);
 
     // Play exactly one tournament round: deal from the shoe, force the blind bet on every seat that can afford it,
     // let each seat act on basic strategy (hit until the book says otherwise; a double draws one more card then
-    // stands), let the dealer finish to 17, and settle every hand via Player::settle. Advancing is explicit so tests
+    // stands), let the dealer finish to 17, and settle every hand via Player::settle. Advancing is explicit
     // can assert standings after any round without SFML or timing. Deal order within a round is seat-by-seat for two
     // cards each (round-robin: all first cards, then all second cards), then the dealer's up-card and hole card, so
     // an injected shoe maps to predictable seats. Ends the tournament when handsPlayed_ reaches config_.handsToPlay.
     void playHand();
 
     // Frame update for AppMode parity (mirrors Replay/StrategyTrainer wiring). Paces automatic in-game progress at a
-    // readable rate; pure-logic tests drive advancement directly with playHand() and never rely on this timer, so the
+    // readable rate; pure-logic tests drive advancement directly with playHand() and never rely on this timer
     // deterministic path stays timing-independent. No game-state mutation beyond playing one hand per tick interval.
     void update(float deltaTime);
 

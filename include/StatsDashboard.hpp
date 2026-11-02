@@ -4,11 +4,11 @@
 #include <vector>
 #include <string>
 
-// GameRecord.hpp is pure logic (no SFML anywhere) and defines PlayerStats / RoundRecord, so it must be included here for
+// GameRecord.hpp is pure logic (no SFML anywhere) and defines PlayerStats / RoundRecord
 // the ComputedStats/feed() signatures to see those types. Kept first because this header stays headless-safe.
 #include "GameRecord.hpp"
 
-// GameRecord.hpp is pure logic (no SFML anywhere), so this header stays headless-safe and the StatsDashboard logic
+// GameRecord.hpp is pure logic (no SFML anywhere)
 // runs over the Graphics-only test binary, exactly like Tournament / StrategyTrainer. The dashboard reads existing career
 // stats (PlayerStats) + round history (RoundRecord) and derives analytics; presentation lives in draw() only (no game
 // state mutation), so it is safe to call from GameRenderer while another thread owns nothing here.
@@ -23,8 +23,8 @@ class StatsDashboard
         Profits
     };
 
-    // Everything the dashboard computes from career stats + round history. Pure data, so tests assert on it directly via
-    // the *ForTest() accessors before any UI is written (Feature 4: logic-first).
+    // Everything the dashboard computes from career stats + round history. Pure data
+    // the *ForTest() accessors before any UI is written (logic-first).
     struct ComputedStats
     {
         int handsFinished = 0;   // number of individual hands played, summed across every round
@@ -55,18 +55,18 @@ class StatsDashboard
     StatsDashboard() = default;
 
     // Feed the data source of truth: career stats + a flat list of round history (flattened from PlayerProfile's shoe
-    // records). Pure logic — drives every *ForTest() accessor, no SFML. Called when entering the mode in full gameplay.
+    // records). Pure logic: drives every *ForTest() accessor, no SFML. Called when entering the mode in full gameplay.
     void feed(const PlayerStats& career, const std::vector<RoundRecord>& rounds);
 
     const ComputedStats& computed() const { return computed_; }
 
-    // Exporters (nlohmann/json is header-only and has no SFML dependency, so both run over the Graphics-only test binary).
+    // Exporters (nlohmann/json is header-only and has no SFML dependency
     // toJson mirrors the codebase's Serialization.hpp approach (vendored nlohmann), toCsv is a flat analytics dump.
     std::string toJson() const;
     std::string toCsv() const;
 
     // Frame update for AppMode parity (mirrors Tournament/StrategyTrainer wiring). Pure-logic tests drive feed()+computed()
-    // directly and never rely on this timer, so the deterministic path stays timing-independent. Tab switching is driven by
+    // directly and never rely on this timer
     // InputHandler (advanceTab), not by update().
     void update(float deltaTime);
 

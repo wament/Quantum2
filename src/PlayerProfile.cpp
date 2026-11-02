@@ -61,10 +61,10 @@ void PlayerProfile::save(const std::string& filename) const
     }
 
     // Streamline persistence around a single source of truth. When there is recorded history, the career stats written to disk are
-    // recomputed from those shoes via computeCareerStatsHistory -- so the profile can never drift from what was actually played and
+    // recomputed from those shoes via computeCareerStatsHistory --
     // load == save stays round-trip stable. Only record-derivable fields are overwritten; the live-tracked, non-recordable trackers
     // (splits/doubles/betsPlaced/betSum/betDistribution/strategy deviations) stay exactly as they were on the in-memory profile. A
-    // profile with no shoes yet has nothing to recompute and is written verbatim -- unchanged from before this refactor.
+    // profile with no shoes yet has nothing to recompute and is written verbatim
     PlayerProfile reconciled = *this;
     if (!longHistory.empty())
     {
@@ -98,8 +98,8 @@ const std::vector<ShoeRecord>& PlayerProfile::getLongHistory() const { return lo
 
 PlayerStats PlayerProfile::careerStatsFromHistory() const
 {
-    // Stitch the completed shoes (longHistory) with the in-progress shoe's rounds (currentHistory), so a quit mid-shoe still books
-    // those hands. The synthetic current shoe needs only .rounds -- computeCareerStatsHistory reads no other ShoeRecord field.
+    // Stitch the completed shoes (longHistory) with the in-progress shoe's rounds (currentHistory)
+    // those hands. The synthetic current shoe needs only .rounds
     std::vector<ShoeRecord> history = longHistory;
     if (!currentHistory.empty())
     {

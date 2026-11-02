@@ -1,4 +1,4 @@
-// Round settlement & rule resolution: naturals, split aces, resplit tens, dealer blackjacks, RoundDealer deal/resolve path.
+// Round settlement & rule resolution tests: naturals, split aces, resplit tens, dealer blackjacks, deal/resolve path.
 
 #include <catch2/catch_all.hpp>
 #include "test_support.hpp"
@@ -6,7 +6,6 @@
 #include "Constants.hpp"
 #include "Game.hpp"
 #include "Hand.hpp"
-#include "RoundEngine.hpp"
 #include "test_support.hpp"
 #include <Card.hpp>
 #include <Constants.hpp>
@@ -14,14 +13,13 @@
 #include <Game.hpp>
 #include <Hand.hpp>
 #include <Player.hpp>
-#include <RoundEngine.hpp>
 #include <catch2/catch_all.hpp>
 
 using Catch::Approx;
 using namespace Constants;
 using namespace GameConfig; // STARTING_BANKROLL lives here (declared in Constants.hpp)
 
-// Shared test fixtures/helpers lifted from every member file into one anonymous namespace (identical copies de-duped).
+// Shared fixtures/helpers in one anonymous namespace (identical copies de-duped across files).
 namespace {
 Hand hand(std::initializer_list<int> values, int bet)
     {
@@ -39,10 +37,9 @@ bool splitAceIs21NotBlackjack(const Hand& h)
 
 void driveToCleanup(Game& game)
     {
-        RoundEngine engine;
         game.deltaTime = 100.0f;
         for (int i = 0; i < 60 && game.roundStateForTest() != RoundState::Cleanup; ++i)
-            engine.tick(100.0f, game);
+            game.advanceTurnState(100.0f);
     }
 
 } // namespace
@@ -60,7 +57,7 @@ TEST_CASE("Natural blackjack beats a dealer 21 built from three or more cards", 
     CHECK(p.getBankroll() == 1150);          // 1000 + 150 profit
 }
 
-// The one legitimate exception: the dealer's own natural blackjack pushes the player's.
+// One legitimate exception: the dealer's own natural blackjack pushes the player's.
 TEST_CASE("Natural blackjack pushes only against the dealer's own natural", "[Blackjack][Settlement]")
 {
     Player p("William", 1000);
@@ -89,7 +86,7 @@ TEST_CASE("Non-natural 21 still pushes a dealer 21", "[Blackjack][Settlement]")
     CHECK(p.getBankroll() == 1000);
 }
 
-// End to end: the player's natural is locked in the moment the cards are dealt -- the hand is finished
+// End to end: the player's natural is locked in at deal time, and the hand is already finished there.
 // and the dealer draws nothing on its account -- and it is paid 3:2.
 TEST_CASE("Player natural is resolved before the dealer acts and pays 3:2", "[Blackjack][Settlement]")
 {
@@ -111,13 +108,13 @@ TEST_CASE("Player natural is resolved before the dealer acts and pays 3:2", "[Bl
     CHECK(game.testPlayer(0).getStats().wins == 1);
 }
 
-// A dealer natural must cost the player exactly one wager. evaluateBlackjack() used to deduct it and
+// A dealer natural costs exactly one wager, evaluated on the deal - not deducted later by a buggy evaluateBlackjack().
 // then evaluateHands() -> settle() deducted the same loss a second time.
 TEST_CASE("Dealer natural costs the player exactly one wager", "[Blackjack][Settlement]")
 {
     Game game(true);
 
-    // Dealer up card K (not an ace, so no insurance detour) + hole ace = natural blackjack.
+    // Up-card K plus hole ace is a natural; no insurance detour since K is not an ace.
     test_support::start_round(game,{test_support::make_card(9, Suit::Spades),  test_support::make_card(13, Suit::Spades),
                   test_support::make_card(7, Suit::Clubs),   test_support::make_card(1, Suit::Hearts),
                   test_support::make_card(8, Suit::Clubs),   test_support::make_card(8, Suit::Clubs)});
@@ -148,13 +145,13 @@ TEST_CASE("Initial split of ten-value cards is always allowed", "[SplitTens][Fea
     Constants::RESPLIT_TENS_ALLOWED = saved;
 }
 
-// With the rule on, re-splitting a ten-value hand that already came from a split produces another hand.
+// With resplit-tens on, splitting a value hand that itself came from a split makes another hand.
 TEST_CASE("Resplitting tens is allowed when RESPLIT_TENS_ALLOWED is true", "[SplitTens][Feature2]")
 {
     Constants::RESPLIT_TENS_ALLOWED = true;
 
     Game game(true);
-    // p:{10,10}, dHole 7, dUp 6; then the next draw is another ten, making hand[0] a pair of tens again.
+    // Pair of tens vs hole 7 / up 6; the next draw is another ten, re-pairing hand[0].
     test_support::start_round(game,{test_support::make_card(10, Suit::Spades), test_support::make_card(7, Suit::Hearts),
                   test_support::make_card(10, Suit::Hearts),  test_support::make_card(6, Suit::Diamonds),
                   test_support::make_card(10, Suit::Clubs),   test_support::make_card(2, Suit::Hearts),
@@ -170,7 +167,7 @@ TEST_CASE("Resplitting tens is allowed when RESPLIT_TENS_ALLOWED is true", "[Spl
     CHECK(p.hands.size() == 3);
 }
 
-// With the rule off, re-splitting a ten-value pair is refused (no new hand), while an ordinary initial split still works.
+// With resplit-tens off, re-splitting tens is refused but an ordinary initial split still works.
 TEST_CASE("Resplitting tens is refused when RESPLIT_TENS_ALLOWED is false", "[SplitTens][Feature2]")
 {
     Constants::RESPLIT_TENS_ALLOWED = false;
@@ -194,13 +191,13 @@ TEST_CASE("Resplitting tens is refused when RESPLIT_TENS_ALLOWED is false", "[Sp
     CHECK_FALSE(p.hands[0].isFinished());
 }
 
-// With tens re-splitting off, a non-ten pair (eights) can still be re-split — the flag only affects tens.
+// With tens off, eights can still re-split; the flag only governs tens.
 TEST_CASE("Non-ten pairs can still be re-split when RESPLIT_TENS_ALLOWED is false", "[SplitTens][Feature2]")
 {
     Constants::RESPLIT_TENS_ALLOWED = false;
 
     Game game(true);
-    // p:{8,8}, dHole 7, dUp 6; next draw another eight -> hand[0] a pair of eights again.
+    // Pair of eights vs hole 7 / up 6; the next draw re-pairs hand[0].
     test_support::start_round(game,{test_support::make_card(8, Suit::Spades), test_support::make_card(7, Suit::Hearts),
                   test_support::make_card(8, Suit::Hearts),  test_support::make_card(6, Suit::Diamonds),
                   test_support::make_card(8, Suit::Clubs),   test_support::make_card(2, Suit::Hearts),
@@ -230,7 +227,7 @@ TEST_CASE("Initial deal of two aces puts the player in PlayerTurn, ready to spli
     CHECK(game.roundStateForTest() == RoundState::PlayerTurn);
 }
 
-// Splitting aces yields two hands, each with exactly one ace, both flagged split-ace and unfinished.
+// Splitting aces yields two hands, each exactly one ace, flagged split-ace and unfinished.
 TEST_CASE("Splitting aces creates two single-card split-ace hands", "[SplitAces][Flow]")
 {
     Game game(true);
@@ -250,11 +247,11 @@ TEST_CASE("Splitting aces creates two single-card split-ace hands", "[SplitAces]
         CHECK(!p.hands[i].isFinished());          // not finished until its one extra card arrives
     }
 }
-// Spec: each split ace receives exactly one card then stands; the player is prompted for input at no point.
+// Spec: each split ace gets one card then stands, with no player prompt.
 TEST_CASE("Each split ace receives exactly one card and auto-stands with no user input", "[SplitAces][Flow]")
 {
     Game game(true);
-    // After the initial four cards, the next two draws (K then 9) are each hand's single permitted card.
+    // The next two draws (K then 9) are each ace-hand's single permitted card.
     test_support::start_round(game,{test_support::make_card(1, Suit::Spades), test_support::make_card(7, Suit::Hearts),
                   test_support::make_card(1, Suit::Hearts),  test_support::make_card(6, Suit::Diamonds),
                   test_support::make_card(13, Suit::Clubs),  test_support::make_card(9, Suit::Spades)});
@@ -307,12 +304,11 @@ TEST_CASE("Split ace plus a face card is 21 but not a 3:2 blackjack", "[SplitAce
     CHECK(!hand1.isBlackjack());
 }
 
-// Spec: the player cannot double down on a split ace (verified when the ace draws another ace and is left
-// resplit-eligible / unfinished, so the double-down guard -- not just the finished guard -- is exercised).
+// Spec: no double-down on a split ace; verified by drawing another ace so it stays resplit-eligible, exercising the double-down guard itself.
 TEST_CASE("Cannot double down on a split ace", "[SplitAces][Flow]")
 {
     Game game(true);
-    // The draw after splitting must be an Ace so the hand stays open (resplit-eligible) and unfinished.
+    // The post-split draw is an Ace so the hand stays open (resplit-eligible) and unfinished.
     test_support::start_round(game,{test_support::make_card(1, Suit::Spades), test_support::make_card(7, Suit::Hearts),
                   test_support::make_card(1, Suit::Hearts),  test_support::make_card(6, Suit::Diamonds),
                   test_support::make_card(1, Suit::Clubs)});
@@ -335,8 +331,7 @@ TEST_CASE("Cannot double down on a split ace", "[SplitAces][Flow]")
     CHECK(p.hands[0].isFinished());       // forced stand, not a hit
     CHECK(p.hands[0].size() == 2);        // still exactly two cards (Ace + the one permitted extra)
 }
-// Spec: if a split ace is dealt another ace, it may be re-split up to MAX_SPLIT_HANDS; at the cap the split
-// is refused. Every resulting ace hand still takes exactly one card and then stands.
+// Spec: re-splitting aces continues up to MAX_SPLIT_HANDS then refuses; every ace hand takes one card then stands.
 TEST_CASE("Split aces can be re-split up to the maximum number of hands", "[SplitAces][Flow]")
 {
     Game game(true);
@@ -365,7 +360,7 @@ TEST_CASE("Split aces can be re-split up to the maximum number of hands", "[Spli
     // At the maximum, another split is refused.
     CHECK_FALSE(game.split());
 
-    // Each of the four ace hands takes exactly one card and stands; the round auto-advances to the dealer.
+    // Each of four ace hands takes one card and stands; the round auto-advances to the dealer.
     test_support::advanceToDealerTurn(game);
     CHECK(game.roundStateForTest() == RoundState::DealerTurn);
 
@@ -378,9 +373,7 @@ TEST_CASE("Split aces can be re-split up to the maximum number of hands", "[Spli
     }
 }
 
-// Regression: splitting a normal pair still gives each hand exactly one card, and those hands are NOT
-// auto-finished like split aces (the player may continue to act on them). This pins down the fix so the
-// symmetric size-1 post-split behavior cannot regress into the old asymmetric "first hand pre-dealt" bug.
+// Regression: splitting a normal pair still yields one card per hand that is NOT auto-finished (unlike split aces) - player keeps acting. This pins the fix against the old asymmetric first-hand-pre-dealt bug.
 TEST_CASE("Normal pair split gives each hand one card but stays actable", "[SplitAces][Regression]")
 {
     Game game(true);
@@ -414,8 +407,7 @@ TEST_CASE("Insurance path: dealer holds a natural after decline and draws no ext
 {
     Game game(true); // headless: no window/assets/replay/HUD
 
-    // Deal order (see setDeck): player card0, dealer UP, player card1, dealer hole, then fillers. Up-card is an Ace so the
-    // round enters OfferInsurance; the hidden King makes a natural (Ace + 10 = 21). Player hand 9+7=16 stays unresolved.
+    // Deal order: up-card is an Ace (OfferInsurance), hidden King makes a natural; player's 16 stays unresolved.
     test_support::start_round(game,{test_support::make_card(9, Suit::Spades),      // player card 0 -> 16 with the next card
                   test_support::make_card(1, Suit::Hearts),       // dealer up-card: Ace -> insurance offered
                   test_support::make_card(7, Suit::Clubs),        // player card 1 -> hand of 16 (not a natural, stays unresolved)
@@ -426,28 +418,26 @@ TEST_CASE("Insurance path: dealer holds a natural after decline and draws no ext
     CHECK(game.roundStateForTest() == RoundState::OfferInsurance);   // up-card is an Ace -> insurance offered
     CHECK(game.testDealer().isBlackjack());                          // natural locked in on the deal
 
-    // Human (single seat, activePlayerIndex 0) declines insurance. Advancing past the last player wraps and evaluateBlackjack()
-    // sees the dealer's natural, moving to DealerTurn WITHOUT marking the unresolved hand -- which is what lets a buggy
+    // Human declines insurance; advancing past the last player wraps, evaluateBlackjack sees the natural and moves to DealerTurn without marking the unresolved hand.
     // dealerTurn draw extra cards.
     game.declineInsurance();
     CHECK(game.roundStateForTest() == RoundState::DealerTurn);
 
     driveToCleanup(game);
 
-    // The natural is terminal: the dealer drew zero extra cards (size stays 2, value stays 21), and the player's 16 loses.
+    // The natural is terminal: the dealer draws no extra cards and the player's 16 loses.
     CHECK(game.testDealer().size() == 2);
     CHECK(game.testDealer().getValue() == 21);
     CHECK(game.testPlayer(0).getStats().losses == 1);
 }
 
-// Same root cause via the direct entry: a natural with a non-Ace up-card is detected on the deal (evaluateBlackjack), so no
-// insurance detour is needed to reproduce it. Without the fix the dealer draws its single filler and ends with more than two
+// Same defect via direct entry: a non-Ace-up natural is detected on the deal, needing no insurance detour; without the fix the dealer over-draws.
 // cards even though it already holds a finished 21.
 TEST_CASE("Dealer natural with a non-Ace up-card draws no extra cards", "[Blackjack][DealerTurn]")
 {
     Game game(true);
 
-    // Up-card is a King (not an Ace) so deal() evaluates blackjack directly; the hidden Ace makes a natural. Player hand 16.
+    // Up-card King evaluates blackjack directly; hidden Ace makes a natural; player's 16 loses.
     test_support::start_round(game,{test_support::make_card(9, Suit::Spades),     // player card 0 -> 16
                   test_support::make_card(13, Suit::Hearts),    // dealer up-card: King (not an Ace) -> evaluateBlackjack on the deal
                   test_support::make_card(7, Suit::Clubs),      // player card 1 -> hand of 16 (unresolved)

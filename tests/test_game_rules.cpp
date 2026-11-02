@@ -3,7 +3,6 @@
 #include <Constants.hpp>
 #include <Card.hpp>
 #include <Game.hpp>
-#include <RoundEngine.hpp>
 #include <BasicStrategy.hpp>
 #include <PlayerProfile.hpp>
 #include <Serialization.hpp>
@@ -21,15 +20,6 @@ namespace fs = std::filesystem;
 // split-aces / settlement tests. Each rule is its own clause so a regression in
 // one rule cannot hide another.
 // ---------------------------------------------------------------------------
-
-namespace
-{
-
-    fs::path tempProfile(const std::string& name)
-    {
-        return fs::temp_directory_path() / ("bj_rules_test_" + name + ".json");
-    }
-} // namespace
 
 // ---- Soft 17 ---------------------------------------------------------------
 
@@ -248,7 +238,7 @@ TEST_CASE("Advisor splits a double-after-split pair only when DAS is allowed", "
 
 TEST_CASE("Custom game rules survive a profile save/load round trip", "[GameRules][Persistence]")
 {
-    const fs::path path = tempProfile("roundtrip");
+    const fs::path path = test_support::temp_path("rules", "roundtrip");
 
     {
         PlayerProfile p("William");
@@ -276,7 +266,7 @@ TEST_CASE("Custom game rules survive a profile save/load round trip", "[GameRule
 // struct (which mirrors the compile-time Constants) rather than throwing or discarding the rest of the profile.
 TEST_CASE("Profiles saved before custom rules existed still load with defaults", "[GameRules][Persistence]")
 {
-    const fs::path path = tempProfile("legacy");
+    const fs::path path = test_support::temp_path("rules", "legacy");
 
     {
         PlayerProfile fresh("William");

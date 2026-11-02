@@ -5,14 +5,14 @@
 #include <string>
 #include <vector>
 
-// Sound & music manager (Feature 7: Sound Effects & Music).
+// Sound & music manager (Sound Effects & Music).
 //
-// Responsibility split on purpose so the *logic* is headless-safe while real audio stays behind a gated path:
-//   - Pure logic (Settings + event queue + play counters) never touches an audio device. Headless tests drive it
-//     entirely through playSound()/settings and read back queue state, so no display or sound card is required.
-//   - All SFML audio objects live in the pImpl (see SoundManager.cpp). They are created lazily by loadAssets(),
-//     which the headless Game constructor deliberately skips. sf::SoundBuffer decode reads files only and needs no
-//     device, so even the asset-loading test stays safe in a headless CI environment.
+// Responsibility split on purpose
+// - Pure logic (Settings + event queue + play counters) never touches an audio device. Headless tests drive it
+// entirely through playSound()/settings and read back queue state
+// - All SFML audio objects live in the pImpl (see SoundManager.cpp). They are created lazily by loadAssets(),
+// which the headless Game constructor deliberately skips. sf::SoundBuffer decode reads files only and needs no
+// device, so even the asset-loading test stays safe in a headless CI environment.
 //
 // Known effect events: card, bet, chip, blackjack, win, lose. Music track: theme (see Constants::Sound).
 class SoundManager
@@ -52,7 +52,7 @@ class SoundManager
     void setSettings(const Settings& s);
     void setSoundVolume(float v);
     void setMusicVolume(float v);
-    // Mute stops any live playback; future plays are still queued so the queue state stays predictable.
+    // Mute stops any live playback; future plays are still queued
     void setMuted(bool m);
 
     // ---- Test accessors: pure logic, headless-safe (no device). ----
@@ -75,8 +75,8 @@ class SoundManager
         return v;
     }
 
-    // pImpl owns ALL SFML audio state (buffers, sf::Sound, sf::Music). It is forward-declared here so SoundManager's
-    // header stays free of deep SFML types; the unique_ptr only needs a complete type at destruction, which happens
+    // pImpl owns ALL SFML audio state (buffers, sf::Sound, sf::Music). It is forward-declared here
+    // header stays free of deep SFML types; the unique_ptr only needs a complete type at destruction
     // in SoundManager.cpp where Impl is fully defined.
     struct Impl;
     std::unique_ptr<Impl> impl_;

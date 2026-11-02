@@ -1,9 +1,10 @@
 #pragma once
 
 #include <vector>
+#include <string>
+#include <filesystem>
 #include "Card.hpp"
 #include "Deck.hpp"
-#include "RoundEngine.hpp"   // RoundEngine + its tick(); RoundState is declared in Game.hpp below.
 #include "Game.hpp"
 
 // Shared test infrastructure for the Blackjack2 unit suite (one TU per feature, but they repeat setup).
@@ -37,12 +38,13 @@ namespace test_support {
         game.startTestRound(seats);
     }
 
-    // Advance the shared round-state machine by exactly one frame. deltaTime is ignored by player/turn transitions, so this
-    // replaces the identical per-file tickOnce()/card() driver and guarantees every test drives RoundEngine::tick the same way.
+    // Advance the shared round-state machine by exactly one frame via Game::advanceTurnState (the folded RoundEngine::tick
+    // body). deltaTime is ignored by player/turn transitions, so every test drives it identically — no per-file driver and no
+    // dependency on the now-removed RoundEngine class. Calling advance() here mirrors update()'s Playing path but skips that
+    // mode guard, exactly as the old tick() did regardless of AppMode.
     inline void tickFrame(Game& game, float deltaTime = 0.0f)
     {
-        RoundEngine engine;
-        engine.tick(deltaTime, game);
+        game.advanceTurnState(deltaTime);
     }
 
     // Drive frames until the round leaves PlayerTurn (all hands resolved -> DealerTurn). Bounded so a stuck state cannot spin
@@ -59,15 +61,20 @@ namespace test_support {
     inline void settleRound(Game& game, float settleDelta = 100.0f)
     {
         game.deltaTime = settleDelta;          // reveal pacing reads this member each dealerTurn, so set it before ticking
-        RoundEngine engine;
         for (int i = 0; i < 200; ++i)         // generous cap; the loop breaks as soon as the round leaves Player/DealerTurn
         {
             RoundState rs = game.roundStateForTest();
             if (rs == RoundState::PlayerTurn || rs == RoundState::DealerTurn)
-                engine.tick(settleDelta, game);
+                game.advanceTurnState(settleDelta);
             else
                 break;
         }
+    }
+
+    // Build a unique-per-tag temporary profile path for roundtrip/legacy tests, replacing the identical per-file helper.
+    inline std::filesystem::path temp_path(const std::string& tag, const std::string& name)
+    {
+        return std::filesystem::temp_directory_path() / ("bj_" + tag + "_test_" + name + ".json");
     }
 
 } // namespace test_support

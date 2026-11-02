@@ -134,7 +134,7 @@ inline void from_json(const json& j, HandOutcome& h)
     if (j.contains("playerName"))
         j.at("playerName").get_to(h.playerName);
     // else defaults to "" for backward compatibility with existing saves
-    // Feature 1 (Side Bets): additive — older round records lack these and fall back to the struct defaults.
+    // additive: older round records lack these and fall back to the struct defaults.
     h.sideBetKind = static_cast<SideBetKind>(j.value("sideBetKind", int{0}));
     h.sideBetWager = j.value("sideBetWager", int{0});
     h.sideBetPayout = j.value("sideBetPayout", int{0});
@@ -202,10 +202,10 @@ inline void to_json(json& j, const PlayerProfile& p)
         {"preferredMusicVolume", p.preferredMusicVolume},
         {"preferredMuted", p.preferredMuted}
     };
-    // additive schema: persist unlocked ids only when non-empty so pre-Achievement profiles serialize keyless and load.
+    // additive schema: persist unlocked ids only when non-empty
     if (!p.unlockedAchievementIds.empty())
         j["unlockedAchievementIds"] = p.unlockedAchievementIds;
-    // written unconditionally to round-trip; additive on load (see from_json) so pre-Rules profiles still load unchanged.
+    // written unconditionally to round-trip; additive on load (see from_json)
     j["gameRules"] = p.gameRules;
 }
 

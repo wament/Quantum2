@@ -86,7 +86,7 @@ bool SoundManager::loadAssets()
     }
 
     // Music is best-effort: a missing clip disables background music but must not disable sound effects. sf::Music has
-    // a public default constructor + openFromFile(...) returning bool, so there is no throwing ctor to catch here.
+    // a public default constructor + openFromFile(...) returning bool
     const std::string musicPath = impl_->musicDir_ + Constants::Sound::MUSIC_TRACK + ".wav";
     if (fs::exists(musicPath))
     {

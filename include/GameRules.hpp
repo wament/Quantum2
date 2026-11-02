@@ -6,16 +6,16 @@
 
 #include "Constants.hpp"
 
-// Custom Game Rules (Feature 3). A single, narrow data struct describing the tunable table rules. Pure logic and
+// Custom Game Rules. A single, narrow data struct describing the tunable table rules. Pure logic and
 // free of any SFML dependency so it is headless-safe: it can be constructed, serialized, edited, and asserted over in
 // the Graphics-only test binary. Its default values mirror the compile-time Constants exactly (NUM_DECKS=6, dealer
-// hits soft 17 = H17, DAS/resplit aces/tents on, late surrender), so threading it through the real game path is a
+// hits soft 17 = H17, DAS/resplit aces/tents on, late surrender)
 // no-op for every existing test and player until someone changes a rule.
 //
-// Threading model (CONTEXT.md §6 #2): these values are read directly at their own call sites — dealerTurn() soft-17,
+// Threading model (CONTEXT.md §6 #2): these values are read directly at their own call sites: dealerTurn() soft-17,
 // doubleDown() DAS gate, split()/RoundEngine re-split + max hands, the advisor's double-after-split / surrender gates,
-// and Deck::create() deck count — rather than rewriting a broad surface. The plain BasicStrategy overload keeps the
-// old signature by delegating here with these defaults, so existing advisor tests are untouched.
+// and Deck::create() deck count: rather than rewriting a broad surface. The plain BasicStrategy overload keeps the
+// old signature by delegating here with these defaults
 
 enum class SurrenderType
 {
@@ -40,8 +40,8 @@ struct GameRules
     bool surrenderEnabled() const { return surrenderType != SurrenderType::None; }
 };
 
-// Free-function nlohmann/json hooks (found via ADL in the global namespace), so any json conversion of GameRules works
-// wherever it is used — including Serialization.hpp, which includes this header through PlayerProfile. Defined inline so
+// Free-function nlohmann/json hooks (found via ADL in the global namespace)
+// wherever it is used: including Serialization.hpp
 // no extra translation unit must see them. Stored as one compact nested object with an int-encoded surrender type;
 // additive on load (missing fields keep the struct's defaults).
 inline void to_json(nlohmann::json& j, const GameRules& r)
@@ -86,12 +86,12 @@ struct GameRuleRow
     const char* label;
 };
 
-// Ordered rows as shown in the rules-config panel (label text lives here so it is easy to edit/translate).
+// Ordered rows as shown in the rules-config panel (label text lives here
 const std::vector<GameRuleRow>& gameRuleRows();
 
 // Human-readable current value for one row, e.g. "6 decks", "Dealer hits soft 17 (H17)", "Surrender: Late".
 std::string gameRuleDescription(const GameRules& rules, GameRuleId id);
 
 // Apply a single directional edit to `rules` on the given row: toggle booleans, cycle the deck-count brackets and the
-// surrender types. Used by the in-game rules editor (InputHandler/inline), kept out of the renderer so it is unit-testable.
+// surrender types. Used by the in-game rules editor (InputHandler/inline), kept out of the renderer
 void applyGameRuleEdit(GameRules& rules, GameRuleId id, bool forward);

@@ -12,8 +12,8 @@
 
 // Folded out of Panel: the HUD now owns its three panels directly as HudPanel units (a background rectangle plus the
 // StatBoxes it lays out). The old separate Panel class was a one-level-of-indirection that only HUD ever used, so
-// removing it drops two files and brings HUD's widgets under HUD itself. HudPanel mirrors Panel's exact API, so every
-// per-panel call site in HUD.cpp is unchanged -- only this header changes (and Panel.* is deleted).
+// removing it drops two files and brings HUD's widgets under HUD itself. HudPanel mirrors Panel's exact API
+// per-panel call site in HUD.cpp is unchanged
 struct HudPanel {
     sf::RectangleShape background;      // dim rounded backing behind the boxes
 
@@ -34,7 +34,7 @@ struct HudPanel {
         background.setSize(size);
     }
 
-    // World-space rect of this panel's backing (position + size), so layout reads the real panel bounds.
+    // World-space rect of this panel's backing (position + size)
     sf::Rect<float> bounds() const
     {
         return sf::Rect<float>(background.getPosition(), background.getSize());
@@ -74,25 +74,25 @@ public:
     // World-space bounds of the Counting Style toggle box (label + value), used for click hit-testing.
     sf::FloatRect countTitleBounds() const;
 
-    // Screen-space bounds of the three graph panes, in draw order (top to bottom). The panes are display-only —
-    // they are no longer clickable — but the bounds are exposed so the layout tests can assert they tile the left
+    // Screen-space bounds of the three graph panes, in draw order (top to bottom). The panes are display-only:
+    // they are no longer clickable: but the bounds are exposed
     // panel evenly.
     std::vector<sf::Rect<float>> chartPaneBounds() const;
 
-    // Bets Placed histogram bucketing. The raw distribution holds one column per distinct wager, which renders as a
+    // Bets Placed histogram bucketing. The raw distribution holds one column per distinct wager
     // bar per unique bet size and is unreadable. Bets are folded into `bucketCount` evenly spaced ranges spanning
     // [0, maxBet], so the chart always shows the same number of evenly spaced bars no matter which sizes were
     // wagered. Pure and static so it can be unit-tested directly.
     static std::vector<int> bucketBetDistribution(const std::map<int, int>& distribution, int bucketCount, int maxBet);
 
-    // Screen-space bounds of the three HUD panels. Exposed so hit-testing and the layout tests can measure the real
+    // Screen-space bounds of the three HUD panels. Exposed
     // panels (asserting the side panels stay symmetric and that content stays inside its panel) rather than
     // re-deriving coordinates the way hard-coded geometry used to.
     sf::Rect<float> leftPanelBounds() const;
     sf::Rect<float> rightPanelBounds() const;
     sf::Rect<float> bottomPanelBounds() const;
 
-    // Screen-space bounds of all three HUD panels in one lookup, so the per-panel getters above stay thin delegators and the
+    // Screen-space bounds of all three HUD panels in one lookup
     // geometry lives in a single definition (see HUD::computePanels). Exposed for tests; production reads m_XPanel.bounds()
     // directly where it needs a specific panel.
     struct Panels { sf::Rect<float> left, right, bottom; };
@@ -114,7 +114,7 @@ private:
     StatBox *m_bankrollBox = nullptr;
     StatBox *m_betBox = nullptr;
 
-    // Counting/stat boxes — Counting Style sits at the top of the right panel and is clickable to toggle.
+    // Counting/stat boxes: Counting Style sits at the top of the right panel and is clickable to toggle.
     StatBox *m_countingStyleBox = nullptr;
     StatBox *m_countBox = nullptr;
     StatBox *m_trueCountBox = nullptr;
@@ -125,7 +125,7 @@ private:
     // Book advisor: advises basic strategy for the current hand
     StatBox *m_bookBox = nullptr;
 
-    // Feature 3 analytics stat boxes (moved to the RIGHT panel so the LEFT panel is dedicated to graphs) plus the
+    // analytics stat boxes (moved to the RIGHT panel
     // chart backing data. update() repopulates these every frame from HUDState; drawCharts() renders them on the
     // left panel so they never depend on box geometry at draw time.
     StatBox *m_stdDevBox = nullptr;   // standard deviation of per-hand net profits
@@ -149,7 +149,7 @@ private:
     // every shoe boundary), so the series copied in above are already per-shoe and the HUD keeps no shoe
     // bookkeeping of its own.
 
-    // Per-pane graph geometry, recomputed each frame from the left panel bounds so it tracks the panel size.
+    // Per-pane graph geometry, recomputed each frame from the left panel bounds
     sf::Rect<float> m_bankrollChartRect{};
     sf::Rect<float> m_edgeChartRect{};
     sf::Rect<float> m_betsChartRect{};
@@ -159,11 +159,11 @@ private:
 
     void updateControls(sf::Font &font);
 
-    // Recomputes the three graph-pane rects from the left panel's actual bounds, so geometry tracks the panel
+    // Recomputes the three graph-pane rects from the left panel's actual bounds
     // size instead of being hard-coded. Called on init and every frame (before draw + input hit-testing).
     void layoutLeftPanels();
 
-    // Feature 3: draw the bankroll-curve, edge-tracking and bet-distribution charts on the left panel.
+    // draw the bankroll-curve, edge-tracking and bet-distribution charts on the left panel.
     void drawCharts(sf::RenderWindow &window) const;
 };
 

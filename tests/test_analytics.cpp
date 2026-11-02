@@ -1,4 +1,4 @@
-// Analytics & statistics: betting analytics, chart data, shoe-boundary analytics, StatsDashboard CSV/json export.
+// Analytics & statistics module tests: betting analytics, charts, shoe-boundary analytics, CSV/json export.
 
 #include <catch2/catch_all.hpp>
 #include "test_support.hpp"
@@ -14,7 +14,6 @@
 #include <GameRecord.hpp>
 #include <HUD.hpp>
 #include <Player.hpp>
-#include <RoundEngine.hpp>
 #include <StatsDashboard.hpp>
 #include <algorithm>
 #include <catch2/catch_all.hpp>
@@ -26,26 +25,12 @@ using Catch::Approx;
 using json = nlohmann::json;
 using namespace Constants;
 
-// Shared test fixtures/helpers lifted from every member file into one anonymous namespace (identical copies de-duped).
+// Shared fixtures/helpers in one anonymous namespace (identical copies de-duped across files).
 namespace {
 void padWithEights(std::vector<Card>& shoe)
     {
         for (int i = 0; i < 200; ++i)
             shoe.push_back(test_support::make_card(8, Suit::Clubs));
-    }
-
-void tickUntilSettled(Game& game)
-    {
-        RoundEngine engine;
-        game.deltaTime = 100.0f;
-        for (int i = 0; i < 50; ++i)
-        {
-            RoundState rs = game.roundStateForTest();
-            if (rs == RoundState::PlayerTurn || rs == RoundState::DealerTurn)
-                engine.tick(100.0f, game);
-            else
-                break;
-        }
     }
 
 std::vector<Card> humanLosesShoe()
@@ -101,9 +86,7 @@ TEST_CASE("Reko true count is the raw running count; Hi-Lo normalizes by decks",
 {
     Game game(true);
 
-    // The initial deal draws four cards (player, dealer hole, player, dealer up) = six(6), seven(7), eight(8) and one
-    // filler(8). In Reko those sum to reko(6)+reko(7)+reko(8)+reko(8)=2; in Hi-Lo hilo(6)+hilo(7)+hilo(8)+hilo(8)=1.
-    // The rest of the deck is filler so draw() never runs dry and stays untouched until after these assertions run.
+    // Initial deal is four cards summing to 6/7/8/8; Reko sums to 2, Hi-Lo to 1. Filler keeps draw() from running dry.
     Card six;   six.value = 6; six.suit = Suit::Hearts;
     Card seven; seven.value = 7; seven.suit = Suit::Spades;
     Card eight; eight.value = 8; eight.suit = Suit::Diamonds;
@@ -119,20 +102,18 @@ TEST_CASE("Reko true count is the raw running count; Hi-Lo normalizes by decks",
     test_support::seed_deck(game,deck);
     game.startTestRound();
 
-    // Default counting style is Reko. The raw running count after the initial deal is reko(6)+reko(7)=2 (the dealer's
-    // 8 is neutral in both systems). activeTrueCount must return this RAW value, not divide it by decks remaining.
+    // Default style is Reko; the raw running count after the deal is reko(6)+reko(7)=2 and activeTrueCount must return it undivided by decks.
     const float reko = game.activeTrueCount();
     CHECK(reko == Approx(2.0f));
 
-    // Toggling to Hi-Lo swaps in the hi-lo buffer (raw sum of the two player cards = hilo(6)+hilo(7)=1). The active
-    // true count must now be normalized by decks remaining, so it can no longer equal the raw running count of 1.
+    // Toggling to Hi-Lo uses the raw card sum (1); true count must then normalize by decks remaining, so it cannot equal the raw 1.
     game.toggleCountingStyle();
     const float hilo = game.activeTrueCount();
     CHECK(hilo != Approx(1.0f));
 }
 
 // ---------------------------------------------------------------------------
-// Feature 3 (Advanced Analytics): confirmBet records each wager into the session
+// Feature 3: confirmBet records each wager into the session.
 // bet-distribution histogram that backs the bet-histogram dashboard chart.
 // ---------------------------------------------------------------------------
 
@@ -152,7 +133,7 @@ TEST_CASE("confirmBet records the wager into the session bet-distribution histog
     test_support::seed_deck(game,deck);
     game.startTestRound();
 
-    // startTestRound sets up a single minimum bet but does not confirm/place it; that is confirmBet()'s job.
+    // startTestRound sets a minimum bet but does not confirm/place it; that is confirmBet()'s job.
     CHECK(game.testPlayer(0).hands[0].getBet() == Constants::MINIMUM_BET);
 
     game.confirmBet();
@@ -172,7 +153,7 @@ TEST_CASE("Every stat box except Bankroll restarts at the shoe boundary", "[Feat
     game.startTestRound();
     game.confirmBet();
     game.stand();
-    tickUntilSettled(game);
+    test_support::settleRound(game);
     game.updateHUDStateForTest();
 
     // One settled hand: the readouts are populated.
@@ -210,7 +191,7 @@ TEST_CASE("Every stat box except Bankroll restarts at the shoe boundary", "[Feat
     CHECK(after.bankrollSeries.empty());
     CHECK(after.edgeSeries.empty());
 
-    // What the boxes render from, straight off HUDState: Std Dev, Long Win, Long Loss, Edge %, Streak and the
+    // These boxes read directly off HUDState: Std Dev, Long Win, Long Loss, Edge %, Streak and more.
     // Bets Placed histogram are all back at their baseline.
     REQUIRE(game.hudStateForTest().shoeAnalytics != nullptr);
     CHECK(game.hudStateForTest().analyticsStdDev == Approx(0.0));
@@ -227,7 +208,7 @@ TEST_CASE("Every stat box except Bankroll restarts at the shoe boundary", "[Feat
     CHECK(game.hudStateForTest().bankroll == bankrollBefore);
 }
 
-// A streak must not be carried into the next shoe: losses split across a boundary read as 1, not 3.
+// A streak must not cross a shoe boundary: losses split across it read as 1, not 3.
 TEST_CASE("Streaks and std dev do not leak from one shoe into the next", "[Feature3][Analytics][Shoe]")
 {
     Game game(true);
@@ -236,18 +217,18 @@ TEST_CASE("Streaks and std dev do not leak from one shoe into the next", "[Featu
     game.startTestRound();
     game.confirmBet();
     game.stand();
-    tickUntilSettled(game);
+    test_support::settleRound(game);
 
     game.nextRoundForTest();
     game.confirmBet();
     game.stand();
-    tickUntilSettled(game);
+    test_support::settleRound(game);
 
     CHECK(game.shoeAnalyticsForTest().handProfitCount == 2);
     CHECK(game.shoeAnalyticsForTest().longestLosingStreak == 2);
     CHECK(game.shoeAnalyticsForTest().roundStreak == 2);
 
-    // Seed the persisted career record with numbers no shoe could produce. If any box still read PlayerStats,
+    // Seed the career record with numbers no shoe could produce; if any box still reads PlayerStats this fails.
     // it would show these instead of the shoe's own values.
     PlayerStats& career = game.testPlayer(0).getStats();
     career.handProfitCount = 100;
@@ -260,7 +241,7 @@ TEST_CASE("Streaks and std dev do not leak from one shoe into the next", "[Featu
     game.updateHUDStateForTest();
     CHECK(game.hudStateForTest().longestLosingStreak == 2);  // not the career 17
     CHECK(game.hudStateForTest().longestWinningStreak == 0); // not the career 42
-    // Two hands of exactly -10: no spread at all, regardless of the career accumulators.
+    // Two hands of -10 each: zero spread regardless of career accumulators.
     CHECK(game.hudStateForTest().analyticsStdDev == Approx(0.0));
     REQUIRE(game.hudStateForTest().shoeAnalytics != nullptr);
     CHECK(game.hudStateForTest().shoeAnalytics->betDistribution.count(995) == 0);
@@ -271,7 +252,7 @@ TEST_CASE("Streaks and std dev do not leak from one shoe into the next", "[Featu
     game.nextRoundForTest();
     game.confirmBet();
     game.stand();
-    tickUntilSettled(game);
+    test_support::settleRound(game);
     game.updateHUDStateForTest();
 
     CHECK(game.shoeAnalyticsForTest().handProfitCount == 1);
@@ -355,12 +336,12 @@ TEST_CASE("Bankroll curve, Streak and Strategy boxes ignore the NPCs", "[Feature
     game.startTestRound(2);
     game.confirmBet();
     game.stand();
-    tickUntilSettled(game);
+    test_support::settleRound(game);
 
     const int humanNet = game.testPlayer(0).getBankroll() - GameConfig::STARTING_BANKROLL;
     const int npcNet = game.testPlayer(1).getBankroll() - GameConfig::NPC_CONFIGS[0].bankroll;
 
-    // The setup does what it claims, and the table's net differs from the human's - so the assertions below
+    // Setup is honest but the table net differs from the human's, so the assertions below are meaningful.
     // would fail against the old "sum every seat" curve.
     REQUIRE(humanNet == -Constants::MINIMUM_BET);
     REQUIRE(npcNet == Constants::MINIMUM_BET);
@@ -369,14 +350,14 @@ TEST_CASE("Bankroll curve, Streak and Strategy boxes ignore the NPCs", "[Feature
     CHECK(game.bankrollSeriesForTest().back() == Approx(static_cast<float>(humanNet)));
 
     game.updateHUDStateForTest();
-    // The human lost the round while Alice won hers: the streak reads 1L, not the 0 a mixed table would give.
+    // Human lost while Alice won: streak reads 1L, not the 0 a mixed table would give.
     CHECK(game.hudStateForTest().streak == 1);
     CHECK(game.hudStateForTest().streakIsWin == false);
 
     // Strategy % counts the human's single stand, not Alice's play as well.
     CHECK(game.shoeAnalyticsForTest().strategyTotal == 1);
 
-    // The career record is attributed per seat now: Alice's win is hers, not the player's.
+    // Career attribution is per-seat now: Alice's win is hers, not the player's.
     CHECK(game.testPlayer(0).getStats().wins == 0);
     CHECK(game.testPlayer(0).getStats().losses == 1);
     CHECK(game.testPlayer(1).getStats().wins == 1);
@@ -430,7 +411,7 @@ TEST_CASE("StatsDashboard: profit series, bankroll curve and drawdown", "[Featur
 {
     PlayerStats career;
     std::vector<RoundRecord> rounds;
-    // nets: +10, -30, +5, +50  -> cumulative +10, -20, -15, +35 ; peak +35 ; worst dip from +10 to -20 = 30.
+    // Cumulative nets +10/-30/+5/+35 give peak +35 and worst dip of 30 (from +10 to -20).
     rounds.push_back(decidedRound(true, false, 10, 20));   // +10
     rounds.push_back(decidedRound(false, false, 30, 0));   // -30
     rounds.push_back(decidedRound(true, false, 10, 15));   // +5
@@ -528,7 +509,7 @@ TEST_CASE("StatsDashboard: JSON and CSV export stay populated for any history", 
     StatsDashboard dash;
     dash.feed(career, rounds);
 
-    // Parse the JSON export back so the check is independent of nlohmann's formatting (indent / array wrapping).
+    // Parse the JSON export back so the check is independent of nlohmann's formatting.
     const json parsed = json::parse(dash.toJson());
     REQUIRE(parsed.contains("wins"));
     REQUIRE(parsed.contains("winRate"));
@@ -542,8 +523,7 @@ TEST_CASE("StatsDashboard: JSON and CSV export stay populated for any history", 
     CHECK(csv.find("metric,value") != std::string::npos);      // CSV header
     CHECK(csv.find("hands_finished") != std::string::npos);     // metric rows present
     CHECK(csv.find("round_index,net_profit,cumulative_bankroll") != std::string::npos);  // per-round detail header
-    // Two rounds -> per-round detail lines carry both nets: the loss prints with its sign ("-10") and the win net is a
-    // positive integer ("10", which prints without a leading '+'). Both values appear in the CSV detail rows.
+    // Two rounds -> CSV detail lines print both nets with correct signs ('-10' loss, '10' win).
     CHECK(csv.find("-10") != std::string::npos);
     CHECK(csv.find("10") != std::string::npos);
 }
@@ -577,14 +557,13 @@ TEST_CASE("StatsDashboard: empty history yields safe zeros and non-empty exports
     CHECK(dash.perRoundProfitForTest().empty());
     CHECK(dash.bankrollSeriesForTest().empty());
 
-    // Exports must never be empty even with no data (a dashboard view is still exported).
+    // Exports must never be empty even with no data.
     REQUIRE(!dash.toJson().empty());
     REQUIRE(!dash.toCsv().empty());
 }
 
-// TEMP reproduction of the user-reported stats crash after play + return-to-menu.
+// Reproduction of the user-reported stats crash after play + return-to-menu.
 #include "Game.hpp"
-#include "RoundEngine.hpp"
 #include "PlayerProfile.hpp"
 #include <iostream>
 namespace
@@ -602,17 +581,16 @@ TEST_CASE("REPRO stats flow: play -> quit-to-menu -> open dashboard", "[StatsRep
     };
     test_support::seed_deck(game,shoe);
 
-    // One full round to completion (settles -> appends the round to profile.currentHistory AND currentShoeRecord.rounds).
+    // One full round settles and appends to both profile.currentHistory and currentShoeRecord.rounds.
     game.startTestRound();
     game.confirmBet();
     game.stand();
     game.deltaTime = 100.0f;
-    RoundEngine engine;
     for (int i = 0; i < 60 && game.roundStateForTest() != RoundState::Cleanup; ++i)
-        engine.tick(100.0f, game);
+        game.advanceTurnState(100.0f);
     CHECK(game.roundStateForTest() == RoundState::Cleanup);
 
-    // Inspect the LIVE settled round (before any storage copy) to localize whether corruption originates in settlement.
+    // Inspect the live settled round before any storage copy to localize corruption in settlement.
     {
         const RoundRecord& live = game.currentRoundRecordForTest();
         std::cerr << "[REPRO] LIVE round dealerCards=" << live.dealerCards.size()
@@ -621,16 +599,14 @@ TEST_CASE("REPRO stats flow: play -> quit-to-menu -> open dashboard", "[StatsRep
             std::cerr << "   LIVE hand[" << h << "] cards=" << live.playerHands[h].cards.size() << std::endl;
     }
 
-    // Consolidate the in-progress shoe into longHistory exactly as QuitToMenu does (addShoeRecord moves
-    // profile.currentHistory -> longHistory). Crucially it leaves game.currentShoeRecord.rounds untouched, so on the next
-    // stats-open startStatsSession feeds that round from BOTH longHistory AND currentShoeRecord -> double-count.
+    // Consolidate the in-progress shoe into longHistory like QuitToMenu while leaving currentShoeRecord untouched; opening stats then feeds that round from BOTH paths -> double-count if unguarded.
     {
         PlayerProfile profile = game.playersForTest()[0].getProfile();
         profile.addShoeRecord(ShoeRecord{});
         game.playersForTest()[0].updateProfile(profile);
     }
 
-    // Diagnose BEFORE opening stats: inspect what actually got stored in longHistory after the quit-to-menu mimic.
+    // Before opening stats, inspect what actually landed in longHistory after the quit-to-menu mimic.
     {
         PlayerProfile diag = game.playersForTest()[0].getProfile();
         const auto& hist = diag.getLongHistory();
@@ -649,11 +625,11 @@ TEST_CASE("REPRO stats flow: play -> quit-to-menu -> open dashboard", "[StatsRep
         }
     }
 
-    // Now open the statistics dashboard exactly as the menu does, then read how many rounds it fed through the real path.
+    // Open statistics exactly as the menu does, then count rounds fed through the real path.
     game.startStatsSession();
     const int roundsFed = game.statsPerRoundCountForTest();
     std::cerr << "[REPRO] rounds fed to dashboard=" << roundsFed << " (expected 1)" << std::endl;
-    // A single completed round should feed exactly once. Double-counting (history + current record) makes this 2.
+    // A completed round feeds exactly once; history + current record makes it two.
     CHECK(roundsFed == 1);
 }
 
@@ -663,8 +639,7 @@ TEST_CASE("Edge series, bankroll series and Edge % all reset at the shoe boundar
 {
     Game game(true);
 
-    // 11 cards. A test round burns 8 before the dealer even plays (4 dealt by startTestRound, 4 more by
-    // confirmBet) plus one dealer hit here, so round 1 takes 9 and leaves 2. The next round's deal therefore runs
+    // An 11-card test round burns 8 before the dealer plays (4 deal + 4 confirmBet) plus one hit, so round 1 takes 9 and leaves 2.
     // the shoe dry on its third card, which is what fires handleEmptyDeck().
     std::vector<Card> shoe = {
         test_support::make_card(5, Suit::Spades), test_support::make_card(3, Suit::Clubs), test_support::make_card(4, Suit::Diamonds), test_support::make_card(6, Suit::Hearts),
@@ -676,9 +651,9 @@ TEST_CASE("Edge series, bankroll series and Edge % all reset at the shoe boundar
     game.startTestRound();
     game.confirmBet();
     game.stand();
-    tickUntilSettled(game);
+    test_support::settleRound(game);
 
-    // Round 1 settled: both curves have a point, and nothing mid-shoe has touched the recalibration counter.
+    // Round 1 settled: both curves have a point; nothing mid-shoe touched the recalibration counter.
     const int generationBefore = game.shoeGenerationForTest();
     REQUIRE(game.edgeSeriesForTest().size() == 1u);
     REQUIRE(game.bankrollSeriesForTest().size() == 1u);
@@ -690,16 +665,15 @@ TEST_CASE("Edge series, bankroll series and Edge % all reset at the shoe boundar
     CHECK(game.edgeSeriesForTest().empty());                       // Edge Over Time back to baseline
     CHECK(game.bankrollSeriesForTest().empty());                   // Bankroll Curve back to baseline
 
-    // The Edge % box is the live estimate read off the current count, so past the boundary it follows the new
-    // shoe's count (a few cards have already been dealt out of it) instead of keeping the old shoe's figure.
+    // Edge % is the live estimate off the current count, so post-boundary it follows the new shoe's count instead of the old.
     game.updateHUDStateForTest();
     CHECK(game.edgePercentForTest() == Approx(BasicStrategy::estimateEdgePercent(game.hiLoTrueCountForTest())));
     CHECK(game.edgePercentForTest() > -5.0);
     CHECK(game.edgePercentForTest() < 5.0);
 }
 
-// The reset must not fire on ordinary rounds: only a real shoe boundary clears the curves. The shoe is deep enough
-// that two full rounds (each burns ~10 cards: 4 dealt by startTestRound, 4 more by confirmBet, plus dealer hits)
+// The reset fires only on a real shoe boundary, not ordinary rounds (the shoe is deep enough to distinguish).
+// Two full rounds each burn ~10 cards (4 deal + 4 confirmBet + dealer hits), driving the recalibration check.
 // never run it dry.
 TEST_CASE("Ordinary rounds append to the edge series; they do not reset it", "[Feature3][Analytics][Shoe]")
 {
@@ -714,12 +688,12 @@ TEST_CASE("Ordinary rounds append to the edge series; they do not reset it", "[F
     game.startTestRound();
     game.confirmBet();
     game.stand();
-    tickUntilSettled(game);
+    test_support::settleRound(game);
 
     game.startTestRound();
     game.confirmBet();
     game.stand();
-    tickUntilSettled(game);
+    test_support::settleRound(game);
 
     CHECK(game.shoeGenerationForTest() == 0);            // no boundary crossed
     CHECK(game.edgeSeriesForTest().size() == 2u);        // both rounds contributed, nothing was wiped
@@ -752,7 +726,7 @@ TEST_CASE("Edge Over Time samples the current edge instead of adding it up each 
 {
     Game game(true);
 
-    // Eight low cards, then neutral 8s. The human stands on 12 and the dealer stands on 17, so round 1 takes
+    // Eight low cards then neutral 8s; the human stands on 12 and the dealer on 17, so round 1 takes...
     // exactly those eight cards - every one of them +1 to Hi-Lo.
     std::vector<Card> shoe = {
         test_support::make_card(5, Suit::Spades), test_support::make_card(4, Suit::Clubs), test_support::make_card(3, Suit::Diamonds), test_support::make_card(6, Suit::Hearts),
@@ -765,7 +739,7 @@ TEST_CASE("Edge Over Time samples the current edge instead of adding it up each 
     game.startTestRound();
     game.confirmBet();
     game.stand();
-    tickUntilSettled(game);
+    test_support::settleRound(game);
 
     REQUIRE(game.edgeSeriesForTest().size() == 1u);
 
@@ -779,12 +753,12 @@ TEST_CASE("Edge Over Time samples the current edge instead of adding it up each 
     game.nextRoundForTest();
     game.confirmBet();
     game.stand();
-    tickUntilSettled(game);
+    test_support::settleRound(game);
 
     game.nextRoundForTest();
     game.confirmBet();
     game.stand();
-    tickUntilSettled(game);
+    test_support::settleRound(game);
 
     const std::vector<double>& series = game.edgeSeriesForTest();
     REQUIRE(series.size() == 3u);
@@ -795,16 +769,14 @@ TEST_CASE("Edge Over Time samples the current edge instead of adding it up each 
         CHECK(v > -5.0);
         CHECK(v < 5.0);
     }
-    // ...and the newest point is the live estimate off the current count, not a sum of the rounds before it.
+    // The newest point is the live estimate off the current count, not a running total of prior rounds.
     CHECK(series.back() == Approx(BasicStrategy::estimateEdgePercent(game.hiLoTrueCountForTest())));
 
-    // Three rounds of a rising count moved the edge itself by well under a point; a running total would have
-    // moved it by several, which is exactly the drift that made a normal shoe look like a -13% disaster.
+    // Three rising-count rounds moved the edge under a point; a running total would have drifted several, turning a normal shoe into a spurious -13% disaster.
     CHECK(series.back() - series.front() < 2.0);
 }
 
-// The expectation the readout has to satisfy in play: over a whole shuffled shoe of ordinary rounds, the edge
-// wobbles inside a few percent of the fresh-shoe baseline. It never ramps to -13% the way the integrated
+// In play over a full shuffled shoe of ordinary rounds, edge wobbles within a few percent of the fresh-shoe baseline and never ramps to -13% like an integrated total would.
 // version did, no matter how many rounds the shoe gets through.
 TEST_CASE("A whole shoe of ordinary rounds keeps the edge inside the expected band", "[Feature3][Analytics][Edge]")
 {
@@ -817,7 +789,7 @@ TEST_CASE("A whole shoe of ordinary rounds keeps the edge inside the expected ba
     {
         game.confirmBet();
         game.stand();
-        tickUntilSettled(game);
+        test_support::settleRound(game);
         ++rounds;
         if (game.gameStateForTest() != GameState::Started)
             break;
@@ -825,7 +797,7 @@ TEST_CASE("A whole shoe of ordinary rounds keeps the edge inside the expected ba
     }
 
     const std::vector<double>& series = game.edgeSeriesForTest();
-    // A 6-deck shoe cut 25 cards short deals plenty of rounds; if this ever comes back tiny the shoe setup broke,
+    // A 6-deck shoe cut 25 cards short still deals plenty of rounds; a tiny count means the shoe setup broke.
     // not the edge model.
     REQUIRE(rounds >= 10);
     REQUIRE(series.size() >= 10u);
@@ -854,7 +826,7 @@ TEST_CASE("A whole shoe of ordinary rounds keeps the edge inside the expected ba
 
 TEST_CASE("Bet distribution folds into a fixed count of evenly spaced ranges", "[Feature3][Analytics][Histogram]")
 {
-    // Deliberately scattered sizes: one bar per unique value would render 7 bars of wildly different widths.
+    // Deliberately scattered bet sizes: one bar per value would yield seven wildly-different-width bars.
     std::map<int, int> bets = {{10, 3}, {25, 1}, {50, 2}, {100, 4}, {500, 1}, {995, 2}, {1000, 5}};
 
     const std::vector<int> buckets =
@@ -880,7 +852,7 @@ TEST_CASE("Bet distribution folds into a fixed count of evenly spaced ranges", "
     CHECK(placed == wagered);
 }
 
-// Wagers at or above the table maximum must clamp into the last range rather than growing the axis, and
+// Wagers at or above the table maximum clamp into the last range rather than growing the axis.
 // non-positive entries must not create a phantom bar.
 TEST_CASE("Oversized wagers clamp to the top range; zero/negative wagers are ignored", "[Feature3][Analytics][Histogram]")
 {
@@ -894,7 +866,7 @@ TEST_CASE("Oversized wagers clamp to the top range; zero/negative wagers are ign
     CHECK(buckets[9] == 1 + 2 + 1);               // everything at/above the max clamps into the last bar
 }
 
-// An empty session must still produce the full set of (empty) bars, so the chart keeps its evenly spaced scale
+// An empty session still produces the full set of empty bars, keeping the evenly spaced scale intact.
 // instead of collapsing or blanking out between shoes.
 TEST_CASE("Empty bet distribution still yields the full set of bars", "[Feature3][Analytics][Histogram]")
 {

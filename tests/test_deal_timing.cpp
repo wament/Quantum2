@@ -1,4 +1,4 @@
-// Deal-timing / game-speed handling: Gamer refresh-rate derivation, Feature-8 dealing-animation pacing, card-animation reveal clocks.
+// Deal-timing / game-speed tests: Gamer refresh-rate derivation, Feature-8 dealing animation, reveal clocks.
 
 #include <catch2/catch_all.hpp>
 #include "test_support.hpp"
@@ -18,21 +18,21 @@ using Catch::Approx;
 
 TEST_CASE("Gamer speed derives its per-step interval from the monitor refresh rate", "[GameSpeed][Constants]")
 {
-    // One step advances per frame, so seconds-per-step = 1/refreshRate: a higher-refresh monitor plays strictly faster.
+    // One step per frame: seconds-per-step is 1/refreshRate, so higher-refresh monitors play strictly faster.
     CHECK(GameTiming::gamerStepInterval(60.0f) == Approx(1.0f / 60.0f));
     CHECK(GameTiming::gamerStepInterval(144.0f) == Approx(1.0f / 144.0f));
     CHECK(GameTiming::gamerStepInterval(240.0f) == Approx(1.0f / 240.0f));
 
-    // An undetected or absurdly low rate never yields a negative or exploding interval; it falls back to the default.
+    // An undetected or absurdly low rate cannot yield a negative or exploding interval; it falls back to the default.
     CHECK(GameTiming::gamerStepInterval(0.0f) == GameTiming::DEFAULT_REFRESH_HZ);
     CHECK(GameTiming::gamerStepInterval(1.0f) == Approx(GameTiming::DEFAULT_REFRESH_HZ));
 
-    // At a high refresh rate Gamer is strictly faster per step than Hyper's fixed tiny delay, honoring the goal of
+    // At high refresh rates Gamer advances per step faster than Hyper's fixed tiny delay, honoring the goal.
     // pushing playback as fast as the hardware allows.
     CHECK(GameTiming::gamerStepInterval(240.0f) < GameTiming::npcActionDelay(GameSpeed::Hyper));
 }
 
-// The injected refresh rate flows through to what Gamer timing reads, so pure-logic paths can be driven headlessly
+// The injected refresh rate flows through to what Gamer timing reads, so pure-logic paths are driven headlessly.
 // (the full-mode constructor instead detects the real monitor rate from hardware at startup).
 TEST_CASE("Gamer speed reads its injectable monitor refresh rate off Game", "[GameSpeed]")
 {
@@ -47,7 +47,7 @@ TEST_CASE("Gamer speed reads its injectable monitor refresh rate off Game", "[Ga
 
 TEST_CASE("isAutoPlaying treats AutoPlay, Hyper, and refresh-rate Gamer as continuous autoplay", "[GameSpeed]")
 {
-    // The three automated tiers (AutoPlay, Hyper, refresh-rate Gamer) advance every seat on basic strategy without
+    // The three automated tiers (AutoPlay, Hyper, Gamer) advance every seat on basic strategy without input.
     // waiting for input...
     CHECK(GameTiming::isAutoPlaying(GameSpeed::AutoPlay));
     CHECK(GameTiming::isAutoPlaying(GameSpeed::Gamer));
@@ -65,7 +65,7 @@ TEST_CASE("dealerRevealInterval matches player pace in Gamer/Hyper, fixed beat o
     CHECK(GameTiming::dealerRevealInterval(GameSpeed::Gamer, 240.0f) == Approx(GameTiming::gamerStepInterval(240.0f)));
     CHECK(GameTiming::dealerRevealInterval(GameSpeed::Hyper, 0.0f) == Approx(GameTiming::npcActionDelay(GameSpeed::Hyper)));
 
-    // ...while every other speed keeps the fixed, watchable beat so a casual player can follow each card reveal.
+    // Every other speed keeps a fixed, watchable beat so a casual player can follow each reveal.
     CHECK(GameTiming::dealerRevealInterval(GameSpeed::Fast, 0.0f) == Approx(GameTiming::DEALER_ACTION_DELAY));
     CHECK(GameTiming::dealerRevealInterval(GameSpeed::Normal, 0.0f) == Approx(GameTiming::DEALER_ACTION_DELAY));
     CHECK(GameTiming::dealerRevealInterval(GameSpeed::Slow, 0.0f) == Approx(GameTiming::DEALER_ACTION_DELAY));
@@ -75,19 +75,19 @@ TEST_CASE("dealerRevealInterval matches player pace in Gamer/Hyper, fixed beat o
 
 TEST_CASE("dealDurationScale keys card-deal tempo to game speed", "[GameSpeed][Animation]")
 {
-    // Slower speeds stretch for visibility; faster speeds compress so cards land with the action/sound rather than trailing.
+    // Slower speeds stretch for visibility; faster speeds compress so cards land with the action and sound instead of trailing.
     CHECK(GameTiming::dealDurationScale(GameSpeed::Slow) == Approx(2.0f));
     CHECK(GameTiming::dealDurationScale(GameSpeed::Normal) == Approx(1.0f));
     CHECK(GameTiming::dealDurationScale(GameSpeed::Fast) == Approx(0.4f));
     CHECK(GameTiming::dealDurationScale(GameSpeed::AutoPlay) == Approx(0.3f));
 
-    // Monotonic: every step down in speed is a step up (or equal) in animation-duration factor, so the whole deal sweep
+    // Monotonic: slower speed means equal-or-greater animation-duration factor, so the whole deal sweep stays ordered.
     // speeds up / slows down as one unit with the action cadence.
     CHECK(GameTiming::dealDurationScale(GameSpeed::Slow) > GameTiming::dealDurationScale(GameSpeed::Normal));
     CHECK(GameTiming::dealDurationScale(GameSpeed::Normal) > GameTiming::dealDurationScale(GameSpeed::Fast));
     CHECK(GameTiming::dealDurationScale(GameSpeed::Fast) > GameTiming::dealDurationScale(GameSpeed::AutoPlay));
 
-    // Hyper and Gamer deliver no animation: the factor collapses to 0, so every Graphics::CardDealTween settles instantly on its
+    // Hyper and Gamer deliver no animation: the factor collapses to 0, so every CardDealTween settles instantly.
     // resting slot (progress()==1 when duration==0), i.e. cards snap into place with no visible sweep.
     CHECK(GameTiming::dealDurationScale(GameSpeed::Hyper) == Approx(0.0f));
     CHECK(GameTiming::dealDurationScale(GameSpeed::Gamer) == Approx(0.0f));
@@ -105,9 +105,7 @@ TEST_CASE("animationDisabled is true only for Hyper and Gamer", "[GameSpeed][Ani
     CHECK_FALSE(GameTiming::animationDisabled(GameSpeed::AutoPlay));
 }
 
-// Headless proof that Hyper/Gamer suppress the bet/card sound effects while every other speed still plays them. The game
-// logic/tick path is untouched by speed, so startTestRound deals normally; only the effect queue differs per speed. This
-// mirrors the deterministic shoe + assertions in tests/test_sound_manager.cpp so the positive control is identical there.
+// Headless proof that Hyper/Gamer suppress bet/card sounds while other speeds play them. Speed never touches game logic; only the effect queue differs, mirrored deterministically by test_sound_manager's positive control.
 TEST_CASE("Hyper and Gamer suppress card/bet sound effects; other speeds keep them", "[GameSpeed][Sound][Animation]")
 {
     const std::vector<Card> shoe = {
@@ -131,7 +129,7 @@ TEST_CASE("Hyper and Gamer suppress card/bet sound effects; other speeds keep th
         CHECK(std::count(q.begin(), q.end(), "bet") == 0);
     }
 
-    // Positive control: Normal still plays the effects (the watchable tiers are unchanged by this rewrite).
+    // Positive control: Normal still plays its effects (the watchable tiers are unchanged by this rewrite).
     {
         Game game(true);
         test_support::seed_deck(game,shoe);
@@ -257,11 +255,11 @@ TEST_CASE("Graphics::CardDealTween flip envelope is inert until flipping and the
 TEST_CASE("reveal staggering orders cards in deal order with no instant-pop", "[card-animation]")
 {
     Game g(true);
-    // Two seats, each dealt two cards -> player card ordinals 0..3 (seat 0 then seat 1 / NPC), dealer ordinals 4..5.
+    // Two seats dealt two cards each: player ordinals 0..3 then dealer ordinals 4..5.
     g.playersForTest().clear();
     g.playersForTest().emplace_back(Player("William"));
     g.playersForTest().emplace_back(Player("Alice"));
-    // Give each seat a single empty hand to deal into (mirrors how the game prepares seats before dealing).
+    // Give each seat one empty hand to deal into, mirroring how the game prepares seats before dealing.
     for (int s = 0; s < 2; ++s)
         g.testPlayer(s).resetRound(0);
     for (int s = 0; s < 2; ++s)
@@ -271,10 +269,7 @@ TEST_CASE("reveal staggering orders cards in deal order with no instant-pop", "[
     GameRenderer r;                 // fresh -> dealClock_ == 0, so the reveal "now" this test observes is exactly 0.
     const float now = 0.f;
 
-    // revealAt must grow with deal-order ordinal: earlier-dealt cards begin sliding before later ones, and every reveal
-    // time is >= now (in the future or at `now`) so each card starts at progress ~0 instead of already past
-    // DEAL_SLIDE_SECONDS. Under the old minus sign, ordinals 1..5 were < 0 -- instantly past their slide duration -- so
-    // later seats / NPCs / dealer popped into place with no animation; that ordering + no-past property now holds.
+    // revealAt grows with deal ordinal so earlier cards slide first; all reveal times are >= now (progress starts near 0). The old minus sign put later ordinals in the past, popping them instantly - that ordering and no-past property now holds.
     const float s0c0 = r.playerRevealAtForForTest(g, 0, 0, 0);   // ordinal 0
     const float s0c1 = r.playerRevealAtForForTest(g, 0, 0, 1);   // ordinal 1
     const float npc0 = r.playerRevealAtForForTest(g, 1, 0, 0);   // ordinal 2 (first NPC card)
@@ -290,20 +285,10 @@ TEST_CASE("reveal staggering orders cards in deal order with no instant-pop", "[
     REQUIRE(s0c0 >= now);   // earliest card starts at/after `now` -- never already in the past (no instant pop)
 }
 
-// --- Feature 8 cross-round reveal-clock reset regression ([card-animation][regression]) -----------------------------
-// advanceRevealClock() wipes stale reveal state only when on-table card count drops (a new round begins with empty
-// hands) and then advances the shared deal clock by game.deltaTime. prevTotalCards_ must be RE-BASELINED to the current
-// low count on that drop. If it instead RETAINED the previous round's peak, every later round whose card count stayed
-// below that retained peak would re-trigger `total < prevTotalCards_` on EVERY frame -- clearing and re-seeding the
-// reveals each frame, which froze a card's progress near 0 so it never finished sliding into its slot (the reported
-// "cards work on round 1 but get stuck / wrong spot afterwards; split-heavy rounds only animate once enough cards pile
-// up past the stale peak; sparse/NPC rounds never animate" bug). These cases drive advanceRevealClock over a
-// high-card round followed by shorter follow-up rounds and assert the cached reveal time stays stable across frames
-// (so elapsed grows past DEAL_SLIDE_SECONDS and the card actually settles) for both the player and dealer paths.
+// Regression guard for cross-round reveal-clock reset: advanceRevealClock wipes stale reveals only on an on-table card-count drop and re-bases prevTotalCards_ to the new low; retaining the prior peak re-triggered clearing every frame, freezing cards near 0 (the 'stuck after round 1' bug). Drives a high-card round then shorter follow-ups, asserting cached reveal time stays stable so elapsed grows past DEAL_SLIDE_SECONDS and cards settle.
 
 namespace {
-// Populate every seat's hands with exactly `totalCards` cards so the on-table card count is deterministic for driving
-// advanceRevealClock(). Card values are irrelevant to animation -- reveal timing depends only on hand/card sizes.
+// Populate each seat with exactly totalCards cards for a deterministic count; card values do not matter to animation - only hand/card sizes drive reveal timing.
 void fillPlayerHands(Game& g, int totalCards)
 {
     for (auto& p : g.playersForTest())
@@ -314,7 +299,7 @@ void fillPlayerHands(Game& g, int totalCards)
             p.hands.back().addCard(Card{2 + static_cast<int>(dealt++), Suit::Spades});
 }
 
-// Mirror nextRound()'s boundary: clear every seat's hands and the dealer so on-table card count drops to ~0.
+// Mirror nextRound()'s boundary: clear every seat and the dealer so on-table card count drops near zero.
 void beginNewRound(Game& g)
 {
     for (auto& p : g.playersForTest())
@@ -335,15 +320,11 @@ TEST_CASE("shorter follow-up round below prior peak still lets every card finish
     fillPlayerHands(g, 6);
     r.advanceRevealClockForTest(g);
 
-    // Round boundary: every hand + the dealer is cleared (total drops toward 0) -- exactly what nextRound() does. One
-    // clear happens here; the baseline is re-set to the current low count by the fixed advanceRevealClock().
+    // Round boundary clears all hands and the dealer (total drops toward 0), re-baselining the reveal clock to the current low - exactly what nextRound() does.
     beginNewRound(g);
     r.advanceRevealClockForTest(g);
 
-    // Round 2 peak (3 cards) stays BELOW round 1's retained peak (6). This is the reported failure mode: with the old
-    // running-max bookkeeping, every frame of this round re-triggered `total < prevTotalCards_`, clearing and re-seeding
-    // the reveals so progress froze near 0. Across ~6.4s of frames a correctly-cached reveal time must stay constant AND
-    // each card's elapsed time (dealClock - revealAt) must grow past DEAL_SLIDE_SECONDS so it actually settles.
+    // Round 2 peak (3) stays below round 1's retained peak (6): the reported failure where every frame re-triggered total < prevTotalCards_, freezing progress near 0. A correctly-cached reveal time must stay constant while each card's elapsed grows past DEAL_SLIDE_SECONDS so it settles.
     fillPlayerHands(g, 3);
     const float slotReveal = r.playerRevealAtForForTest(g, 0, 0, 0);   // first sighting in round 2 -> fixed for the round
 
@@ -357,7 +338,7 @@ TEST_CASE("shorter follow-up round below prior peak still lets every card finish
     }
     REQUIRE(maxElapsed >= Constants::DEAL_SLIDE_SECONDS);   // card finished sliding into its slot (not stuck)
 
-    // The dealer reveal path (cards dealt after players -- which is how seats/NPCs are handled) behaves identically.
+    // The dealer reveal path (cards dealt after players, as seats/NPCs are) behaves identically.
     const float dealerReveal = r.dealerRevealAtForForTest(g, 0);
     float dealerMaxElapsed = 0.f;
     for (int frame = 0; frame < 400; ++frame)
@@ -377,13 +358,7 @@ TEST_CASE("every successive sparse round re-stabilizes and settles after a big s
     GameRenderer r;
     g.deltaTime = 0.016f;
 
-    // Round 1 is a big split round: one hand of many cards -> prevTotalCards_ climbs high and stays the retained peak.
-    fillPlayerHands(g, 8);
-    for (int frame = 0; frame < 400; ++frame)
-        r.advanceRevealClockForTest(g);
-
-    // Several following rounds each stay well below that peak (sparse / NPC-heavy), exactly like the reported session.
-    // Every one of them must clear once at its boundary, then settle each card -- never get stuck re-clearing every frame.
+    // Round 1 is a big split round pushing prevTotalCards_ high; several sparse/NPC follow-ups stay below that peak. Each must clear once at its boundary then settle - never get stuck re-clearing every frame.
     for (int round = 0; round < 20; ++round)
     {
         beginNewRound(g);
@@ -403,9 +378,7 @@ TEST_CASE("every successive sparse round re-stabilizes and settles after a big s
     }
 }
 
-// Permanent regression: after the reveal-clock fixes, every seat -- including NPC seats and the dealer -- must sweep its
-// deal in from the shoe rather than popping into place, then settle over a full round. Drives the same reveal-clock path
-// drawPlayers uses (advanceRevealClock + playerRevealAtFor) headlessly through a real 3-seat deal; no window needed.
+// Permanent regression: after the reveal-clock fixes, every seat including NPCs and the dealer must sweep its deal in from the shoe and settle over a full round, driving advanceRevealClock headlessly through a real 3-seat deal.
 TEST_CASE("every seat including NPCs sweeps its deal from progress 0 and settles", "[card-animation][regression]")
 {
     Game g(true);
@@ -413,9 +386,7 @@ TEST_CASE("every seat including NPCs sweeps its deal from progress 0 and settles
     GameRenderer r;
     g.deltaTime = 0.016f;
 
-    // (a) No instant-pop: on its first sighting every card's elapsed is <= ~0, i.e. revealAt sits at/in the future so the
-    //     card starts at progress 0 and slides in -- including NPC seats and the dealer (the old minus sign put them in
-    //     the past => instantly past DEAL_SLIDE_SECONDS => popped with no animation). This is what the user reported missing.
+    // No instant-pop: on first sighting each card's elapsed is <= ~0 (revealAt at/in future), so progress starts at 0 and slides in - including NPCs and dealer (the old minus sign put them in the past, popping instantly). This is the reported missing behavior.
     for (int p = 0; p < static_cast<int>(g.playersForTest().size()); ++p)
         for (size_t h = 0; h < g.testPlayer(p).hands.size(); ++h)
             for (size_t i = 0; i < g.testPlayer(p).hands[h].size(); ++i)
@@ -424,8 +395,7 @@ TEST_CASE("every seat including NPCs sweeps its deal from progress 0 and settles
     for (size_t i = 0; i < g.testDealer().size(); ++i)
         REQUIRE(r.dealClockForTest() - r.dealerRevealAtForForTest(g, static_cast<int>(i)) <= 1e-4f);
 
-    // (b) The reveal clock stays healthy a whole round: an NPC seat's cached reveal time is stable across frames and its
-    //     elapsed grows past DEAL_SLIDE_SECONDS so the card actually finishes sliding into its slot (not stuck, not instant).
+    // The reveal clock stays healthy a whole round: an NPC seat's cached reveal time is stable across frames while its elapsed grows past DEAL_SLIDE_SECONDS so the card actually finishes sliding in.
     const int npcSeat = 1;
     const float npcReveal = r.playerRevealAtForForTest(g, npcSeat, 0, 0);
     float maxElapsed = 0.f;

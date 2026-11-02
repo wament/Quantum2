@@ -25,8 +25,8 @@ namespace
         return os.str();
     }
 
-    // Reconstruct a Hand from its recorded cards so bust / natural detection reuses production scoring (identical to how the
-    // game scores it), rather than re-implementing card-value logic. addCard() only pushes back, so this is side-effect free.
+    // Reconstruct a Hand from its recorded cards
+    // game scores it), rather than re-implementing card-value logic. addCard() only pushes back
     Hand handFromCards(const std::vector<Card>& cards)
     {
         Hand h;
@@ -35,7 +35,7 @@ namespace
         return h;
     }
 
-    // Centered title text with its origin at the top edge, so vertical placement is stable regardless of font metrics.
+    // Centered title text with its origin at the top edge
     sf::Text centeredTitle(sf::RenderWindow& window, const std::string& label, unsigned int size, float y, const sf::Color& color)
     {
         sf::Text t(FontManager::get(), label, size);
@@ -75,7 +75,7 @@ void StatsDashboard::feed(const PlayerStats& career, const std::vector<RoundReco
 
     // Career totals come from the single record-derived source of truth: computeCareerStats. This removes the duplicate
     // win/loss/push/blackjack/handsFinished/greatest-hand recompute that used to live here and makes the dashboard match the
-    // profile's human-seat accounting exactly -- the old loop tallied every seat AND folded pushes into wins (records never
+    // profile's human-seat accounting exactly
     // flag surrender, so a pushed hand with won=true was counted as a win). busts is chart-level card detection kept out of
     // PlayerStats; per-round bankroll/profit stay here because they're round-over-seat chart data, not career totals.
     ShoeRecord shoe;
@@ -136,7 +136,7 @@ std::string StatsDashboard::toCsv() const
     std::ostringstream os;
     os << "metric,value\n";
     // One pre-formatted line per metric, mirroring toJson()'s data-driven table instead of 17 near-identical `os << name,value`
-    // lines. Each string is the row already assembled ("name," + streamed value) so mixed int/float fields share one formatting
+    // lines. Each string is the row already assembled ("name," + streamed value)
     // path; output is byte-for-byte identical to streaming the field directly into os.
     const std::array<std::string, 17> rows = {
         "hands_finished," + csvValue(computed_.handsFinished),
@@ -290,7 +290,7 @@ void StatsDashboard::draw(sf::RenderWindow& window) const
     {
         const ComputedStats& c = computed_;
 
-        // Bankroll curve (polyline) in the upper chart region, scaled to its own min/max so it fills the panel.
+        // Bankroll curve (polyline) in the upper chart region, scaled to its own min/max
         std::vector<long long> series(c.bankrollSeries);
         if (!series.empty())
         {

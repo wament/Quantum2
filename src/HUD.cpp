@@ -56,7 +56,7 @@ void HUD::initialize(sf::Font& font)
     m_trueCountBox = m_rightPanel.addStatBox("True Count");
     m_cardsRemainingBox = m_rightPanel.addStatBox("Cards Left");
 
-    // Feature 3 analytics boxes live on the RIGHT panel so the LEFT panel is dedicated to graphs.
+    // analytics boxes live on the RIGHT panel so the LEFT panel is dedicated to graphs.
     m_stdDevBox = m_rightPanel.addStatBox("Std Dev");
     m_longWinBox = m_rightPanel.addStatBox("Long Win");
     m_longLossBox = m_rightPanel.addStatBox("Long Loss");
@@ -68,7 +68,7 @@ void HUD::initialize(sf::Font& font)
         box->initialize(font, box->getTitle());
 
     // Bottom bar: the five boxes are distributed evenly across the panel width (equal gaps AND equal end margins),
-    // so the group is symmetric about the center of the play band -- where the controls line centers itself --
+    // so the group is symmetric about the center of the play band
     // instead of clustering against the left edge at a fixed 140px pitch and leaving the right half empty.
     const sf::Rect<float> bottom = m_bottomPanel.bounds();
     const std::vector<StatBox*> bottomBoxes = {m_bankrollBox, m_betBox, m_streakBox, m_strategyBox, m_bookBox};
@@ -106,7 +106,7 @@ void HUD::updateControls(sf::Font& font)
 
     m_controlsText = new sf::Text(font, "", static_cast<unsigned int>(Constants::Hud::CONTROLS_FONT_SIZE));
     m_controlsText->setFillColor(sf::Color(200, 200, 200));
-    // Sits just above the bottom bar; derived from the bar's height so it stays put if the bar is ever resized.
+    // Sits just above the bottom bar; derived from the bar's height
     m_controlsText->setPosition(sf::Vector2f(0.f, static_cast<float>(Constants::WINDOW_HEIGHT) - Constants::Hud::BOTTOM_HEIGHT - 24.f));
 
     // Build a single-line controls display
@@ -116,7 +116,7 @@ void HUD::updateControls(sf::Font& font)
         "[R | Next Round/Restart]";
 
     // The line must stay inside the central play band. It used to be centred at a fixed font size, and at this
-    // length it was wider than the band -- its ends ran underneath the side panels and printed straight through
+    // length it was wider than the band
     // the bottom chart's axis labels. Shrink the type until it fits rather than letting it spill.
     const sf::Rect<float>& left = m_leftPanel.bounds();
     const sf::Rect<float>& right = m_rightPanel.bounds();
@@ -142,7 +142,7 @@ void HUD::updateControls(sf::Font& font)
 
 void HUD::update(const HUDState& hudState)
 {
-    // Recompute graph-pane geometry each frame so it tracks any panel-size change before drawing + hit-testing.
+    // Recompute graph-pane geometry each frame
     layoutLeftPanels();
 
     if (m_bankrollBox)
@@ -208,7 +208,7 @@ void HUD::update(const HUDState& hudState)
     }
 
     // Book advisor: show the advised action during the player's turn, and hide it (dash) on the
-    // Book advisor feedback (Feature 1): after a completed action show the verdict — green when it matched basic
+    // Book advisor feedback: after a completed action show the verdict: green when it matched basic
     // strategy, red when the player deviated. Otherwise advise the live move in white during the player's turn and
     // hide (dash) on the dealer's turn or with no active hand.
     if (m_bookBox)
@@ -239,8 +239,8 @@ void HUD::update(const HUDState& hudState)
         }
     }
 
-    // Feature 3 analytics stat boxes + chart backing data (left-panel dashboard). updateHUDState() derives all of
-    // these from Game::shoe_ each frame, so they are all per-shoe: Std Dev, Long Win, Long Loss and Edge % restart
+    // analytics stat boxes + chart backing data (left-panel dashboard). updateHUDState() derives all of
+    // these from Game::shoe_ each frame
     // when the shoe does. Dash anything not yet measured in this shoe.
     if (m_stdDevBox)
     {
@@ -259,11 +259,11 @@ void HUD::update(const HUDState& hudState)
         m_edgeBox->setValue(edgeOss.str() + "%");
     }
 
-    // Chart backing data, copied from HUDState so drawCharts can render without the per-frame HUDState lifetime.
-    // The per-shoe reset is owned by Game: every shoe boundary runs resetShoeAnalytics(), which zeroes the whole
+    // Chart backing data, copied from HUDState
+    // The per-shoe reset is owned by Game: every shoe boundary runs resetShoeAnalytics()
     // ShoeAnalytics struct, so what arrives here already holds only the current shoe and the curves + Edge %
-    // readout start at baseline. The bankroll curve is the human seat's net alone — NPC results never move it.
-    // (An earlier HUD-side "clear on shoe change" guard here was dead code -- it was overwritten by the two
+    // readout start at baseline. The bankroll curve is the human seat's net alone: NPC results never move it.
+    // (An earlier HUD-side "clear on shoe change" guard here was dead code
     // assignments below on the very same frame, so it could never have reset anything.)
     m_bankrollSeries = hudState.bankrollSeries;
     m_edgeSeries = hudState.edgeSeries;
@@ -274,7 +274,7 @@ void HUD::update(const HUDState& hudState)
 
     // Bets Placed chart: fold the raw per-wager distribution into evenly spaced ranges. One bar per distinct bet
     // size is unreadable as soon as a player varies their wager, and the ranges stay put as bets come in. The
-    // distribution is this shoe's (Game::shoe_), so the chart restarts with the shoe like every other readout.
+    // distribution is this shoe's (Game::shoe_)
     m_betHistogram.clear();
     m_betBucketWidth = 0;
     if (hudState.shoeAnalytics)
@@ -296,7 +296,7 @@ void HUD::draw(sf::RenderWindow& window)
     // Bottom panel always visible
     m_bottomPanel.draw(window);
 
-    // Feature 3: bankroll-curve, edge-tracking and bet-distribution charts on the empty left panel.
+    // bankroll-curve, edge-tracking and bet-distribution charts on the empty left panel.
     drawCharts(window);
 
     // Draw controls above bottom panel
@@ -305,8 +305,8 @@ void HUD::draw(sf::RenderWindow& window)
 
 sf::FloatRect HUD::countTitleBounds() const
 {
-    // The Counting Style box (e.g. "Counting Style" / "Hi-Lo") is clickable — see InputHandler toggling the
-    // counting style. Bounds span both its label and value lines so clicks anywhere on it register.
+    // The Counting Style box (e.g. "Counting Style" / "Hi-Lo") is clickable: see InputHandler toggling the
+    // counting style. Bounds span both its label and value lines
 
     return m_countingStyleBox ? m_countingStyleBox->getTitleBounds() : sf::FloatRect{};
 }
@@ -316,7 +316,7 @@ namespace {
     // The left panel is now dedicated to graphs. These stacked plot rects tile the whole panel (geometry derived
     // from the actual panel bounds so they adapt if the panel size ever changes), reserving a top title strip and a
     // bottom x-axis strip for each chart with modest spacing between them.
-    // Chart geometry and type sizes come from Constants::Hud, so they scale with the panels instead of being
+    // Chart geometry and type sizes come from Constants::Hud
     // retuned by hand every time a panel is resized.
     constexpr float kTitleStrip = Constants::Hud::CHART_TITLE; // strip at a chart's top for its title label
     constexpr float kXAxisStrip = Constants::Hud::CHART_XAXIS; // strip at a chart's bottom for round-number ticks
@@ -326,7 +326,7 @@ namespace {
     constexpr unsigned kLabelFont = static_cast<unsigned>(Constants::Hud::CHART_LABEL_FONT);
     constexpr unsigned kTitleFont = static_cast<unsigned>(Constants::Hud::CHART_TITLE_FONT);
 
-    // One accent colour per chart, reused for the series, its fill and its title readout so a glance at the colour
+    // One accent colour per chart, reused for the series, its fill and its title readout
     // identifies the chart without having to read the label.
     const sf::Color kBankrollColor(90, 200, 90);
     const sf::Color kEdgeColor(120, 170, 255);
@@ -386,8 +386,8 @@ namespace {
         window.draw(name);
     }
 
-    // Compact axis label: 1200 -> "1.2k", 1000 -> "1k", 40 -> "40". The gutter is only CHART_GUTTER px wide, so a
-    // full "-1,240" overflows it and lands on the panel edge -- one of the things that made the old axes read as
+    // Compact axis label: 1200 -> "1.2k", 1000 -> "1k", 40 -> "40". The gutter is only CHART_GUTTER px wide
+    // full "-1,240" overflows it and lands on the panel edge
     // clipped garbage. k-notation keeps every label inside the gutter at any magnitude.
     std::string compactNumber(double v, int precision)
     {
@@ -408,7 +408,7 @@ namespace {
         return oss.str();
     }
 
-    // Round a target spacing up to a "nice" step (1/2/5 x power of ten) so axis labels come out clean.
+    // Round a target spacing up to a "nice" step (1/2/5 x power of ten)
     double niceStep(double raw)
     {
         if (!(raw > 0.0))
@@ -427,7 +427,7 @@ namespace {
         return niceFrac * std::pow(10.0, exp);
     }
 
-    // Snap [lo,hi] outward to whole "nice" steps so gridlines land on round numbers and the curve never touches the
+    // Snap [lo,hi] outward to whole "nice" steps
     // plot edge. The range always spans zero: for both the bankroll curve and the edge curve, "above or below the
     // baseline" is the first question the chart has to answer, and pinning the baseline in place also stops the plot
     // from rescaling (and the whole curve jumping) every time a new extreme comes in.
@@ -524,7 +524,7 @@ namespace {
     void drawLineChart(sf::RenderWindow& window, const sf::Rect<float>& rect, const Series& data,
                        sf::Color lineColor, int precision, const char* title, const std::string& readout)
     {
-        // The frame (background + title + readout) draws even with too little data to plot, so the pane stays
+        // The frame (background + title + readout) draws even with too little data to plot
         // labelled and in place instead of blanking out at the start of every shoe.
         drawChartFrame(window, rect, title, readout, lineColor);
 
@@ -545,7 +545,7 @@ namespace {
         auto yAt = [&](double v) { return plotBottom - static_cast<float>((v - axisLo) / (axisHi - axisLo)) * pbox.size.y; };
 
         // Filled band between the curve and the zero baseline. In a plot this narrow the line's own amplitude is only
-        // a few pixels, so the filled area above/below the baseline is what actually reads as "up" or "down" -- the
+        // a few pixels, so the filled area above/below the baseline is what actually reads as "up" or "down"
         // line alone was most of why these charts conveyed nothing.
         const float zeroY = yAt(0.0);
         const sf::Color fillColor(lineColor.r, lineColor.g, lineColor.b, 60);
@@ -563,7 +563,7 @@ namespace {
             addVert(x0, zeroY); addVert(x0, y0); addVert(x1, y1);
             addVert(x0, zeroY); addVert(x1, y1); addVert(x1, zeroY);
         }
-        // Every segment contributes exactly 6 vertices, so the array is exactly full and can be drawn whole.
+        // Every segment contributes exactly 6 vertices
         window.draw(fill);
 
         sf::VertexArray line(sf::PrimitiveType::LineStrip, data.size());
@@ -579,7 +579,7 @@ namespace {
     }
 
 
-    // Bets Placed: one bar per wager range (see HUD::bucketBetDistribution), so the x axis is a fixed, evenly spaced
+    // Bets Placed: one bar per wager range (see HUD::bucketBetDistribution)
     // scale from 0 to the table maximum no matter which sizes were actually wagered.
     void drawHistogram(sf::RenderWindow& window, const sf::Rect<float>& rect, const std::vector<int>& buckets,
                        int bucketWidth, const std::string& readout)
@@ -612,9 +612,9 @@ namespace {
             window.draw(bar);
         }
 
-        // X axis: a tick at every range boundary (0, bucketWidth, 2*bucketWidth, ... up to the table max) so the
+        // X axis: a tick at every range boundary (0, bucketWidth, 2*bucketWidth, ... up to the table max)
         // evenly spaced bars read against the wager scale, but text only at 0 / the midpoint / the table maximum.
-        // Ten ranges across a ~176px plot is ~17px per bar, so labelling every boundary stacks four-digit numbers on
+        // Ten ranges across a ~176px plot is ~17px per bar
         // top of each other -- the single most illegible thing about the old chart.
         const int rangeCount = static_cast<int>(buckets.size());
         for (int i = 0; i <= rangeCount; ++i)
@@ -636,7 +636,7 @@ namespace {
             sf::Text label(FontManager::get(), oss.str(), kLabelFont);
             label.setFillColor(sf::Color(160, 160, 160));
             sf::FloatRect lb = label.getLocalBounds();
-            // Keep the labels inside the pane: a boundary label is centered on its tick, so the last one would
+            // Keep the labels inside the pane: a boundary label is centered on its tick
             // otherwise hang off the panel edge and the first would sit on top of the y axis' own bottom label.
             const float labelX = std::clamp(x,
                                             pbox.position.x + lb.size.x * 0.5f + 2.f,
@@ -656,7 +656,7 @@ namespace {
 
 void HUD::drawCharts(sf::RenderWindow& window) const
 {
-    // Bankroll Curve: net profit for the CURRENT shoe. Game clears the series at every shoe boundary, so the curve
+    // Bankroll Curve: net profit for the CURRENT shoe. Game clears the series at every shoe boundary
     // always restarts from the baseline and answers "how has this shoe gone?" rather than "how has my whole session
     // drifted?". The title readout carries the exact figure, which a 176px-wide curve cannot.
     {
@@ -669,7 +669,7 @@ void HUD::drawCharts(sf::RenderWindow& window) const
     }
 
     // Edge Over Time: the player's estimated edge at each round of the current shoe. It is a LEVEL, not a running
-    // total - every round re-reads the edge from the count as it stands, so the curve wobbles around the fresh-shoe
+    // total - every round re-reads the edge from the count as it stands
     // baseline (about -0.5%) and stays inside a few percent instead of ramping off the plot the longer the shoe
     // runs. resetShoeAnalytics() clears the series at every shoe boundary (new game, R at end of shoe, auto-play,
     // mid-shoe reshuffle), so the plot restarts with the shoe instead of carrying the old shoe's drift.
@@ -696,7 +696,7 @@ std::vector<sf::Rect<float>> HUD::chartPaneBounds() const
 }
 
 // Folds the raw per-wager distribution into `bucketCount` evenly spaced ranges spanning [0, maxBet]: bucket i covers
-// [i * width, (i + 1) * width). Wagers at or above maxBet land in the last bucket, so the chart's scale never has to
+// [i * width, (i + 1) * width). Wagers at or above maxBet land in the last bucket
 // move once the table limit is set.
 std::vector<int> HUD::bucketBetDistribution(const std::map<int, int>& distribution, int bucketCount, int maxBet)
 {
@@ -718,7 +718,7 @@ std::vector<int> HUD::bucketBetDistribution(const std::map<int, int>& distributi
     return buckets;
 }
 
-// One lookup of all three panel bounds; left/right/bottomPanelBounds delegate to it so the geometry lives in a single definition.
+// One lookup of all three panel bounds; left/right/bottomPanelBounds delegate to it
 HUD::Panels HUD::computePanels() const
 {
     return {m_leftPanel.bounds(), m_rightPanel.bounds(), m_bottomPanel.bounds()};
@@ -751,7 +751,7 @@ const std::vector<StatBox*>& HUD::bottomPanelStatBoxes() const
 
 void HUD::layoutLeftPanels()
 {
-    // Recompute the three graph-pane rects from the real left-panel bounds so they track any panel-size change and
+    // Recompute the three graph-pane rects from the real left-panel bounds
     // stay correct for both drawing and InputHandler click hit-testing.
     const auto charts = leftPanelCharts(m_leftPanel.bounds());
     m_bankrollChartRect = charts[0];

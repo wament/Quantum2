@@ -40,8 +40,8 @@ class Hand
     void setInsuranceBet(int amount);
     [[nodiscard]] int getInsuranceBet() const;
 
-    // Side bet (Feature 1): the optional side bet placed on this hand before the deal. setSideBet records the chosen
-    // kind + wager and clears any previously resolved payout; the payout is written by Game::resolveSideBets after the
+    // Side bet: the optional side bet placed on this hand before the deal. setSideBet records the chosen
+    // kind + wager and clears any
     // cards are known, then copied into HandOutcome for replay/analytics. Side bets resolve independently of the main
     // hand's win/loss (FEATURES.md: "evaluate side bets before main-hand resolution").
     void setSideBet(SideBetKind kind, int wager);
@@ -74,7 +74,7 @@ class Hand
     int currentBet = 0;
     int insuranceBet = 0;
 
-    // Feature 1 (Side Bets): the chosen kind + wager, and the resolved gross payout. All three are zeroed by clear()
+    // the chosen kind + wager, and the resolved gross payout. All three are zeroed by clear()
     // so a fresh round never carries a stale side bet onto a new hand.
     SideBetKind sideBetKind = SideBetKind::None;
     int sideBetWager = 0;

@@ -44,7 +44,7 @@ Player::Player(const std::string& playerName)
     bankroll = profile.getBankroll();
 }
 
-// NPC seat: fresh in-memory profile only. NPCs are ephemeral — they keep no profile on disk.
+// NPC seat: fresh in-memory profile only. NPCs are ephemeral: they keep no profile on disk.
 // The human player persists via the load/save path above
 Player::Player(const std::string& playerName, int startingBankroll)
     : name(playerName), bankroll(startingBankroll)
@@ -243,7 +243,7 @@ void Player::lowerInsurance()
 SettlementResult Player::settle(const Hand& hand, int dealerValue, bool dealerBust, bool dealerHasBlackjack, int& payout)
 {
     // Only a natural (2-card) unsplit blackjack pays 3:2. A split hand that totals 21 is not treated
-    // as one and settles at even money — the !hand.isSplit() guard drives every branch below.
+    // as one and settles at even money: the !hand.isSplit() guard drives every branch below.
     const bool isNaturalBlackjack = hand.isBlackjack() && !hand.isSplit();
 
     if (hand.isSurrendered())

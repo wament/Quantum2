@@ -58,8 +58,8 @@ void Graphics::drawCard(sf::RenderWindow &window,
 }
 
 // --- Card-deal animation (folded in from the former standalone CardAnimation module). Pure easing math + the single-card
-// arrival tween used by every card-drawing site so arriving cards slide/flip into their resting slot instead of popping.
-// Presentation-only; no game state held here -- each draw site owns its own reveal clock, exactly mirroring GameRenderer's
+// arrival tween used by every card-drawing site
+// Presentation-only; no game state held here
 // Feature-8 deal animation.
 
 float Graphics::easeOutCubic(float t)

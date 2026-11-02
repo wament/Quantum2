@@ -33,7 +33,7 @@ SideBetResult SideBetEvaluator::twentyOneThree(const Card& a, const Card& b, con
     const bool flush = (a.suit == b.suit) && (b.suit == c.suit);
     const bool trips = ranks[0] == ranks[2];                 // all three same rank
     const bool straight = isStraight(ranks[0], ranks[1], ranks[2]);
-    // Exactly two equal: covered by "not trips but a pair exists" — with only 3 cards, non-trips + any repeat is a pair.
+    // Exactly two equal: covered by "not trips but a pair exists": with only 3 cards, non-trips + any repeat is a pair.
     const bool hasPair = (ranks[0] == ranks[1]) || (ranks[1] == ranks[2]);
 
     // Highest tier first so overlapping hands resolve to their best payout.

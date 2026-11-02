@@ -4,7 +4,6 @@
 #include "test_support.hpp"
 #include "Constants.hpp"
 #include "Game.hpp"
-#include "RoundEngine.hpp"
 #include "SideBet.hpp"
 #include "test_support.hpp"
 #include <catch2/catch_all.hpp>

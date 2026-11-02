@@ -1,5 +1,5 @@
 // Pure pixel-geometry helpers for the replay history list. Shared by Replay (hover hit-testing +
-// scroll queries) and ReplayView (drawing) so list-row layout has ONE source of truth: a drawn
+// scroll queries) and ReplayView (drawing)
 // row can never drift out of sync with the rows that are hoverable/clickable. Header-only, no SFML
 // runtime types -> fully headless-testable and usable behind the Graphics link without rendering.
 

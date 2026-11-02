@@ -13,7 +13,7 @@ namespace
 
 AchievementManager::AchievementManager()
 {
-    // Build the static achievement table (id + name/description) once. The unlocked flag is filled from unlocked_ so a
+    // Build the static achievement table (id + name/description) once. The unlocked flag is filled from unlocked_
     // loadUnlockedFrom()'d persisted state shows up immediately in all().
     const std::vector<std::pair<Achievement::Id, std::pair<const char*, const char*>>> table = {
         {Achievement::Id::FirstDeal,        {"First Deal", "Play your first hand"}},
@@ -43,7 +43,7 @@ bool AchievementManager::isUnlocked(Achievement::Id id) const
 void AchievementManager::unlock(Achievement::Id id, std::vector<Achievement::Id>& newlyUnlocked)
 {
     if (unlocked_[id])
-        return;  // already unlocked — don't report a repeat unlock within the same call/shoe
+        return;  // already unlocked: don't report a repeat unlock within the same call/shoe
     unlocked_[id] = true;
     for (auto& def : definitions_)
         if (def.id == id)
@@ -60,7 +60,7 @@ void AchievementManager::resetPerShoe()
     shoe_.anyDeviationThisShoe = false;
     shoe_.kellyFullAllShoe = true;
     shoe_.kellyHands = 0;
-    // Bankroll swing tracking (seed flag + start/low/high/last) is deliberately kept across the boundary so Comeback King
+    // Bankroll swing tracking (seed flag + start/low/high/last) is deliberately kept across the boundary
     // can measure a worst-to-recovered dip that spans shoes; career counters and permanent achievements are untouched here.
     shoe_.anyBustThisShoe = false;
 }
@@ -141,7 +141,7 @@ std::vector<Achievement::Id> AchievementManager::onNewShoe()
             unlock(Achievement::Id::ComebackKing, newlyUnlocked);
     }
 
-    // Re-lock the inline, per-shoe achievements so every fresh shoe lets them be re-earned. Career achievements and the
+    // Re-lock the inline, per-shoe achievements
     // end-of-shoe-resolved ones above stay permanently unlocked (a badge of honour): several tests assert isUnlocked() stays
     // true right after the resolving onNewShoe(). Only these three reset their "unlocked" flag at a shoe boundary.
     auto reLock = [&](Achievement::Id id)

@@ -5,14 +5,14 @@
 #include "BasicStrategy.hpp"
 
 // Betting core (Feature): pure-logic betting sizing + true-count derivation, with no SFML dependency. Game owns one as
-// a std::unique_ptr and delegates its public methods so every money-in decision routes through here; the handler owns
+// a std::unique_ptr and delegates its public methods
 // only the math, while all mutable game state (players/shoe/count) stays in Game and is passed in per call. This keeps
 // betting behavior byte-for-byte identical to before the split and makes each function directly unit-testable.
 class BettingHandler
 {
   public:
     // Active true count for the displayed system: Reko returns the raw running count ("the true count is the running
-    // count"); Hi-Lo normalizes by decks remaining in the shoe. Betting paths use this so each style's pattern sees
+    // count"); Hi-Lo normalizes by decks remaining in the shoe. Betting paths use this
     // its own true count (mirrors Game::activeTrueCount, which it replaces).
     float activeTrueCount(const Deck& deck, int runningCount, BasicStrategy::CountingStyle style) const;
 

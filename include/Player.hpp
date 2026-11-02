@@ -62,7 +62,7 @@ class Player
     void lowerInsurance();
 
     // Settle one hand against the dealer and apply the result to the bankroll. Reports how it settled;
-    // writes the payout. A natural (2-card) unsplit blackjack pays 3:2 — any other hand totaling 21
+    // writes the payout. A natural (2-card) unsplit blackjack pays 3:2: any other hand totaling 21
     // settles at even money, so the !hand.isSplit() guard drives every branch below.
     // dealerHasBlackjack must reflect whether the DEALER's 21 is also a natural (exactly two cards):
     // a player natural only pushes against a dealer natural, never against a dealer 21 built with

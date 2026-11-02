@@ -1,7 +1,7 @@
-// Feature 5 (Achievement System): a self-contained, headless-safe achievement engine. The manager owns a fixed set of
+// a self-contained, headless-safe achievement engine. The manager owns a fixed set of
 // achievements (career-long and per-shoe conditions) plus the progress counters that feed them, exposes which ones just
-// unlocked so Game can surface a popup, and serialises its unlocked set as plain ints in the player profile (additive —
-// legacy profiles without the field load with nothing unlocked). All of this is pure logic: no SFML anywhere, so it runs
+// unlocked so Game can surface a popup, and serialises its unlocked set as plain ints in the player profile (additive:
+// legacy profiles without the field load with nothing unlocked). All of this is pure logic: no SFML anywhere
 // over the Graphics-only test binary. Presentation of the list/notification lives in GameRenderer/HUDState; Game wires the
 // checks into real play (after each settled hand and at every shoe boundary) via recordHand()/onNewShoe().
 #pragma once
@@ -16,18 +16,18 @@ struct Achievement
 {
     enum class Id : int
     {
-        FirstDeal = 0,          // First Steps   - play your first hand
-        Natural21 = 1,          // First Steps   - get your first blackjack
-        SplitSuccess = 2,       // First Steps   - split a pair and win both hands
+        FirstDeal = 0,          // First Steps - play your first hand
+        Natural21 = 1,          // First Steps - get your first blackjack
+        SplitSuccess = 2,       // First Steps - split a pair and win both hands
         CountersEdge = 3,       // Card Counting - maintain a positive true count for 10 consecutive hands (shoe)
         BigBet = 4,             // Card Counting - place a bet of 10% or more of your bankroll
         KellyMaster = 5,        // Card Counting - use full Kelly (fraction == 1.0) for an entire shoe (shoe)
-        ComebackKing = 6,       // Performance   - win $500 after being down $500 in a shoe (shoe)
-        PerfectShoe = 7,        // Performance   - finish a shoe ahead without busting (shoe)
-        SplitMaster = 8,        // Performance   - split 5 pairs in a single shoe (shoe)
-        BlackJackStreak = 9,    // Performance   - get 3 blackjacks in one shoe (shoe)
-        TextbookPlayer = 10,    // Strategy      - play 50 consecutive hands perfectly per basic strategy (career)
-        DeviationFree = 11      // Strategy      - complete a full shoe with zero strategy deviations (shoe)
+        ComebackKing = 6,       // Performance - win $500 after being down $500 in a shoe (shoe)
+        PerfectShoe = 7,        // Performance - finish a shoe ahead without busting (shoe)
+        SplitMaster = 8,        // Performance - split 5 pairs in a single shoe (shoe)
+        BlackJackStreak = 9,    // Performance - get 3 blackjacks in one shoe (shoe)
+        TextbookPlayer = 10,    // Strategy - play 50 consecutive hands perfectly per basic strategy (career)
+        DeviationFree = 11      // Strategy - complete a full shoe with zero strategy deviations (shoe)
     };
 
     Id id = Id::FirstDeal;
@@ -35,7 +35,7 @@ struct Achievement
     const char* description = "";
     bool unlocked = false;
 
-    // Stable integer encoding used for persistence. The scoped enum carries an explicit int base, so the cast round-trips
+    // Stable integer encoding used for persistence. The scoped enum carries an explicit int base
     // directly and the profile stores no enum-name dependency (mirrors preferredSpeed / preferredCountingStyle).
     static int toInt(Id id) { return static_cast<int>(id); }
     static Id fromInt(int v) { return static_cast<Id>(v); }
@@ -82,14 +82,14 @@ class AchievementManager
     int totalAchievements() const { return static_cast<int>(definitions_.size()); }
 
     // Career tallies the manager keeps (useful for the achievements list view and tests). Grouped behind the accessors below,
-    // which read from CareerProgress_ so their names/types/values stay unchanged for callers/tests.
+    // which read from CareerProgress_
     int careerHands() const { return career_.hands; }
     int careerBlackjacks() const { return career_.blackjacks; }
     int careerSplitWins() const { return career_.splitWins; }
     int perfectStreak() const { return career_.perfectStreak; }
 
-    // Stamp the manager's currently-unlocked set into a profile field; load it back. Round-trips as plain ints so the
-    // JSON stays additive — profiles saved before achievements existed simply contribute an empty list here.
+    // Stamp the manager's currently-unlocked set into a profile field; load it back. Round-trips as plain ints
+    // JSON stays additive: profiles saved before achievements existed simply contribute an empty list here.
     void persistUnlockedTo(std::vector<int>& outIds) const;
     void loadUnlockedFrom(const std::vector<int>& inIds);
 
@@ -100,7 +100,7 @@ class AchievementManager
     std::vector<Achievement> definitions_;
     std::map<Achievement::Id, bool> unlocked_;
 
-    // Career progress (accumulates across shoes; never reset by onNewShoe()). Grouped so the four tallies travel together as
+    // Career progress (accumulates across shoes; never reset by onNewShoe()). Grouped
     // one unit instead of being scattered (Phase 4 refactor).
     struct CareerProgress {
         int hands = 0;
@@ -125,7 +125,7 @@ class AchievementManager
 
     ShoeProgress shoe_;
 
-    // Bankroll swing tracking for Comeback King. Deliberately kept across the shoe boundary (not inside ShoeProgress) so it can
+    // Bankroll swing tracking for Comeback King. Deliberately kept across the shoe boundary (not inside ShoeProgress)
     // measure a worst-to-recovered dip that spans shoes; only the seed flag + start/low/high/last are carried over here.
     bool bankrollSeeded_ = false;
     float shoeBankrollStart_ = 0.0f;

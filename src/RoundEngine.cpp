@@ -22,8 +22,8 @@ void RoundEngine::tick(float deltaTime, Game& game)
             Logger::info() << "Auto-play: starting new shoe.";
             // startNewShoe() is the shared shoe boundary: it rebuilds + shuffles the shoe, starts a fresh shoe
             // record, and runs resetShoeAnalytics() (shoeGeneration++, clears the bankroll/edge series, re-seeds the
-            // running count for the active style). This path used to hand-roll only part of that — it left the edge
-            // series and the recalibration signal untouched, so the Edge % readout and the Edge Over Time chart kept
+            // running count for the active style). This path used to hand-roll only part of that: it left the edge
+            // series and the recalibration signal untouched
             // the previous shoe's drift instead of returning to baseline.
             game.startNewShoe();
             game.nextRound();
@@ -111,8 +111,8 @@ void RoundEngine::tick(float deltaTime, Game& game)
             game.dealCardToPlayer(p.hands[p.currentHand]);
             if (p.hands[p.currentHand].isSplitAce())
             {
-                // Re-split only when permitted and another split slot is open. Feature 3 (Custom Game Rules): the resplit-aces
-                // flag and max-hand cap come from the live ruleset (RoundEngine is a friend of Game), so in-game rule edits
+                // Re-split only when permitted and another split slot is open. the resplit-aces
+                // flag and max-hand cap come from the live ruleset (RoundEngine is a friend of Game)
                 // affect re-split eligibility immediately; defaults preserve current behaviour.
                 bool canResplit = game.gameRules_.resplitAcesAllowed &&
                                   p.hands[p.currentHand].canSplit() &&

@@ -28,13 +28,7 @@ class Deck
 
     bool reachedCutCard() const;
 
-    /**
-     * @brief Returns the shoe record from the previous cycle.
-     *
-     * This should be called BEFORE reshuffling in your game logic.
-     * Returns nullptr if there is no previous record (e.g., start of game).
-     * Resets the internal flag so the record is only retrieved once.
-     */
+    // * * @brief Returns the shoe record from the previous cycle. * * This should be called BEFORE reshuffling in your game logic. * Returns nullptr if there is no previous record (e.g., start of game). * Resets the internal flag
     const std::vector<Card>* getPreviousShoeRecord();
 
   private:

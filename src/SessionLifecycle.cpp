@@ -7,8 +7,8 @@
 
 SessionLifecycle::SessionLifecycle(Game& game) : game(game) {}
 
-// Feature 2 (Strategy Trainer): begin/restart a training session. Delegates the exact nullptr-guarded build from before the
-// split; all trainer state stays in Game's `trainer` member, so timing/behavior is unchanged.
+// begin/restart a training session. Delegates the exact nullptr-guarded build from before the
+// split; all trainer state stays in Game's `trainer` member
 void SessionLifecycle::startTrainerSession(int deckCount, int secondsPerSession)
 {
     if (!game.trainer)
@@ -16,7 +16,7 @@ void SessionLifecycle::startTrainerSession(int deckCount, int secondsPerSession)
     game.trainer->startSession(deckCount, secondsPerSession);
 }
 
-// Feature 9 (Tournament Mode): begin/restart a tournament. Delegates the exact nullptr-guarded build; tournament state stays in
+// begin/restart a tournament. Delegates the exact nullptr-guarded build; tournament state stays in
 // Game's `tournament` member, so behavior is unchanged.
 void SessionLifecycle::startTournamentSession(const Tournament::TournamentConfig& config)
 {
@@ -25,7 +25,7 @@ void SessionLifecycle::startTournamentSession(const Tournament::TournamentConfig
     game.tournament->start(config);
 }
 
-// Feature 4 (Statistics Dashboard): begin/restart the dashboard from the main menu. Delegates verbatim — flattening completed-shoe
+// begin/restart the dashboard from the main menu. Delegates verbatim: flattening completed-shoe
 // history plus any current-shoe rounds into one round-history list and feeding it with the player's career stats, double-feeding
 // guards intact. All state (statsDashboard, players[], currentShoeRecord) stays in Game; behavior is unchanged.
 void SessionLifecycle::startStatsSession()
@@ -34,8 +34,8 @@ void SessionLifecycle::startStatsSession()
         game.statsDashboard = std::make_unique<StatsDashboard>();
 
     // Flatten completed-shoe history from the profile plus any rounds played in the current (in-progress) shoe, into one
-    // round-history list — exactly what the dashboard feeds on. Reading through getProfile().getLongHistory() keeps this
-    // additive to existing persistence; nothing is rewritten here. getProfile() returns a copy by value, so we own that
+    // round-history list: exactly what the dashboard feeds on. Reading through getProfile().getLongHistory() keeps this
+    // additive to existing persistence; nothing is rewritten here. getProfile() returns a copy by value
     // copy for the whole function: binding const& longHistory to it (rather than to getProfile()'s temporary) keeps the
     // history reference valid and avoids a stack-use-after-scope once startStatsSession runs against a populated history.
     PlayerProfile profile = game.players[0].getProfile();
@@ -47,10 +47,10 @@ void SessionLifecycle::startStatsSession()
             rounds.push_back(round);
     // A round settles into BOTH profile.currentHistory (addRoundRecord) and game.currentShoeRecord.rounds. On a later
     // QuitToMenu/Restart, addShoeRecord() moves currentHistory -> longHistory but leaves the live mirror in
-    // currentShoeRecord.rounds in place, so reopening stats after quitting-to-menu would otherwise feed that round twice
+    // currentShoeRecord.rounds in place
     // (once from longHistory, once from the stale current record). Skip any current-record round whose content already
-    // appears in history — dealerCards + playerHands fully fingerprint a round's consumed outcome — so every round feeds
-    // exactly once regardless of how many times it was stored. RoundRecord has no operator==, so compare members directly.
+    // appears in history: dealerCards + playerHands fully fingerprint a round's consumed outcome
+    // exactly once regardless of how many times it was stored. RoundRecord has no operator==
     auto cardsMatch = [](const Card& a, const Card& b) { return a.value == b.value && a.suit == b.suit; };
     auto roundOverlap = [&](const RoundRecord& candidate) -> bool
     {
@@ -114,13 +114,13 @@ void SessionLifecycle::startStatsSession()
     game.statsDashboard->feed(game.players[0].getStats(), rounds);
 }
 
-// Feature 5: begin/restart a whole session. Delegates verbatim — fresh seats + shuffled shoe, per-shoe readouts reset to zero (the
+// begin/restart a whole session. Delegates verbatim: fresh seats + shuffled shoe, per-shoe readouts reset to zero (the
 // bankroll is the one value that persists), counting/strategies cleared, and enter Playing. All state stays in Game.
 void SessionLifecycle::startNewGame()
 {
     Logger::info("Starting new game");
 
-    // Remember what was just chosen before the profile is re-read below, so the next launch opens on it.
+    // Remember what was just chosen before the profile is re-read below
     game.rememberTableSettings();
 
     game.players.clear();
@@ -145,8 +145,8 @@ void SessionLifecycle::startNewGame()
     game.currentShoeRecord.initialDeck = game.deck.getCards();
     game.currentShoeRecord.rounds.clear();
 
-    // A brand-new shoe: every per-shoe readout starts from zero, so the stat boxes and the bankroll/edge charts
-    // reflect only this shoe. (The bankroll itself is deliberately kept — it is the one value that persists.)
+    // A brand-new shoe: every per-shoe readout starts from zero
+    // reflect only this shoe. (The bankroll itself is deliberately kept: it is the one value that persists.)
     game.resetShoeAnalytics();
     game.sessionCumulativeWinLoss = 0;
     game.handActions.clear();
@@ -163,7 +163,7 @@ void SessionLifecycle::startNewGame()
 }
 
 // Feature: restore saved table settings (player count / speed / counting style + custom rules) from the human seat's profile onto
-// live state. The profile's fields already carry defaults for legacy files, so this is a clean no-op unless the player previously
+// live state. The profile's fields already carry defaults for legacy files
 // changed a rule and it was persisted additively. Delegates verbatim; only reads/writes Game state.
 void SessionLifecycle::applySavedTableSettings()
 {
@@ -172,10 +172,10 @@ void SessionLifecycle::applySavedTableSettings()
 
     const PlayerProfile profile = game.players[0].getProfile();
 
-    // setPlayerCount clamps to [1,6], so a stale or hand-edited value can never ask for a nonexistent seat.
+    // setPlayerCount clamps to [1,6]
     game.setPlayerCount(profile.preferredPlayerCount);
 
-    // An int read off disk can be anything, so validate against the enumerators before trusting it.
+    // An int read off disk can be anything
     switch (static_cast<GameSpeed>(profile.preferredSpeed))
     {
     case GameSpeed::Fast:
@@ -202,8 +202,8 @@ void SessionLifecycle::applySavedTableSettings()
         break;
     }
 
-    // Feature 3 (Custom Game Rules): restore the saved table rules. The profile's GameRules already carries defaults for
-    // legacy files, so this is a clean no-op unless the player previously changed a rule and it was persisted additively.
+    // restore the saved table rules. The profile's GameRules already carries defaults for
+    // legacy files, so this is a clean no-op unless the player
     game.gameRules_ = profile.gameRules;
 
     Logger::info() << "Restored table settings: " << game.playerCount << " players, "
@@ -222,12 +222,12 @@ void SessionLifecycle::rememberTableSettings()
     profile.preferredPlayerCount = game.playerCount;
     profile.preferredSpeed = static_cast<int>(game.gameSpeed);
     profile.preferredCountingStyle = static_cast<int>(game.countingStyle);
-    // Feature 7: persist sound + music prefs alongside the other table settings (called at every existing save point,
+    // persist sound + music prefs alongside the other table settings (called at every existing save point,
     // so no extra I/O). Written as SFML-unit ints to mirror preferredSpeed.
     profile.preferredSoundVolume = static_cast<int>(game.sound_.settings().soundVolume);
     profile.preferredMusicVolume = static_cast<int>(game.sound_.settings().musicVolume);
     profile.preferredMuted = game.sound_.isMuted();
-    // Feature 3 (Custom Game Rules): stamp the live table rules onto the profile so they survive the session, written on
+    // stamp the live table rules onto the profile so they survive the session, written on
     // every existing save point (no extra I/O). Additive schema: unchanged for profiles saved before custom rules.
     profile.gameRules = game.gameRules_;
     game.players[0].updateProfile(profile);

@@ -39,15 +39,15 @@ struct PlayerStats
     int splits = 0;
     int doubles = 0;
 
-    int betsPlaced = 0; //+1 for each hand played, and +1 anytime a hand is doubled, or split
-    int betSum = 0; //total sum of bets places
-    int greatestHand = 0; //greatest single hand win
+    int betsPlaced = 0; // +1 for each hand played, and +1 anytime a hand is doubled, or split
+    int betSum = 0; // total sum of bets places
+    int greatestHand = 0; // greatest single hand win
 
-    int greatestWin = 0; //cumulative win for the whole shoe
-    int greatestLoss = 0; //cumulative loss for the whole shoe
+    int greatestWin = 0; // cumulative win for the whole shoe
+    int greatestLoss = 0; // cumulative loss for the whole shoe
 
-    int greatestSessionWin = 0; //cumulative win for all shoes in program session
-    int greatestSessionLoss = 0; //cumulative loss for all shoes in program session
+    int greatestSessionWin = 0; // cumulative win for all shoes in program session
+    int greatestSessionLoss = 0; // cumulative loss for all shoes in program session
 
     // Strategy deviation tracking
     int strategyHits = 0;       // plays matching basic strategy
@@ -55,11 +55,11 @@ struct PlayerStats
     int strategyTotal = 0;      // total plays evaluated
     std::vector<DeviationRecord> recentDeviations; // last 10 deviations
 
-    // Times the player won a hand after deviating from basic strategy (Feature 1). "Winning" means the hand's
-    // settlement was a win, not a push — a push neither wins nor loses the wager.
+    // Times the player won a hand after deviating from basic strategy. "Winning" means the hand's
+    // settlement was a win, not a push: a push neither wins nor loses the wager.
     int winsAfterDeviation = 0;
 
-    // Advanced analytics live trackers (Feature 3), updated once per settled hand so they persist and stay O(1).
+    // Advanced analytics live trackers, updated once per settled hand
     // These are the CAREER record written to the profile on disk; the HUD's Std Dev / Long Win / Long Loss boxes
     // read Game::ShoeAnalytics instead, which restarts at every shoe boundary.
     int greatestHandLoss = 0;          // worst single-hand net profit (<= 0)
@@ -70,10 +70,10 @@ struct PlayerStats
     long long handProfitSumSq = 0;     // sum of squared per-hand net profits (for variance/std dev)
 
     // Bet sizes placed, keyed by bet value -> frequency. This is the career copy kept in the saved profile; the
-    // Feature 3 bet-distribution chart reads ShoeAnalytics::betDistribution, which restarts at every shoe.
+    // bet-distribution chart reads ShoeAnalytics::betDistribution, which restarts at every shoe.
     std::map<int, int> betDistribution;
 
-    // Side bets (Feature 1): career tallies written to the saved profile. Additive — older profiles load with these at
+    // Side bets: career tallies written to the saved profile. Additive: older profiles load with these at
     // their defaults (see Serialization.hpp from_json). "Win/Loss" counts a placed side bet that paid / was lost;
     // profit sum is the net (winnings minus wagers) across every resolved side bet.
     int sideBetWins = 0;
@@ -81,14 +81,14 @@ struct PlayerStats
     long long sideBetProfitSum = 0;
 };
 
-// Per-shoe analytics: every number the HUD reports EXCEPT the bankroll, which is the only value that carries
+// Per-shoe analytics: every number the HUD reports EXCEPT the bankroll
 // across a shoe boundary. Game owns one of these and Game::resetShoeAnalytics() zeroes the whole struct at every
-// boundary (new game, R at end of shoe, auto-play advance, mid-shoe reshuffle), so Edge %, Std Dev, Long Win,
+// boundary (new game, R at end of shoe, auto-play advance, mid-shoe reshuffle)
 // Long Loss, Count, Streak, Strategy % and the Bets Placed histogram all restart with the shoe instead of
 // drifting upward across shoes and sessions.
 //
 // This is deliberately separate from PlayerStats: that struct is the persisted career record written to the
-// profile on disk (and read back at launch), so it must never be zeroed mid-session. Nothing on the HUD reads it.
+// profile on disk (and read back at launch)
 struct ShoeAnalytics
 {
     // Std Dev box: variance of per-hand net profit is derived from these (variance = E[x^2] - (E[x])^2).
@@ -133,7 +133,7 @@ struct HandOutcome
     int playerIndex = 0;           // which player this hand belongs to
     std::string playerName = "";   // human-readable seat name (William or an NPC)
 
-    // Feature 1 (Side Bets): the side bet attached to this hand, resolved independently of the main-hand payout above.
+    // the side bet attached to this hand, resolved independently of the main-hand payout above.
     SideBetKind sideBetKind = SideBetKind::None;
     int sideBetWager = 0;          // side-bet wager placed (0 when no side bet)
     int sideBetPayout = 0;         // gross returned on a win (stake + winnings), 0 on a loss -> net is payout - wager
@@ -171,7 +171,7 @@ inline int RoundRecord::totalWager() const
 {
     int sum = 0;
     for (const auto& hand : playerHands)
-        sum += hand.wager + hand.sideBetWager; // Feature 1: include the side-bet stake so net profit reflects it too.
+        sum += hand.wager + hand.sideBetWager; // include the side-bet stake so net profit reflects it too.
     return sum;
 }
 
@@ -179,7 +179,7 @@ inline int RoundRecord::totalPayout() const
 {
     int sum = 0;
     for (const auto& hand : playerHands)
-        sum += hand.payout + hand.sideBetPayout; // Feature 1: include the side-bet payout so net profit reflects it too.
+        sum += hand.payout + hand.sideBetPayout; // include the side-bet payout so net profit reflects it too.
     return sum;
 }
 
@@ -193,10 +193,10 @@ inline bool RoundRecord::overallWin() const
     return netProfit() >= 0;
 }
 // A natural 21: exactly two cards totalling 21 = one Ace (value 1) plus a ten-value card (>= 10). This is the single,
-// record-derived source of truth for every blackjack tally in the game -- computeCareerStatsHistory uses it for
-// PlayerStats::blackjacks and AchievementFeeder derives event.isBlackjack from it, so the achievement careerBlackjacks()
-// counter can never drift from the persisted/dashboard career record. Records carry no split flag, so a split-ace-turned-21
-// is counted here just as live play counts it; natural detection now lives in one place instead of two (CONTEXT_refactor.md §5 #157/#158).
+// record-derived source of truth for every blackjack tally in the game
+// PlayerStats::blackjacks and AchievementFeeder derives event.isBlackjack from it
+// counter can never drift from the persisted/dashboard career record. Records carry no split flag
+// is counted here just as live play counts it; natural detection now lives in one place.
 inline bool handIsNaturalBJ(const std::vector<Card>& cards)
 {
     return cards.size() == 2 &&
@@ -204,7 +204,7 @@ inline bool handIsNaturalBJ(const std::vector<Card>& cards)
          (cards[1].value == 1 && cards[0].value >= 10));
 }
 
-// Aggregates career PlayerStats across every ShoeRecord in a session -- the source of truth for profile persistence. Unlike
+// Aggregates career PlayerStats across every ShoeRecord in a session
 // computeCareerStats (one shoe), this stitches shoes together using the exact boundary rules live play uses: greatestWin/
 // greatestLoss track each shoe's running cumulative separately but persist as a career-long max/min over those per-shoe peaks,
 // while greatestSession* accumulate across all shoes. Streaks reset their running pair at every shoe boundary (a run never
@@ -276,26 +276,26 @@ inline PlayerStats computeCareerStatsHistory(const std::vector<ShoeRecord>& hist
                 }
             }
         }
-        // A run never crosses a shoe boundary -- mirrors game.shoe_.currentWinStreak/currentLoseStreak reset at each boundary.
+        // A run never crosses a shoe boundary
         winStreak = 0;
         loseStreak = 0;
     }
 
-    // Every settled human hand: decisive (win+loss) plus pushes, which equals the live count-of-human-hands and feed_'s definition.
+    // Every settled human hand: decisive (win+loss) plus pushes
     const int decisive = out.wins + out.losses;
     out.handsFinished = decisive + out.pushes;
     return out;
 }
 
 
-// Aggregates a single shoe's recorded rounds into the career PlayerStats fields fully determined by the record -- the dedup
-// target of the stats-batching refactor (CONTEXT_refactor.md #9e). Pure logic over GameRecord types, so it is headless-testable;
+// Aggregates a single shoe's recorded rounds into the career PlayerStats fields fully determined by the record
+// target of the stats-batching refactor . Pure logic over GameRecord types
 // tests/test_stats_batching.cpp proves its output equals the live per-hand increments HandEvaluator/Game/RoundDealer produce.
 // Reconstruction mirrors feed()/HandEvaluator exactly:
-//   - net per hand  = payout - wager            (== netProfitOnHand, HandEvaluator line 103)
-//   - result        = Win if won&&net>0, Push if won&&net==0, Lose/Surrender if !won  (surrender has won=false in the record)
-//   - streaks       = Win extends the win run, Lose/Surrender the lose run, Push breaks BOTH
-//   - cumulative    = human seat (playerIndex==0) only; greatestWin/greatestLoss reset per shoe, session-wide otherwise
+// - net per hand = payout - wager (== netProfitOnHand, HandEvaluator line 103)
+// - result = Win if won&&net>0, Push if won&&net==0, Lose/Surrender if !won (surrender has won=false in the record)
+// - streaks = Win extends the win run, Lose/Surrender the lose run, Push breaks BOTH
+// - cumulative = human seat (playerIndex==0) only; greatestWin/greatestLoss reset per shoe, session-wide otherwise
 inline PlayerStats computeCareerStats(const ShoeRecord& shoe)
 {
     // Delegating to computeCareerStatsHistory guarantees a one-shoe history reproduces this result exactly (single-shoe == history of one).

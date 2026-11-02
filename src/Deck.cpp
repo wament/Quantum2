@@ -64,7 +64,7 @@ void Deck::reshuffleWithRemaining(const std::vector<Card>& playedCards)
     }
 
     // Rebuild a fresh full NUM_DECKS shoe, then remove the cards that are currently dealt. The result is
-    // only the unseen cards still in the shoe, which continue play without disturbing anything on the table.
+    // only the unseen cards still in the shoe
     cards.clear();
     cutCardReached = false;
 
@@ -96,7 +96,7 @@ void Deck::reshuffleWithRemaining(const std::vector<Card>& playedCards)
     rng = std::mt19937(static_cast<std::mt19937::result_type>(lastShuffleSeed));
     std::shuffle(cards.begin(), cards.end(), rng);
 
-    // Cut card sits 25 from the end (clamped for very small shoes), so most of a shoe is dealt before it turns.
+    // Cut card sits 25 from the end (clamped for very small shoes)
     const std::size_t cutInsertAt = 25;
     const std::size_t cutPosition = std::min(cutInsertAt, cards.size());
 

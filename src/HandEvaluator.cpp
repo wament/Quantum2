@@ -33,7 +33,7 @@ void HandEvaluator::evaluateHands()
     {
         auto& p = game.players[pIdx];
         // Every counter in this loop belongs to the seat being settled. It used to be taken once, outside the
-        // loop, from players[0] — so each NPC win/loss/push was being written into the human player's record.
+        // loop, from players[0]: so each NPC win/loss/push was being written into the human player's record.
         PlayerStats& stats = p.getStats();
         for (size_t handIndex = 0; handIndex < p.hands.size(); handIndex++)
         {
@@ -50,7 +50,7 @@ void HandEvaluator::evaluateHands()
             for (size_t c = 0; c < hand.size(); c++)
                 outcome.cards.push_back(hand.getCard(c));
 
-            // Feature 1 (Side Bets): record this hand's resolved side bet so replay/analytics can see it. Net contribution
+            // record this hand's resolved side bet so replay/analytics can see it. Net contribution
             // to a round is sideBetPayout - sideBetWager (folded into humanNet/playerNet below).
             outcome.sideBetKind = hand.getSideBetKind();
             outcome.sideBetWager = hand.getSideBetWager();
@@ -67,7 +67,7 @@ void HandEvaluator::evaluateHands()
 
             // Surrender/Lose/Win share a near-identical body (counter + human-seat streak flag + log line). Route the
             // per-result counter and streak flag by outcome: Surrender+Lose both count as a loss / roundLost, Win as a
-            // win. The streak box is the human seat's rounds only, so an NPC result never extends or flips it (below).
+            // win. The streak box is the human seat's rounds only
             if (result == SettlementResult::Win)
                 stats.wins++;
             else if (result == SettlementResult::Surrender || result == SettlementResult::Lose)
@@ -102,13 +102,13 @@ void HandEvaluator::evaluateHands()
 
             int netProfitOnHand = payout - hand.getBet();
 
-            // Feature 1 + 3 (human seat only): attribute deviations to their hand and stamp won, count wins after a
+            // + 3 (human seat only): attribute deviations to their hand and stamp won, count wins after a
             // deviation, maintain per-hand win/lose streaks (+ running max for the dashboard), and feed the variance
             // accumulators used to derive standard deviation. NPCs are tracked separately via recordRoundResult().
             if (pIdx == 0)
             {
                 size_t gidx = game.getGlobalHandIndexForPlayer(pIdx, handIndex);
-                // handDeviations_ is sized per hand by nextRound()/startNewGame(); grow it defensively so a hand
+                // handDeviations_ is sized per hand by nextRound()/startNewGame(); grow it defensively
                 // that never deviated cannot index past the end (logStrategyDeviation only grows it on a
                 // deviation, so an unguarded read here is undefined behaviour otherwise).
                 while (game.handDeviations_.size() <= gidx)
@@ -119,7 +119,7 @@ void HandEvaluator::evaluateHands()
                 if (hadDeviation && result == SettlementResult::Win)
                     stats.winsAfterDeviation++;
 
-                // Per-hand streaks: the running pair plus this shoe's longest runs, which are what the Long Win /
+                // Per-hand streaks: the running pair plus this shoe's longest runs
                 // Long Loss boxes show. They live in shoe_, so a run never crosses a shoe boundary; the
                 // PlayerStats copies stay career-long for the saved profile.
                 if (result == SettlementResult::Win)
@@ -149,7 +149,7 @@ void HandEvaluator::evaluateHands()
                 if (net < stats.greatestHandLoss)
                     stats.greatestHandLoss = net;
 
-                // The Std Dev box derives from these per-shoe accumulators, so it measures this shoe's swing and
+                // The Std Dev box derives from these per-shoe accumulators
                 // not every hand the profile has ever played.
                 game.shoe_.handProfitCount++;
                 game.shoe_.handProfitSum += net;
@@ -187,7 +187,7 @@ void HandEvaluator::evaluateHands()
         }
     }
 
-    // Refresh the "last 10 deviations" display now that every record's win/loss outcome is finalized (Feature 1). Only
+    // Refresh the "last 10 deviations" display now that every record's win/loss outcome is finalized. Only
     // player-seat 0's hands belong to this seat; their records live in handDeviations_ slots [0, p0Hands).
     {
         PlayerStats& dstats = game.getStats();
@@ -205,7 +205,7 @@ void HandEvaluator::evaluateHands()
     }
 
     // Round-to-round streak for the Streak box. Human seat only (roundWon/roundLost ignore the NPCs) and per-shoe
-    // (shoe_ is zeroed at every boundary), so it reads as your current run in this shoe rather than a session tally
+    // (shoe_ is zeroed at every boundary)
     // that a reshuffle never interrupts.
     if (roundWon && !roundLost)
     {
@@ -243,7 +243,7 @@ void HandEvaluator::evaluateHands()
                 continue;
             int handProfit = outcome.payout - outcome.wager;
             playerNet += handProfit;
-            playerNet += outcome.sideBetPayout - outcome.sideBetWager; // Feature 1: side-bet net (independent of main-hand payout)
+            playerNet += outcome.sideBetPayout - outcome.sideBetWager; // side-bet net (independent of main-hand payout)
         } 
         if (playerNet > 0)
             oss << "Win +" << playerNet;
@@ -254,12 +254,12 @@ void HandEvaluator::evaluateHands()
         game.hudState.playerSummaries.push_back(oss.str());
     }
     // End-of-round summary display time and AutoPlay inter-hand hold both come from the single timing table
-    // (GameTiming), keyed by speed. Non-AutoPlay speeds wait 0s between hands, so there is no artificial delay.
+    // (GameTiming), keyed by speed. Non-AutoPlay speeds wait 0s between hands
     // Gamer mode overrides this with its refresh-rate-derived interval instead of a fixed table value.
     game.hudState.summaryTimer = (game.gameSpeed == GameSpeed::Gamer) ? GameTiming::gamerStepInterval(game.refreshRateHz) : GameTiming::summaryDisplayTime(game.gameSpeed);
     game.hudState.afterHandTimer = GameTiming::afterHandWait(game.gameSpeed);
 
-    // The bankroll curve is YOUR profit and loss, so only seat 0's hands feed it. Summing every seat here used to
+    // The bankroll curve is YOUR profit and loss
     // drag the NPCs' wins and losses onto the player's curve.
     int humanNet = 0;
     for (const auto& outcome : game.currentRoundRecord.playerHands)
@@ -267,14 +267,14 @@ void HandEvaluator::evaluateHands()
         if (outcome.playerIndex != 0)
             continue;
         humanNet += outcome.payout - outcome.wager;
-        humanNet += outcome.sideBetPayout - outcome.sideBetWager; // Feature 1: side-bet net so the bankroll curve reflects it too
+        humanNet += outcome.sideBetPayout - outcome.sideBetWager; // side-bet net so the bankroll curve reflects it too
     }
 
-    // Feature 3 analytics: extend the bankroll curve (your cumulative net profit) and sample the edge, one point
+    // analytics: extend the bankroll curve (your cumulative net profit) and sample the edge, one point
     // per completed round. The edge is a LEVEL, not a running total: every round re-estimates the player's edge
     // from the count as it stands right now, because that is what actually happens at a table - the house edge
     // moves with the shoe, it does not stack up hand over hand. Integrating it instead is what made the curve
-    // read -13% after ten rounds of an ordinary shoe. Both series live in shoe_, which resetShoeAnalytics()
+    // read -13% after ten rounds of an ordinary shoe. Both series live in shoe_
     // zeroes at every shoe boundary.
     {
         const float lastBank = game.shoe_.bankrollSeries.empty() ? 0.f : game.shoe_.bankrollSeries.back();
@@ -285,12 +285,12 @@ void HandEvaluator::evaluateHands()
     Logger::info() << "Round complete. Net: " << (humanNet >= 0 ? "+" : "") << humanNet
                    << ". Bankroll: " << game.players[0].getBankroll() << ".";
 
-    // Feature 5: feed this settled round into the achievement engine (sets a HUD popup for any just-unlocked achievement)
-    // before persisting. Persistence stays additive — the manager's unlocked set rides along on the same profile save path.
+    // feed this settled round into the achievement engine (sets a HUD popup for any just-unlocked achievement)
+    // before persisting. Persistence stays additive: the manager's unlocked set rides along on the same profile save path.
     game.recordHandAchievements(game.currentRoundRecord);
 
     PlayerProfile profile = game.players[0].getProfile();
-    // Feature 5: stamp the current unlocked-achievement ids onto the profile so they survive (additive schema).
+    // stamp the current unlocked-achievement ids onto the profile
     game.achievementManager_.persistUnlockedTo(profile.unlockedAchievementIds);
     profile.addRoundRecord(game.currentRoundRecord);
     game.players[0].updateProfile(profile);
@@ -313,7 +313,7 @@ void HandEvaluator::evaluateBlackjack()
         {
             Hand& hand = p.hands[handIndex];
 
-            // Insurance pays 2:1 and settles independently of the hand's win/loss, so it is paid whenever
+            // Insurance pays 2:1 and settles independently of the hand's win/loss
             // it was taken. An own natural blackjack then just pushes versus a dealer blackjack.
             //
             // The hand's own wager is NOT moved here. The dealer's natural still runs the round through

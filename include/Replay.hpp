@@ -74,7 +74,7 @@ namespace ReplayInternals
             std::vector<std::string> actionsTaken;
             std::string playerName = "";  // seat identity (William or an NPC name)
 
-            // Computed properties — derive them from Hand on demand, or cache lazily:
+            // Computed properties: derive them from Hand on demand, or cache lazily:
             bool isBlackjack() const { return cards.isBlackjack(); }
             bool isBust() const { return cards.isBust(); }
             int getValue() const { return cards.getValue(); }
@@ -171,9 +171,9 @@ public:
     void update(float deltaTime);
     void draw();
 
-    // Card-deal animation (Feature 8-style, mirrored from GameRenderer): expose the shared reveal clock and seed + return the
-    // reveal-start time for a card slot. ReplayView calls these while drawing so arriving cards ease into their resting slot;
-    // the first sight of a slot seeds it at `now + ordinal*stagger`, so its progress grows from 0 instead of popping in.
+    // Card-deal animation (-style, mirrored from GameRenderer): expose the shared reveal clock and seed + return the
+    // reveal-start time for a card slot. ReplayView calls these while drawing
+    // the first sight of a slot seeds it at `now + ordinal*stagger`
     float replayClock() const { return replayDealClock_; }
     float dealerRevealAt(int i);
     float playerRevealAt(int handIndex, int cardIndex);
@@ -215,7 +215,7 @@ private:
     std::vector<ReplayHistoryEntry> historyEntries;
     int selectedHistoryIndex = 0;
 
-    // Number of rows scrolled past the top so shoe entries below the visible area can still be hovered and clicked.
+    // Number of rows scrolled past the top
     int historyScrollOffset = 0;
 
     // Current cursor (window pixels), updated each frame so the hover highlight and the
@@ -254,7 +254,7 @@ private:
     int startingBankroll = 1000;
     int currentBankroll = 1000;
 
-    // --- Card-deal animation in replay playback (Feature 8-style, mirrored from GameRenderer). A shared reveal clock plus
+    // --- Card-deal animation in replay playback (-style, mirrored from GameRenderer). A shared reveal clock plus
     // per-slot reveal times so arriving cards slide/flip into their resting slot over time instead of popping; settled frames
     // are pixel-for-pixel identical to the pre-animation layout. Presentation-only: the step/tick logic above is untouched.
     float replayDealClock_ = 0.f;

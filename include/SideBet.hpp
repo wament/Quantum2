@@ -4,11 +4,11 @@
 
 #include "Card.hpp"
 
-// Side bets (Feature 1): optional wagers placed before the deal that pay out on specific card combinations,
-// independent of the main hand's win/loss. Two are implemented, per .summaries/0.3/FEATURES.md:
-//   - Perfect Pairs  (player's two cards): Mixed Pair 10:1, Colored Pair 25:1, Perfect Pair 30:1
-//   - 21+3           (player's two cards + dealer up-card, i.e. three cards): Trips 30:1, Straight Flush 40:1,
-//                    Flush 9:1, Straight 5:1, Pair 2:1
+// Side bets: optional wagers placed before the deal, paying out on specific card combinations,
+// independent of the main hand's win/loss; two are implemented — see paytable below.
+// - Perfect Pairs (player's two cards): Mixed Pair 10:1, Colored Pair 25:1, Perfect Pair 30:1
+// - 21+3 (player's two cards + dealer up-card, i.e. three cards): Trips 30:1, Straight Flush 40:1,
+// Flush 9:1, Straight 5:1, Pair 2:1
 enum class SideBetKind
 {
     None,
@@ -27,8 +27,8 @@ struct SideBetResult
     [[nodiscard]] bool won() const { return multiplier != 0; }
 };
 
-// Pure, side-effect-free evaluation of the two side bets. Kept in its own module so it is unit-testable in isolation
-// from game state — this is the highest-ROI logic for Feature 1 and is exercised directly by test_side_bets.cpp.
+// Pure, side-effect-free evaluation of the two side bets. Kept in its own module
+// from game state: this is the highest-ROI logic for and is exercised directly by test_side_bets.cpp.
 class SideBetEvaluator
 {
   public:
@@ -40,7 +40,7 @@ class SideBetEvaluator
 };
 
 // Rank of a card is its raw `Card::value` (Ace=1 .. King=13). Color: Hearts/Diamonds are red, Spades/Clubs black.
-// These free helpers are used by the evaluator and shared so rank/suit/color logic lives in exactly one place.
+// These free helpers are used by the evaluator and shared
 inline bool sameRank(const Card& a, const Card& b) { return a.value == b.value; }
 inline bool isRed(const Card& c) { return c.suit == Suit::Hearts || c.suit == Suit::Diamonds; }
 inline bool sameColor(const Card& a, const Card& b) { return isRed(a) == isRed(b); }

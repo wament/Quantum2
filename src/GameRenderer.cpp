@@ -6,7 +6,7 @@
 #include "Replay.hpp"
 #include "StrategyTrainer.hpp"
 #include "Tournament.hpp"
-// Feature 4 (Statistics Dashboard): drawn via game.statsDashboard->draw(); the renderer needs the complete type, just as
+// drawn via game.statsDashboard->draw(); the renderer needs the complete type, just as
 // it already fully-includes Replay/StrategyTrainer/Tournament above.
 #include "StatsDashboard.hpp"
 #include "FontManager.hpp"
@@ -15,17 +15,17 @@
 #include <functional>
 #include <optional>
 
-// Single source of truth for draw()'s AppMode->{backdrop, render} dispatch (Finding #4): one table replaces the old backdrop
-// if/else-if chain + separate dispatch switch, so a mode's clear color and its draw fn live together and can't drift apart.
+// Single source of truth for draw()'s AppMode->{backdrop, render} dispatch: one table replaces the old backdrop
+// if/else-if chain + separate dispatch switch
 // Per-mode modules still call their own ->draw(window); this only routes to them after clearing. Render lambdas use the
-// enclosing GameRenderer via implicit `this`, which is why buildModeTable() below is a non-const member (several draw* methods
+// enclosing GameRenderer via implicit `this`
 // are non-const and must be called on that live renderer).
 const std::map<AppMode, ModeEntry>& GameRenderer::modeTable()
 {
-    // Single source of truth for draw()'s AppMode->{backdrop, render} dispatch (Finding #4): one table replaces the old
-    // backdrop if/else-if chain + separate dispatch switch, so a mode's clear color and its draw fn live together and can't
+    // Single source of truth for draw()'s AppMode->{backdrop, render} dispatch: one table replaces the old
+    // backdrop if/else-if chain + separate dispatch switch
     // drift apart. Built once on first use; the render lambdas capture this directly (we are in the GameRenderer member), so
-    // they call the non-const draw* methods on that live instance -- exactly how draw() itself mutates window state.
+    // they call the non-const draw* methods on that live instance
     static std::map<AppMode, ModeEntry> table;
     if (!table.empty())
         return table;
@@ -45,13 +45,13 @@ const std::map<AppMode, ModeEntry>& GameRenderer::modeTable()
         drawSideBet(g);
         drawSoundStatus(g);
         drawSummaryOverlay(g);
-        // Feature 5: brief popup for the most recently unlocked achievement (set by Game at settlement). No-op when none.
+        // brief popup for the most recently unlocked achievement (set by Game at settlement). No-op when none.
         drawPendingAchievement(g);
 
-        // Feature 1 (Side Bets): betting-phase control hints, drawn just above the main controls strip in the central play
+        // betting-phase control hints, drawn just above the main controls strip in the central play
         // band so they sit clear of the left-panel stats charts (their old x=30 ran straight through those charts). The
         // general main-bet controls are shown throughout PlaceBets; the side-bet line is shown only when the human seat
-        // can actually place bets interactively (Game::canPlaceBets) so it stays hidden during autoplay betting.
+        // can actually place bets interactively (Game::canPlaceBets)
         if (g.roundState == RoundState::PlaceBets)
         {
             constexpr float controlsY = static_cast<float>(Constants::WINDOW_HEIGHT) - Constants::Hud::BOTTOM_HEIGHT - 24.f; // row of the main controls strip
@@ -95,7 +95,7 @@ const std::map<AppMode, ModeEntry>& GameRenderer::modeTable()
 
 void GameRenderer::draw(Game& game)
 {
-    // Unknown mode: default backdrop (plain clear + backgroundSprite) and no render -- mirrors the old else-branch + switch fall-through.
+    // Unknown mode: default backdrop (plain clear + backgroundSprite) and no render
     static const ModeEntry fallback{ std::nullopt, [](Game&){} };
     auto it = modeTable().find(game.appMode);
     const ModeEntry& entry = (it != modeTable().end()) ? it->second : fallback;
@@ -120,7 +120,7 @@ ModeEntry GameRenderer::modeEntryForTest(AppMode appMode)
     return (it != modeTable().end()) ? it->second : fallback;
 }
 
-// Feature 5 (Achievement System): render the full achievement list — each entry shows its unlocked/locked state plus name and
+// render the full achievement list: each entry shows its unlocked/locked state plus name and
 // description. Pure presentation; reads game.achievementManager_ through the shared Game friend link, exactly like drawSoundStatus
 // reads sound_. The Escape-to-menu control lives in InputHandler::processAchievementEvents.
 void GameRenderer::drawAchievementList(Game &game)
@@ -165,7 +165,7 @@ void GameRenderer::drawAchievementList(Game &game)
     game.window.draw(hint);
 }
 
-// Feature 5: brief popup for the most recently unlocked achievement during play. Shown only while HUDState has a name set
+// brief popup for the most recently unlocked achievement during play. Shown only while HUDState has a name set
 // (Game sets it at settlement and clears it next round); drawn just above the end-of-round summary line.
 void GameRenderer::drawPendingAchievement(Game &game)
 {
@@ -184,12 +184,12 @@ void GameRenderer::drawPendingAchievement(Game &game)
 // Shared table-draw for Playing and Paused states (dealer + players + chips).
 void GameRenderer::drawGameTable(Game& game)
 {
-    // Feature 8: advance the reveal clock by one frame and clear stale reveal state if a round reset is detected, before
+    // advance the reveal clock by one frame and clear stale reveal state if a round reset is detected, before
     // any cards are drawn so every card in this table share one consistent animation timeline. Presentation only.
     advanceRevealClock(game);
 
-    // Feature 8 (dealing): draw the shoe stack first so it sits behind every dealt card. Cards slide out from this
-    // single visible deck near the dealer, so hits and the deal share one origin. Presentation only.
+    // draw the shoe stack first so it sits behind every dealt card. Cards slide out from this
+    // single visible deck near the dealer
     drawDeck(game);
 
     // Lay out split hands once so cards, chips and the active-player highlight all line up.
@@ -200,7 +200,7 @@ void GameRenderer::drawGameTable(Game& game)
     drawChips(game, lanes);
 }
 
-// Feature 7: thin sound-status indicator at the bottom-right corner so mute/volume state is visible without a panel.
+// thin sound-status indicator at the bottom-right corner
 void GameRenderer::drawSoundStatus(Game &game) const
 {
     const SoundManager::Settings s = game.sound_.settings();
@@ -259,7 +259,7 @@ std::vector<PlayerHandLayout> GameRenderer::allocatePlayerLanes(Game& game) cons
         rightEdge[i] = maxX + Constants::BOX_PAD;
     }
 
-    // Split each seat overlap and cascade the push outward so a wide splitter nudges its neighbours (and any further
+    // Split each seat overlap and cascade the push outward
     // colliders); repeated passes settle it within MAX_SPLIT_HANDS+1 seats, leaving uncollided ones exactly put.
     for (std::size_t pass = 0; pass < n; ++pass)
     {
@@ -284,7 +284,7 @@ std::vector<PlayerHandLayout> GameRenderer::allocatePlayerLanes(Game& game) cons
     }
 
     // Clamp the row into the usable band: a no-op when seats fit, else nudge the whole row to clear an overflowing
-    // margin (right on left-edge overflow, left on right). We only move on actual overflow -- shifting whenever there
+    // margin (right on left-edge overflow, left on right). We only move on actual overflow
     // is room on one side would drag hands and chips off their rings in normal play.
     float shift = 0.0f;
     if (leftEdge[0] < leftBound)
@@ -298,7 +298,7 @@ std::vector<PlayerHandLayout> GameRenderer::allocatePlayerLanes(Game& game) cons
         rightEdge[i] += shift;
     }
 
-    // Convert seats to per-hand x/y. drawChips reads the same leftX/offsetY, so bet stacks stay anchored to each hand's
+    // Convert seats to per-hand x/y. drawChips reads the same leftX/offsetY
     // own slot (e.g. the 3rd of 4 hands sits at step 0 = its original betting circle).
     std::vector<PlayerHandLayout> lanes(n);
     for (std::size_t i = 0; i < n; ++i)
@@ -344,9 +344,9 @@ void GameRenderer::drawDealer(Game& game)
 {
     if (game.roundState == RoundState::PlayerTurn || game.roundState == RoundState::OfferInsurance)
     {
-        // Feature 8: slide the up card and the (face-down) hole card in from the shoe over their staggered reveal window.
-        // The two end-points match the settled DealerTurn layout (DEALER_X, then +card spacing), so entering that state is
-        // a seamless flip rather than a jump -- and the gap leaves the up card fully visible instead of overlapping it.
+        // slide the up card and the (face-down) hole card in from the shoe over their staggered reveal window.
+        // The two end-points match the settled DealerTurn layout (DEALER_X, then +card spacing)
+        // a seamless flip rather than a jump
         Graphics::CardDealTween upTween;
         upTween.start = sf::Vector2f(Constants::SHOE_X, Constants::SHOE_Y);
         upTween.end = sf::Vector2f(Constants::DEALER_X, Constants::DEALER_Y);
@@ -367,8 +367,8 @@ void GameRenderer::drawDealer(Game& game)
         return;
     }
 
-    // Feature 8: seed the hole-card flip the first time this round's full dealer hand is revealed (the transition into
-    // DealerTurn / Cleanup). The turn then eases that card from an edge-on pose to flat so it visibly "flips up".
+    // seed the hole-card flip the first time this round's full dealer hand is revealed (the transition into
+    // DealerTurn / Cleanup). The turn then eases that card from an edge-on pose to flat
     if (!dealerFlipStarted_ && game.dealer.size() >= 2)
     {
         dealerFlipStarted_ = true;
@@ -377,8 +377,8 @@ void GameRenderer::drawDealer(Game& game)
 
     for (std::size_t i = 0; i < game.dealer.size(); i++)
     {
-        // Feature 8: slide each revealed card in from the shoe over its staggered reveal window. Cards are spaced one
-        // width plus a small gap apart, matching the PlayerTurn end-points so there is no jump between states.
+        // slide each revealed card in from the shoe over its staggered reveal window. Cards are spaced one
+        // width plus a small gap apart, matching the PlayerTurn end-points
         Graphics::CardDealTween tween;
         tween.start = sf::Vector2f(Constants::SHOE_X, Constants::SHOE_Y);
         tween.end = sf::Vector2f(Constants::DEALER_X + i * (Constants::CARD_WIDTH + 8.f), Constants::DEALER_Y);
@@ -388,9 +388,9 @@ void GameRenderer::drawDealer(Game& game)
         auto sprite = Graphics::makeCardSprite(game.dealer.getCard(i), game.cardTexture);
         sprite.setPosition(tween.position());
 
-        // Feature 8: flip the hole card (index 1) as it is revealed -- ease a rotation from edge-on (90 deg) to flat. The
-        // pivot is set to the card's centre first, then positioned by an extra half-card so the top-left still rests on the
-        // slot (identical to the non-flipped cards), while rotating around the geometric centre -- so it spins in place and
+        // flip the hole card (index 1) as it is revealed
+        // pivot is set to the card's centre first, then positioned by an extra half-card
+        // slot (identical to the non-flipped cards), while rotating around the geometric centre --
         // always settles exactly upright instead of drifting off-slot or getting stuck edge-on.
         if (i == 1 && dealerFlipStarted_ && dealerFlipStart_ >= 0.f)
         {
@@ -454,8 +454,8 @@ sf::Vector2f GameRenderer::getPlayerPosition(Game& game, size_t playerIndex, siz
         {7.f, -3.f},   // Player 4
         {6.f, 7.f}     // Player 5
     };
-    // Arrange players in an arc around the table. The felt -- and the betting rings printed on it -- stretches
-    // with the window, while card sprites stay a fixed 64px, so the arc is expressed as fractions of the window
+    // Arrange players in an arc around the table. The felt
+    // with the window, while card sprites stay a fixed 64px
     // and fitted so each seat's chip stack lands in its printed ring: radiusX tracks the window width (the rings
     // spread horizontally), radiusY the height, and centerY absorbs the fixed card-height + chip offset that
     // sits between a seat anchor and its ring.
@@ -464,7 +464,7 @@ sf::Vector2f GameRenderer::getPlayerPosition(Game& game, size_t playerIndex, siz
     float radiusX = static_cast<float>(Constants::WINDOW_WIDTH) * 0.286f;
     float radiusY = static_cast<float>(Constants::WINDOW_HEIGHT) * 0.5f;
 
-    // Fixed six-ring projection: reuse the 6-player ring centers so every seat count lands inside a ring.
+    // Fixed six-ring projection: reuse the 6-player ring centers
     const size_t n = 6;
     float arcSpan = 60.f + (n - 2) * 15.f;
     float startAngle = -arcSpan / 2.f;
@@ -551,7 +551,7 @@ void GameRenderer::drawPlayers(Game& game, const std::vector<PlayerHandLayout>& 
             // Rebalance so the bet stays centered on the hand instead of fanning right into the neighbour. This applies to
             // any long fan (>=4 cards, even or odd) and to doubled-down hands; -8*N centers the whole row on the chips (the
             // two middle cards for even counts, the single middle card for odd). A single card, the initial 2-card deal and
-            // non-doubled 3-card hands stay put. Note: odd long hands rebalance too -- only dropping it when <4 is what made
+            // non-doubled 3-card hands stay put. Note: odd long hands rebalance too
             // them snap back to the original position before.
             const int nCards = static_cast<int>(hand.size());
             float cardShift = 0.f;
@@ -559,7 +559,7 @@ void GameRenderer::drawPlayers(Game& game, const std::vector<PlayerHandLayout>& 
                 cardShift = -8.f * static_cast<float>(nCards);
             float fanLeftX = handX + cardShift; // where card 0 actually sits after rebalancing
 
-            // Safety clamp: keep the whole row inside the side-panel band so no card is clipped off-screen, even for a
+            // Safety clamp: keep the whole row inside the side-panel band
             // long rebalanced / doubled-down fan. Normal single and double hands sit well within the band and are left
             // exactly put; only an overflowing fan is nudged back in-bounds (preserving its anchored seat).
             const float fanWidth = static_cast<float>(nCards - 1) * 16.f + Constants::CARD_WIDTH;
@@ -578,7 +578,7 @@ void GameRenderer::drawPlayers(Game& game, const std::vector<PlayerHandLayout>& 
                 float cardX = fanLeftX + i * 16;
                 float cardY = handY - i * 16;
 
-                // Feature 8: ease this card in from the shoe over its staggered reveal window. A fully-arrived card sits
+                // ease this card in from the shoe over its staggered reveal window. A fully-arrived card sits
                 // exactly on (cardX, cardY), so settled frames are pixel-for-pixel identical to the pre-animation layout.
                 Graphics::CardDealTween tween;
                 tween.start = sf::Vector2f(Constants::SHOE_X, Constants::SHOE_Y);
@@ -794,9 +794,9 @@ static std::string sideBetKindName(SideBetKind kind)
     }
 }
 
-// Feature 8 (Animated Card Dealing): presentation-only reveal-timing helpers. They own NO game state -- only animation
+// presentation-only reveal-timing helpers. They own NO game state -- only animation
 // clocks keyed by a stable card slot, advanced one frame at a time from game.deltaTime and cleared on round reset. All
-// three are pure presentation; the logic/tick path never calls them, so headless tests are unaffected.
+// three are pure presentation; the logic/tick path never calls them
 
 void GameRenderer::advanceRevealClock(Game& game)
 {
@@ -816,14 +816,14 @@ void GameRenderer::advanceRevealClock(Game& game)
         dealerFlipStart_ = -1.f;
         // Re-baseline on the current (low) count instead of retaining the previous round's peak. If we kept the old
         // maximum here, every later round whose card count stayed below that retained peak would keep tripping this
-        // test and re-clear the freshly-assigned reveals EVERY frame -- which froze each card's progress near 0, so it
+        // test and re-clear the freshly-assigned reveals EVERY frame -- which froze each card's progress near 0
         // never finished sliding into its slot (the "cards get stuck / wrong spot after round 1" bug). A single drop
         // still clears exactly once per round boundary; subsequent frames in that round only clear on a real new one.
         prevTotalCards_ = total;
     }
     else
     {
-        // Never let the running count go backwards mid-round, so a transient all-zero frame can't wipe in-flight reveals.
+        // Never let the running count go backwards mid-round
         prevTotalCards_ = std::max(prevTotalCards_, total);
     }
 
@@ -849,10 +849,10 @@ float GameRenderer::playerRevealAtFor(Game& game, int p, int h, int i, float now
         ordinal += static_cast<int>(game.players[p].hands[k].size());
     ordinal += i;
 
-    // Reveal time INCREASES with deal order so earlier-ordinal cards (dealt first) begin sliding before later ones -- and,
-    // crucially, every card starts at progress ~0 on its first sighting instead of already being past DEAL_SLIDE_SECONDS.
-    // With the old minus sign, high-ordinal slots (later seats / NPCs / dealer) were instantly past their slide duration
-    // and popped into place with no animation; now they sweep in after everyone else, so every seat animates.
+    // Reveal time INCREASES with deal order
+    // crucially, every card starts at progress ~0 on its first sighting being past DEAL_SLIDE_SECONDS.
+    // high-ordinal slots (later seats / NPCs / dealer) that exceed their slide duration
+    // pop into place without animation — later deals reveal after earlier ones.
     float revealAt = now + static_cast<float>(ordinal) * dealStaggerSeconds(game);
     playerRevealAt_[key] = revealAt;
     return revealAt;
@@ -868,22 +868,22 @@ float GameRenderer::dealerRevealAtFor(Game &game, int i, float now)
     for (auto& p : game.players)
         for (const Hand& hh : p.hands)
             totalPlayerCards += static_cast<int>(hh.size());
-    // Dealer cards reveal after the player's, so they sweep in last. Add the stagger (not subtract) so the higher deal
-    // ordinal maps to a later reveal time; with the old minus sign the dealer popped instantly instead of flipping in.
+    // Dealer cards reveal after the player's
+    // ordinal maps to a later reveal time
     float revealAt = now + static_cast<float>(totalPlayerCards + i) * dealStaggerSeconds(game);
     dealerRevealAt_[i] = revealAt;
     return revealAt;
 }
 
-// Feature 8 (speed-linked dealing animation): effective durations for the selected game speed. Each base Feature-8
-// constant is scaled by GameTiming::dealDurationScale(game.gameSpeed), so Slow stretches, Fast/AutoPlay compress, and
+// effective durations for the selected game speed. Each base Feature-8
+// constant is scaled by GameTiming::dealDurationScale(game.gameSpeed)
 // Hyper/Gamer collapse to 0 (Graphics::CardDealTween::progress() then returns exactly 1 -> no visible animation). Presentation-only.
 float GameRenderer::dealSlideSeconds(Game &game) const { return Constants::DEAL_SLIDE_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }
 float GameRenderer::dealStaggerSeconds(Game &game) const { return Constants::DEAL_STAGGER_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }
 float GameRenderer::holeFlipSeconds(Game &game) const { return Constants::DEALER_HOLE_FLIP_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }
 
-// Feature 1 (Side Bets): show the human seat's current round side bet in its betting area while it is active, plus the
-// resolved outcome once the round settles (DealerTurn/Cleanup). Reads hudState, which Game::updateHUDState populates off
+// show the human seat's current round side bet in its betting area while it is active, plus the
+// resolved outcome once the round settles (DealerTurn/Cleanup). Reads hudState
 // the live hand. Only drawn when a side bet was actually placed this round.
 void GameRenderer::drawSideBet(Game& game)
 {
@@ -892,7 +892,7 @@ void GameRenderer::drawSideBet(Game& game)
 
     const auto pos = getPlayerPosition(game, 0, game.players.size());
     float x = Constants::PLAYER_X + pos.x + Constants::CARD_WIDTH / 2.f - 45.f;
-    // The seat name + bankroll is drawn at PLAYER_Y + yOffset + 160; previously the side-bet label shared that exact row
+    // The seat name + bankroll is drawn at PLAYER_Y + yOffset + 160; the side-bet label shared that exact row
     // (CARD_HEIGHT + 96 == 160) so its text ran straight into the name. Sit it a clear row beneath the name, past the
     // chip stack and the "YOUR TURN" turn-label (+180), so neither overlaps.
     float y = Constants::PLAYER_Y + pos.y + Constants::CARD_HEIGHT + 150.f;
@@ -917,7 +917,7 @@ void GameRenderer::drawSummaryOverlay(Game& game)
     if (game.hudState.playerSummaries.empty() || game.hudState.summaryTimer <= 0.0f)
         return;
 
-    // Presentation-only pacing: ramp opacity across a ~6s window so the summary fades out with the overlay.
+    // Presentation-only pacing: ramp opacity across a ~6s window
     // The display duration itself is decided in GameTiming (game logic); this is purely how it renders.
     constexpr float summaryFadeFactorPerSecond = 255.0f / 6.0f; // == 42.5, full opacity over ~6s of remaining time
     float alpha = static_cast<float>(std::min(255.0f, game.hudState.summaryTimer * summaryFadeFactorPerSecond));
@@ -980,7 +980,7 @@ int GameRenderer::getHoveredMenuItemIndex(Game& game) const
     return hoveredIndex;
 }
 
-// Feature 3 (Custom Game Rules): rows sit at startY = h*0.30 + i*spacing (see drawGameRules), so this hit-test matches the
+// rows sit at startY = h*0.30 + i*spacing (see drawGameRules), so this hit-test matches the
 // drawn rows exactly -- one source of truth for hover->selection that processMenuEvents()/processRulesEvents() both consume,
 // keeping pointing-at-a-row consistent across menus. Same pattern as getHoveredMenuItemIndex().
 int GameRenderer::getHoveredGameRulesRowIndex(Game &game) const
@@ -1020,7 +1020,7 @@ float GameRenderer::pauseRowY(Game& game, int index) const
 }
 
 // Index of the pause-menu row currently under the mouse cursor, or -1 if none. Nearest-centre
-// within each row's half-height and centred horizontally around the screen centre -- used by both
+// within each row's half-height and centred horizontally around the screen centre
 // hover highlighting (drawPauseMenu) and click selection (processPauseEvents) so they agree.
 int GameRenderer::getHoveredPauseMenuItemIndex(Game& game) const
 {
@@ -1128,7 +1128,7 @@ void GameRenderer::drawMainMenu(Game& game)
         drawMenuItem(game, label, game.menuSelection == item.option, item.y, hovered);
     }
 
-    // Controls hint sits below every menu row: the last row (Statistics) is at y=540 and rows are 40px apart, so this
+    // Controls hint sits below every menu row: the last row (Statistics) is at y=540 and rows are 40px apart
     // previously sat at y=470 directly on top of the Achievements row. Kept centered horizontally like the title above.
     sf::Text instr(FontManager::get(), "Up/Down: navigate  Enter: select  Esc: quit", 14);
     instr.setFillColor(sf::Color(140, 140, 140));
@@ -1136,8 +1136,8 @@ void GameRenderer::drawMainMenu(Game& game)
     game.window.draw(instr);
 }
 
-// Feature 3 (Custom Game Rules): render the in-game rules-config panel. Each editable rule is one row — label on the left,
-// current value on the right — with the selected row highlighted. Pure presentation: it reads the live gameRules_ plus the
+// render the in-game rules-config panel. Each editable rule is one row: label on the left,
+// current value on the right: with the selected row highlighted. Pure presentation: it reads the live gameRules_ plus the
 // shared gameRuleRows()/gameRuleDescription() helpers through the Game friend link. Navigation and editing live in
 // Game::update(); Escape persists there via rememberTableSettings().
 void GameRenderer::drawGameRules(Game &game)

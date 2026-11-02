@@ -2,7 +2,6 @@
 #include "test_support.hpp"
 #include <Constants.hpp>
 #include <Game.hpp>
-#include <RoundEngine.hpp>
 #include <Hand.hpp>
 #include <Deck.hpp>
 #include <Player.hpp>
@@ -15,26 +14,6 @@
 // win attribution or winsAfterDeviation would be caught here.
 // ---------------------------------------------------------------------------
 
-namespace
-{
-
-    // Drive frames until the round fully settles to Cleanup (dealer finishes and evaluateHands runs). dealerTurn()
-    // advances its own pacing off Game::deltaTime rather than the tick argument, so seed that member large to let the
-    // start/action timers drain within a frame; bounded so a stuck state cannot spin forever.
-    void tickUntilSettled(Game& game)
-    {
-        RoundEngine engine;
-        game.deltaTime = 100.0f;
-        for (int i = 0; i < 50; ++i)
-        {
-            RoundState rs = game.roundStateForTest();
-            if (rs == RoundState::PlayerTurn || rs == RoundState::DealerTurn)
-                engine.tick(100.0f, game);
-            else
-                break;
-        }
-    }
-}
 
 // A correct action (matches basic strategy) records a hit and leaves the Book box green: advisorFeedback is Correct.
 TEST_CASE("Correct action matches basic strategy -> Correct feedback", "[Advisor][Feature1]")
@@ -93,7 +72,7 @@ TEST_CASE("Winning after a deviation increments winsAfterDeviation and stamps De
     // Hard 16 (ten+six) vs dealer's five: basic strategy says Stand. Player hits the five -> 21, auto-finishes; a deviation.
     game.hit();
 
-    tickUntilSettled(game); // resolve through the dealer turn and evaluation
+    test_support::settleRound(game); // resolve through the dealer turn and evaluation
 
     const PlayerStats& stats = game.testPlayer(0).getStats();
     CHECK(stats.strategyDeviations == 1); // one deviation occurred this round
@@ -118,7 +97,7 @@ TEST_CASE("Settled hands populate the variance accumulators feeding standard dev
                   test_support::make_card(8, Suit::Spades),    test_support::make_card(7, Suit::Hearts)});
 
     game.hit(); // 13 + eight -> 21 (auto-finish)
-    tickUntilSettled(game);
+    test_support::settleRound(game);
 
     const PlayerStats& stats = game.testPlayer(0).getStats();
     CHECK(stats.handProfitCount == 1);   // one hand settled for variance
