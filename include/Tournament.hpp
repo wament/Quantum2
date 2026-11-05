@@ -1,87 +1,76 @@
 #pragma once
 
-#include <SFML/Graphics.hpp>
-#include <vector>
 #include <string>
+#include <vector>
 
-#include "Deck.hpp"
+#include "Card.hpp"
 #include "Hand.hpp"
-#include "Player.hpp"
 
-// a fixed-hand, equal-chips blackjack tournament where every seat is forced to the same
-// blind bet each round and the seat with the most chips when the hands run out wins. It reuses the game's own
-// primitives - Deck for the shoe, Hand for dealing/value/soft/pair detection and Player::settle (which applies the
-// standard 3:2 natural-blackjack / even-money / push settlement through winBet/loseBet) - with decisions taken from
-// BasicStrategy::getRecommendedAction
-// FORCED (no user choice of size)
-// not from betting volume.
+// Independent tournament RULES controller consulted by the shared regular-play machinery (Game) -- it owns everything that
+// makes a tournament different from an ordinary shoe, and nothing else. It deliberately holds NO deck, hands or settlement
+// of its own: those stay in Game's normal play path so a tournament plays exactly like an ordinary game (the human seat at
+// index 0 makes real decisions via the same input as normal play) with only these rules layered on. Because all logic here
+// is pure and headless-testable there is no SFML draw() -- presentation lives in GameRenderer overlays.
 //
-// Like StrategyTrainer this is its own AppMode state machine with pure, headless-safe logic and a graphics-only draw()
-// - no SFML in the play-out path -
-// card order via setDeck() (mirroring Game::setDeck) and drive one round at a time through playHand(); the on-screen
-// presentation lives only in draw(). It deliberately does NOT touch PlayerProfile
+// What it enforces: a fixed number of stages, each stage being its own self-contained four-deck shoe, a minimum bet that
+// escalates every stage (the "marathon" pressure), an aggressive tournament-modified basic strategy the AI opponents play
+// to try to maximise their bankroll in the short window (split tens, double any hard eight -- the standard advisor is left
+// untouched for everyone else), and a bankroll-ranked leaderboard plus winner derivation. The goal stays "largest bankroll
+// at the end of the tournament wins".
 class Tournament
 {
   public:
-    // Tournament parameters. Equal starting chips for every seat; each round forces the same blind bet; the run ends
-    // after `handsToPlay` rounds and the highest final chip count wins. Defaults are a playable default table.
+    // Configuration for a run. Defaults are a playable six-stage table, each stage its own four-deck shoe, starting at a
+    // ten-unit minimum that grows five units per stage. Equal starting chips for every seat and the opponent names come
+    // from Game when it builds the seats; this struct carries only the tournament structure + betting schedule.
     struct TournamentConfig
     {
-        int handsToPlay = 20;
         int startingChips = 1000;
-        int blindBet = 10;
-        std::vector<std::string> seatNames = {"Player", "Seat 2", "Seat 3", "Seat 4"};
+        int decksPerShoe = 4;   // each stage is one self-contained shoe
+        int stages = 6;         // number of stages (shoes) in the tournament
+        int minBetStage1 = 10;  // minimum bet at stage 1
+        int minBetGrowth = 5;   // per-stage increase of the minimum bet
     };
 
-    Tournament();
+    Tournament() = default;
 
-    // Begin (or restart) a tournament from a fresh, shuffled shoe of `deckCount` decks. Seats are created with equal
-    // starting chips and the names in config (falling back to Seat N when a name is empty). A positive deckCount uses
-    // a real random deal; setDeck() overrides this for deterministic tests.
-    void start(const TournamentConfig& config, int deckCount = 6);
+    // Begin (or restart) a tournament from `config`: reset to stage 1 with no shoes played and completion cleared.
+    void start(const TournamentConfig& config);
 
-    // Replace the shoe with an exact card order
-    // the game's auto-shuffle path calls start(deckCount) instead). Must be called before the first playHand().
-    void setDeck(const std::vector<Card>& cards);
+    // The book play the AI opponents should take on a hand vs the dealer's up-card in a tournament: standard basic strategy
+    // with two deliberate tournament aggressions applied so seats try to grow their bankroll in the short window -- always
+    // split tens (a hard 20) and always double a hard eight, regardless of the dealer's up-card. Every other hand follows
+    // the ordinary advisor unchanged. Returns the same action letter Game's NPC path consumes ('H','D','S','P','R'). This is
+    // private to the tournament (the plain BasicStrategy advisor stays as-is elsewhere) so it never leaks into normal play.
+    char aiAdvice(const Hand& hand, const Card& dealerUpCard) const;
 
-    // Play exactly one tournament round: deal from the shoe, force the blind bet on every seat that can afford it,
-    // let each seat act on basic strategy (hit until the book says otherwise; a double draws one more card then
-    // stands), let the dealer finish to 17, and settle every hand via Player::settle. Advancing is explicit
-    // can assert standings after any round without SFML or timing. Deal order within a round is seat-by-seat for two
-    // cards each (round-robin: all first cards, then all second cards), then the dealer's up-card and hole card, so
-    // an injected shoe maps to predictable seats. Ends the tournament when handsPlayed_ reaches config_.handsToPlay.
-    void playHand();
+    // Structural read-outs. currentStage() is 1-based ("Stage X of N"); minBetForStage() clamps to the range and never goes
+    // below the stage-1 minimum. shoesPlayed counts finished stages; isComplete() flips true once the final stage has run out.
+    int stages() const { return config_.stages; }
+    int currentStage() const { return stage_; }
+    int decksPerShoe() const { return config_.decksPerShoe; }
+    int minBetForStage(int stage) const;
+    int shoesPlayed() const { return shoesPlayed_; }
+    bool isComplete() const { return complete_; }
 
-    // Frame update for AppMode parity (mirrors Replay/StrategyTrainer wiring). Paces automatic in-game progress at a
-    // readable rate; pure-logic tests drive advancement directly with playHand() and never rely on this timer
-    // deterministic path stays timing-independent. No game-state mutation beyond playing one hand per tick interval.
-    void update(float deltaTime);
+    // Advance to the next stage after a stage's shoe has finished. Returns true when another stage remains and false once the
+    // final stage has run out (the tournament is then complete). Called by Game at every shoe boundary while tournamentActive_.
+    bool advanceStage();
+
+    // Rank seats for the leaderboard / winner: indices of `bankrolls` sorted by chips descending, ties broken by original
+    // seat order so the ordering is stable and deterministic. Used both live (during play) and to name the tournament winner.
+    std::vector<std::size_t> rankOrder(const std::vector<std::string>& names, const std::vector<int>& bankrolls) const;
 
     // --- Test accessors (mirror the *ForTest() convention) ---
-    int currentHandForTest() const { return handPlayed_; }
-    int handsToPlayForTest() const { return config_.handsToPlay; }
+    TournamentConfig configForTest() const { return config_; }
+    int currentStageForTest() const { return stage_; }
     bool isCompleteForTest() const { return complete_; }
-    size_t seatCountForTest() const { return seats_.size(); }
-    int chipsForTest(size_t i) const { return seats_[i].getBankroll(); }
-    int winnerIndexForTest() const { return winner_; }
-    std::string winnerNameForTest() const { return winner_ >= 0 && winner_ < static_cast<int>(seats_.size()) ? seats_[winner_].getName() : ""; }
-    const TournamentConfig& configForTest() const { return config_; }
-
-    // --- Presentation (graphics-only, no game-state mutation) ---
-    void draw(sf::RenderWindow& window) const;
+    int minBetForStageForTest(int stage) const { return minBetForStage(stage); }
+    int shoesPlayedForTest() const { return shoesPlayed_; }
 
   private:
-    Deck shoe;
-    bool injectedDeck = false;
-
-    TournamentConfig config_;
-    int handPlayed_ = 0;
-    int winner_ = -1;
+    TournamentConfig config_{};
+    int stage_ = 1;
+    int shoesPlayed_ = 0;
     bool complete_ = false;
-    float handTimer_ = 0.0f;
-
-    // One player per seat, holding name + bankroll for the run (no disk profile I/O unless saveProfile is ever called).
-    std::vector<Player> seats_;
-
-    void playSeatHand(Hand& hand, const Card& dealerUpCard);
 };

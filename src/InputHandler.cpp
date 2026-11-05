@@ -351,22 +351,28 @@ void InputHandler::processTrainerEvents(const sf::Event& event)
 // keyboard drives the tournament. Enter/Space steps to the next round immediately (the mode
 // also auto-advances hands via Game::update); Escape returns to the main menu. Guards the shared tournament
 // games - which never build it - can't crash when input is processed.
+// Drives tournament play through the SAME input path as an ordinary game (betting arrows + H/S/D/P/Y/side-bets), so a tournament
+// really plays like a normal shoe with the human seat making decisions -- only the rules differ (see Tournament). While the
+// tournament is running, processGameEvents handles everything including Escape-to-pause; once it is complete, only Escape does
+// anything (it leaves straight back to the main menu) so the leaderboard holds until the player quits.
 void InputHandler::processTournamentEvents(const sf::Event& event)
 {
+    // Escape always returns to the main menu -- exactly like the other four per-mode handlers (a single shared call instead of
+    // a duplicated block), so test_input_return_to_main_menu.cpp's shared assertion still holds. Live betting arrows + H/S/D/P/Y
+    // and side-bets below share ordinary play through processGameEvents, so the human seat makes real decisions on the same path.
     if (auto pressed = event.getIf<sf::Event::KeyPressed>())
     {
-        switch (pressed->code)
-        {
-        case sf::Keyboard::Key::Enter:
-        case sf::Keyboard::Key::Space:
-            if (game.tournament)
-                game.tournament->playHand();
-            break;
-        case sf::Keyboard::Key::Escape:
+        if (pressed->code == sf::Keyboard::Key::Escape)
             returnToMainMenu(game, "tournament mode");
-            break;
-        }
+        else if (!game.tournament || !game.tournament->isComplete())
+            processGameEvents(event);   // a live stage: ordinary betting/decision input
+        // once the final stage has run out, Escape is the only key handled here so the leaderboard holds.
+        return;
     }
+
+    // Mouse clicks likewise share ordinary play while a stage is live; after completion nothing but Escape is handled.
+    if (!game.tournament || !game.tournament->isComplete())
+        processGameEvents(event);
 }
 
 // keyboard drives the tabbed browse view. Left/Right cycle tabs (advanceTab); Escape

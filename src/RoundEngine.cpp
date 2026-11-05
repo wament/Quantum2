@@ -14,10 +14,12 @@ void RoundEngine::tick(float deltaTime, Game& game)
     game.tickTimer(game.hudState.afterHandTimer, deltaTime);
     game.tickTimer(game.hudState.afterShoeTimer, deltaTime);
 
-    // Auto-play: auto-advance to new shoe after shoe delay
+    // Auto-play: auto-advance to new shoe after shoe delay. A finished tournament holds here instead so Escape can return to the
+    // menu rather than looping into another stage.
     if (game.gameState == GameState::GameOver && GameTiming::isAutoPlaying(game.gameSpeed))
     {
-        if (game.hudState.afterShoeTimer <= 0.0f)
+        bool tournamentDone = game.tournamentActive_ && game.tournament && game.tournament->isComplete();
+        if (!tournamentDone && game.hudState.afterShoeTimer <= 0.0f)
         {
             Logger::info() << "Auto-play: starting new shoe.";
             // startNewShoe() is the shared shoe boundary: it rebuilds + shuffles the shoe, starts a fresh shoe

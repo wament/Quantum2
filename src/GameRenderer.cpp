@@ -32,63 +32,45 @@ const std::map<AppMode, ModeEntry>& GameRenderer::modeTable()
 
     // Populating for the first time: one row per AppMode. `t[X] = {backdrop, render}` keeps each entry's backdrop color and
     // its render fn on the same line so they can't drift apart either.
-    table[AppMode::MainMenu]         = {std::nullopt, [=](Game& g){ drawMainMenu(g); }};
-    // Playing: felt cleared by the default branch above; HUD update + betting/side-bet/sound/summary/achievement readouts all live here.
-    table[AppMode::Playing]          = {std::nullopt, [=](Game& g){
-        drawGameTable(g);
-        if (g.roundState == RoundState::OfferInsurance)
-            drawInsurance(g);
-
-        g.updateHUDState();
-        g.hud.update(g.hudState);
-        g.hud.draw(g.window);
-        drawSideBet(g);
-        drawSoundStatus(g);
-        drawSummaryOverlay(g);
-        // brief popup for the most recently unlocked achievement (set by Game at settlement). No-op when none.
-        drawPendingAchievement(g);
-
-        // betting-phase control hints, drawn just above the main controls strip in the central play
-        // band so they sit clear of the left-panel stats charts (their old x=30 ran straight through those charts). The
-        // general main-bet controls are shown throughout PlaceBets; the side-bet line is shown only when the human seat
-        // can actually place bets interactively (Game::canPlaceBets)
-        if (g.roundState == RoundState::PlaceBets)
-        {
-            constexpr float controlsY = static_cast<float>(Constants::WINDOW_HEIGHT) - Constants::Hud::BOTTOM_HEIGHT - 24.f; // row of the main controls strip
-            const float hintX = Constants::HANDS_LEFT_MARGIN; // just inside the play band, past the left-panel charts
-
-            sf::Text hint(FontManager::get(),
-                "Up/Down: set bet   Left: optimal   Right: confirm", 11.f);
-            hint.setFillColor(sf::Color(180, 180, 180));
-            hint.setPosition(sf::Vector2f(hintX, controlsY - 30.f));
-            g.window.draw(hint);
-
-            if (g.canPlaceBets())
-            {
-                sf::Text sideHint(FontManager::get(), "Z: side bet type   X/V: adjust side-bet wager", 11.f);
-                sideHint.setFillColor(sf::Color(255, 215, 0));
-                sideHint.setPosition(sf::Vector2f(hintX, controlsY - 14.f));
-                g.window.draw(sideHint);
-            }
-        }
-    }};
+    table[AppMode::MainMenu] = {std::nullopt, [=](Game& g)
+                                { drawMainMenu(g); }};
+    // Shared felt table + HUD + betting/side-bet/summary/achievement readouts, shared by Playing and Tournament (so a tournament
+    // renders exactly like an ordinary game with no duplicate rendering). Drawn once per frame by whichever mode is active.
+    table[AppMode::Playing] = {std::nullopt, [=](Game& g)
+                               { drawPlaySession(g); }};
     // Paused: same felt + HUD readout as Playing but with the pause menu instead of betting/side-bet overlays.
-    table[AppMode::Paused]           = {std::nullopt, [=](Game& g){
-        drawGameTable(g);
-        g.updateHUDState();
-        g.hud.update(g.hudState);
-        g.hud.draw(g.window);
-        drawSoundStatus(g);
-        drawPauseMenu(g);
-    }};
-    table[AppMode::StrategyTrainer]  = {sf::Color(96, 0, 128), [=](Game& g){ g.trainer->draw(g.window, g.cardTexture); }};
-    table[AppMode::Tournament]       = {sf::Color(25, 32, 48), [=](Game& g){ g.tournament->draw(g.window); }};
-    table[AppMode::Achievements]     = {sf::Color(18, 28, 24), [=](Game& g){ drawAchievementList(g); }};
-    table[AppMode::GameRules]        = {sf::Color(30, 30, 40), [=](Game& g){ drawGameRules(g); }};
-    table[AppMode::StatsDashboard]   = {sf::Color(15, 22, 30), [=](Game& g){ if (g.statsDashboard) g.statsDashboard->draw(g.window); }};
+    table[AppMode::Paused] = {std::nullopt, [=](Game& g)
+                              {
+                                  drawGameTable(g);
+                                  g.updateHUDState();
+                                  g.hud.update(g.hudState);
+                                  g.hud.draw(g.window);
+                                  drawSoundStatus(g);
+                                  drawPauseMenu(g);
+                              }};
+    table[AppMode::StrategyTrainer] = {sf::Color(96, 0, 128), [=](Game& g)
+                                       { g.trainer->draw(g.window, g.cardTexture); }};
+    // Tournament: reuses the felt table + HUD exactly like Playing (maximum code reuse -- you play an ordinary shoe with real
+    // decisions), then layers on the tournament banner during play and the end-of-tournament leaderboard once it is complete.
+    table[AppMode::Tournament] = {std::nullopt, [=](Game& g)
+                                  {
+                                      drawPlaySession(g);
+                                      if (g.tournament && !g.tournament->isComplete())
+                                          drawTournamentBanner(g);
+                                      else if (g.tournament && g.tournament->isComplete())
+                                          drawTournamentLeaderboard(g);
+                                  }};
+    table[AppMode::Achievements] = {sf::Color(18, 28, 24), [=](Game& g)
+                                    { drawAchievementList(g); }};
+    table[AppMode::GameRules] = {sf::Color(30, 30, 40), [=](Game& g)
+                                 { drawGameRules(g); }};
+    table[AppMode::StatsDashboard] = {sf::Color(15, 22, 30), [=](Game& g)
+                                      { if (g.statsDashboard) g.statsDashboard->draw(g.window); }};
     // ReplayHistory + ReplayPlaying share one render fn; felt cleared by the default branch above.
-    table[AppMode::ReplayHistory]    = {std::nullopt, [=](Game& g){ g.replay->draw(); }};
-    table[AppMode::ReplayPlaying]    = {std::nullopt, [=](Game& g){ g.replay->draw(); }};
+    table[AppMode::ReplayHistory] = {std::nullopt, [=](Game& g)
+                                     { g.replay->draw(); }};
+    table[AppMode::ReplayPlaying] = {std::nullopt, [=](Game& g)
+                                     { g.replay->draw(); }};
 
     return table;
 }
@@ -96,7 +78,7 @@ const std::map<AppMode, ModeEntry>& GameRenderer::modeTable()
 void GameRenderer::draw(Game& game)
 {
     // Unknown mode: default backdrop (plain clear + backgroundSprite) and no render
-    static const ModeEntry fallback{ std::nullopt, [](Game&){} };
+    static const ModeEntry fallback{std::nullopt, [](Game&) {}};
     auto it = modeTable().find(game.appMode);
     const ModeEntry& entry = (it != modeTable().end()) ? it->second : fallback;
 
@@ -115,7 +97,7 @@ void GameRenderer::draw(Game& game)
 
 ModeEntry GameRenderer::modeEntryForTest(AppMode appMode)
 {
-    static const ModeEntry fallback{ std::nullopt, [](Game&){} };   // nullopt backdrop (=> default clear + backgroundSprite), no-op render for an unknown mode
+    static const ModeEntry fallback{std::nullopt, [](Game&) {}}; // nullopt backdrop (=> default clear + backgroundSprite), no-op render for an unknown mode
     auto it = modeTable().find(appMode);
     return (it != modeTable().end()) ? it->second : fallback;
 }
@@ -123,7 +105,7 @@ ModeEntry GameRenderer::modeEntryForTest(AppMode appMode)
 // render the full achievement list: each entry shows its unlocked/locked state plus name and
 // description. Pure presentation; reads game.achievementManager_ through the shared Game friend link, exactly like drawSoundStatus
 // reads sound_. The Escape-to-menu control lives in InputHandler::processAchievementEvents.
-void GameRenderer::drawAchievementList(Game &game)
+void GameRenderer::drawAchievementList(Game& game)
 {
     const auto& defs = game.achievementManager_.all();
     const float w = static_cast<float>(game.window.getSize().x);
@@ -138,7 +120,7 @@ void GameRenderer::drawAchievementList(Game &game)
     game.window.draw(title);
 
     float y = 96.f;
-    const float rowH = 60.f;   // state + name line and a description line per achievement
+    const float rowH = 60.f; // state + name line and a description line per achievement
     for (const auto& def : defs)
     {
         sf::Text state(FontManager::get(), def.unlocked ? "[X]" : "[ ]", 22);
@@ -167,7 +149,7 @@ void GameRenderer::drawAchievementList(Game &game)
 
 // brief popup for the most recently unlocked achievement during play. Shown only while HUDState has a name set
 // (Game sets it at settlement and clears it next round); drawn just above the end-of-round summary line.
-void GameRenderer::drawPendingAchievement(Game &game)
+void GameRenderer::drawPendingAchievement(Game& game)
 {
     if (game.hudState.pendingAchievementName.empty())
         return;
@@ -201,7 +183,7 @@ void GameRenderer::drawGameTable(Game& game)
 }
 
 // thin sound-status indicator at the bottom-right corner
-void GameRenderer::drawSoundStatus(Game &game) const
+void GameRenderer::drawSoundStatus(Game& game) const
 {
     const SoundManager::Settings s = game.sound_.settings();
     std::string label = s.muted ? "Sound: Muted" : "Sound: On";
@@ -213,7 +195,7 @@ void GameRenderer::drawSoundStatus(Game &game) const
 
     const float x = static_cast<float>(Constants::WINDOW_WIDTH) - 96.f;
     const float y = static_cast<float>(Constants::WINDOW_HEIGHT) - 26.f;
-    text.setPosition(sf::Vector2f{ x, y });
+    text.setPosition(sf::Vector2f{x, y});
 
     game.window.draw(text);
 }
@@ -788,9 +770,12 @@ static std::string sideBetKindName(SideBetKind kind)
 {
     switch (kind)
     {
-    case SideBetKind::PerfectPairs:   return "Perfect Pairs";
-    case SideBetKind::TwentyOneThree: return "21+3";
-    default:                          return "None";
+    case SideBetKind::PerfectPairs:
+        return "Perfect Pairs";
+    case SideBetKind::TwentyOneThree:
+        return "21+3";
+    default:
+        return "None";
     }
 }
 
@@ -858,7 +843,7 @@ float GameRenderer::playerRevealAtFor(Game& game, int p, int h, int i, float now
     return revealAt;
 }
 
-float GameRenderer::dealerRevealAtFor(Game &game, int i, float now)
+float GameRenderer::dealerRevealAtFor(Game& game, int i, float now)
 {
     auto it = dealerRevealAt_.find(i);
     if (it != dealerRevealAt_.end())
@@ -878,10 +863,119 @@ float GameRenderer::dealerRevealAtFor(Game &game, int i, float now)
 // effective durations for the selected game speed. Each base Feature-8
 // constant is scaled by GameTiming::dealDurationScale(game.gameSpeed)
 // Hyper/Gamer collapse to 0 (Graphics::CardDealTween::progress() then returns exactly 1 -> no visible animation). Presentation-only.
-float GameRenderer::dealSlideSeconds(Game &game) const { return Constants::DEAL_SLIDE_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }
-float GameRenderer::dealStaggerSeconds(Game &game) const { return Constants::DEAL_STAGGER_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }
-float GameRenderer::holeFlipSeconds(Game &game) const { return Constants::DEALER_HOLE_FLIP_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }
+float GameRenderer::dealSlideSeconds(Game& game) const { return Constants::DEAL_SLIDE_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }
+float GameRenderer::dealStaggerSeconds(Game& game) const { return Constants::DEAL_STAGGER_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }
+float GameRenderer::holeFlipSeconds(Game& game) const { return Constants::DEALER_HOLE_FLIP_SECONDS * GameTiming::dealDurationScale(game.gameSpeed); }
 
+// Felt table + HUD + betting/side-bet/summary/achievement readouts shared by Playing and Tournament, so both modes render the
+// exact same table without duplicating the call sequence in their dispatch entries. Pure presentation; reads live game state.
+void GameRenderer::drawPlaySession(Game& g)
+{
+    drawGameTable(g);
+    if (g.roundState == RoundState::OfferInsurance)
+        drawInsurance(g);
+
+    g.updateHUDState();
+    g.hud.update(g.hudState);
+    g.hud.draw(g.window);
+    drawSideBet(g);
+    drawSoundStatus(g);
+    drawSummaryOverlay(g);
+    // brief popup for the most recently unlocked achievement (set by Game at settlement). No-op when none.
+    drawPendingAchievement(g);
+
+    // betting-phase control hints, drawn just above the main controls strip in the central play band so they sit clear of the
+    // left-panel stats charts. The general main-bet controls are shown throughout PlaceBets; the side-bet line is shown only when
+    // the human seat can actually place bets interactively (Game::canPlaceBets).
+    if (g.roundState == RoundState::PlaceBets)
+    {
+        constexpr float controlsY = static_cast<float>(Constants::WINDOW_HEIGHT) - Constants::Hud::BOTTOM_HEIGHT - 24.f; // row of the main controls strip
+        const float hintX = Constants::HANDS_LEFT_MARGIN;                                                              // just inside the play band, past the left-panel charts
+
+        sf::Text hint(FontManager::get(),
+                      "Up/Down: set bet   Left: optimal   Right: confirm", 11.f);
+        hint.setFillColor(sf::Color(180, 180, 180));
+        hint.setPosition(sf::Vector2f(hintX, controlsY - 30.f));
+        g.window.draw(hint);
+
+        if (g.canPlaceBets())
+        {
+            sf::Text sideHint(FontManager::get(), "Z: side bet type   X/V: adjust side-bet wager", 11.f);
+            sideHint.setFillColor(sf::Color(255, 215, 0));
+            sideHint.setPosition(sf::Vector2f(hintX, controlsY - 14.f));
+            g.window.draw(sideHint);
+        }
+    }
+}
+
+// Live tournament banner during play: a top-centred "Tournament -- Stage X of N" with this stage's minimum bet, so the marathon's
+// progress and escalating pressure are always visible on top of the ordinary felt table. Pure presentation; no-op unless a live,
+// incomplete tournament is running.
+void GameRenderer::drawTournamentBanner(Game& g)
+{
+    if (!g.tournamentActive_ || !g.tournament || g.tournament->isComplete())
+        return;
+
+    const float cx = g.window.getSize().x / 2.0f;
+    auto center = [&](const std::string& label, int size, sf::Color color, float y)
+    {
+        sf::Text t(FontManager::get(), label, static_cast<unsigned int>(size));
+        t.setFillColor(color);
+        sf::FloatRect b = t.getLocalBounds();
+        t.setOrigin(sf::Vector2f(b.size.x / 2.0f, b.size.y / 2.0f));
+        t.setPosition(sf::Vector2f(cx, y));
+        g.window.draw(t);
+    };
+
+    center("TOURNAMENT", 22, sf::Color(255, 215, 0), 34.f);
+    center("Stage " + std::to_string(g.tournament->currentStage()) + " of " +
+               std::to_string(g.tournament->stages()) +
+               "   |   Stage min bet: " + std::to_string(g.activeMinBet()),
+           16, sf::Color(220, 220, 220), 54.f);
+}
+
+// End-of-tournament ranked leaderboard + winner, drawn once the final stage has run out. Seats are listed richest-first by bankroll
+// (the tournament's real scoring) with the winner highlighted; Escape returns to the menu. Pure presentation.
+void GameRenderer::drawTournamentLeaderboard(Game& g)
+{
+    if (!g.tournamentActive_ || !g.tournament || !g.tournament->isComplete())
+        return;
+
+    const float cx = g.window.getSize().x / 2.0f;
+    auto center = [&](const std::string& label, int size, sf::Color color, float y)
+    {
+        sf::Text t(FontManager::get(), label, static_cast<unsigned int>(size));
+        t.setFillColor(color);
+        sf::FloatRect b = t.getLocalBounds();
+        t.setOrigin(sf::Vector2f(b.size.x / 2.0f, b.size.y / 2.0f));
+        t.setPosition(sf::Vector2f(cx, y));
+        g.window.draw(t);
+    };
+
+    std::vector<std::string> names;
+    std::vector<int> chips;
+    for (const auto& p : g.players)
+    {
+        names.push_back(p.getName());
+        chips.push_back(p.getBankroll());
+    }
+    const auto order = g.tournament->rankOrder(names, chips);
+
+    center("TOURNAMENT COMPLETE", 34, sf::Color(255, 215, 0), 70.f);
+
+    float y = 120.f;
+    for (std::size_t rank = 0; rank < order.size(); ++rank)
+    {
+        const std::size_t seat = order[rank];
+        center("#" + std::to_string(rank + 1) + "  " + names[seat] + ": " + std::to_string(chips[seat]),
+               22, rank == 0 ? sf::Color(120, 255, 160) : sf::Color(230, 230, 230), y);
+        y += 30.f;
+    }
+
+    center("Winner: " + names[order.front()] + " (" + std::to_string(chips[order.front()]) + " chips)",
+           26, sf::Color(255, 215, 0), y + 10.f);
+    center("Press Escape to return to the menu", 14, sf::Color(150, 150, 150), y + 38.f);
+}
 // show the human seat's current round side bet in its betting area while it is active, plus the
 // resolved outcome once the round settles (DealerTurn/Cleanup). Reads hudState
 // the live hand. Only drawn when a side bet was actually placed this round.
@@ -983,7 +1077,7 @@ int GameRenderer::getHoveredMenuItemIndex(Game& game) const
 // rows sit at startY = h*0.30 + i*spacing (see drawGameRules), so this hit-test matches the
 // drawn rows exactly -- one source of truth for hover->selection that processMenuEvents()/processRulesEvents() both consume,
 // keeping pointing-at-a-row consistent across menus. Same pattern as getHoveredMenuItemIndex().
-int GameRenderer::getHoveredGameRulesRowIndex(Game &game) const
+int GameRenderer::getHoveredGameRulesRowIndex(Game& game) const
 {
     float cx = static_cast<float>(game.window.getSize().x) / 2.0f;
     sf::Vector2f mousePos = game.window.mapPixelToCoords(sf::Mouse::getPosition(game.window));
@@ -992,7 +1086,7 @@ int GameRenderer::getHoveredGameRulesRowIndex(Game &game) const
     const float rulesRowHalfHeight = 21.f; // under half the 46px row spacing, so adjacent rows stay unambiguous
     const float startY = static_cast<float>(game.window.getSize().y) * 0.30f;
     const float spacing = 46.f;
-    const auto &rows = gameRuleRows();
+    const auto& rows = gameRuleRows();
     for (int i = 0; i < static_cast<int>(rows.size()); ++i)
     {
         // Rows are uniformly spaced, so the first row whose centre is close enough to the cursor wins. The horizontal band
@@ -1074,7 +1168,7 @@ void GameRenderer::drawMainMenu(Game& game)
             label = "Play Game";
             break;
         case MenuOption::PlayerCount:
-            label = "Players: " + std::to_string(game.playerCount) + " (Left/Right)";
+            label = "Players: " + std::to_string(game.playerCount);
             break;
         case MenuOption::GameSpeed:
         {
@@ -1100,7 +1194,6 @@ void GameRenderer::drawMainMenu(Game& game)
                 speedLabel += "Gamer";
                 break;
             }
-            speedLabel += " (Left/Right)";
             label = speedLabel;
             break;
         }
@@ -1108,7 +1201,7 @@ void GameRenderer::drawMainMenu(Game& game)
             label = "Review History";
             break;
         case MenuOption::StrategyTrainer:
-            label = "Practice Basic Strategy (S/T/D/P/Y)";
+            label = "Practice Basic Strategy";
             break;
         case MenuOption::Tournament:
             label = "Tournament Mode";
@@ -1117,7 +1210,7 @@ void GameRenderer::drawMainMenu(Game& game)
             label = "Achievements";
             break;
         case MenuOption::GameRules:
-            label = "Custom Game Rules (Up/Dn, Left/Rt, Esc)";
+            label = "Custom Game Rules";
             break;
         case MenuOption::Statistics:
             label = "Statistics Dashboard";
@@ -1140,7 +1233,7 @@ void GameRenderer::drawMainMenu(Game& game)
 // current value on the right: with the selected row highlighted. Pure presentation: it reads the live gameRules_ plus the
 // shared gameRuleRows()/gameRuleDescription() helpers through the Game friend link. Navigation and editing live in
 // Game::update(); Escape persists there via rememberTableSettings().
-void GameRenderer::drawGameRules(Game &game)
+void GameRenderer::drawGameRules(Game& game)
 {
     const float w = static_cast<float>(game.window.getSize().x);
     const float h = static_cast<float>(game.window.getSize().y);
@@ -1161,8 +1254,7 @@ void GameRenderer::drawGameRules(Game &game)
     for (size_t i = 0; i < rows.size(); ++i)
     {
         bool selected = (static_cast<int>(i) == game.gameRulesSelectedRow);
-        std::string lineText = std::string(selected ? "> " : "  ") + rows[i].label + "   "
-            + gameRuleDescription(game.gameRules_, rows[i].id);
+        std::string lineText = std::string(selected ? "> " : "  ") + rows[i].label + "   " + gameRuleDescription(game.gameRules_, rows[i].id);
         sf::Text line(FontManager::get(), lineText, 24);
         line.setFillColor(selected ? sf::Color(255, 255, 255) : sf::Color(200, 200, 200));
         line.setPosition(sf::Vector2f(cx, startY + i * spacing));

@@ -1,4 +1,6 @@
 #include "SessionLifecycle.hpp"
+
+#include <algorithm>
 #include "Game.hpp"            // complete Game type: all moved methods read/write its members (friend).
 #include "Logger.hpp"          // Logger::info used by startNewGame() and applySavedTableSettings().
 #include "StatsDashboard.hpp"   // make_unique<StatsDashboard>() + feed(): forward-declared in Game.hpp, complete here.
@@ -16,13 +18,64 @@ void SessionLifecycle::startTrainerSession(int deckCount, int secondsPerSession)
     game.trainer->startSession(deckCount, secondsPerSession);
 }
 
-// begin/restart a tournament. Delegates the exact nullptr-guarded build; tournament state stays in
-// Game's `tournament` member, so behavior is unchanged.
+// begin/restart a tournament. Builds the table like an ordinary game (human first, then NPC opponents up to playerCount), but
+// gives every seat equal starting chips so the run is decided purely by who ends with the most across the stages. It then runs
+// under tournament rules: each stage is its own four-deck shoe, the minimum bet escalates per stage, and the AI opponents play
+// the modified strategy -- all handled in Game's shared play path via tournamentActive_. Guards against nullptr so headless
+// construction can't crash when the menu calls this.
 void SessionLifecycle::startTournamentSession(const Tournament::TournamentConfig& config)
 {
     if (!game.tournament)
         game.tournament = std::make_unique<Tournament>();
     game.tournament->start(config);
+
+    // Build the seats exactly like startNewGame: the human at index 0, then up to playerCount - 1 NPC opponents. Every seat
+    // starts with equal chips so a tournament is decided purely by who finishes richest -- not by how many chips you were dealt.
+    game.players.clear();
+    game.players.push_back(Player("William", config.startingChips));
+
+    const int opponentCount = std::max(0, game.playerCount - 1);
+    for (int i = 0; i < opponentCount && i < GameConfig::NPC_COUNT; ++i)
+    {
+        const auto& cfg = GameConfig::NPC_CONFIGS[i];
+        game.players.push_back(Player(cfg.name, config.startingChips));
+        game.players.back().setBettingStrategy(static_cast<BettingStrategy>(cfg.strategy), cfg.baseBet);
+    }
+    // At least one opponent so there is someone to beat.
+    if (game.players.size() < 2)
+    {
+        game.players.push_back(Player(GameConfig::NPC_CONFIGS[0].name, config.startingChips));
+        game.players.back().setBettingStrategy(BettingStrategy::Flat, 10);
+    }
+
+    // A tournament's stages are self-contained four-deck shoes regardless of the table's normal deck count. Mirror startNewGame:
+    // a fresh + shuffled shoe, per-shoe analytics reset (bankrolls persist), and enter at PlaceBets so the human places a bet to deal.
+    game.deck.create(game.tournament->decksPerShoe());
+    game.deck.shuffle();
+    game.currentShoeRecord.initialDeck = game.deck.getCards();
+    game.currentShoeRecord.rounds.clear();
+
+    game.resetShoeAnalytics();
+    game.sessionCumulativeWinLoss = 0;
+    game.handActions.clear();
+    game.handActions.resize(game.players.size());
+    game.handDeviations_.clear();
+    game.handDeviations_.resize(game.players.size());
+    game.advisorFeedback = AdvisorFeedback::None;
+    game.advisorAction = 0;
+    game.dealer.clear();
+    for (auto& p : game.players)
+        p.resetRound(config.minBetStage1);
+    game.initialBet = config.minBetStage1;
+    game.gameState = GameState::Started;
+    game.roundState = RoundState::PlaceBets;
+    game.activePlayerIndex = 0;
+
+    game.tournamentActive_ = true;
+
+    Logger::info() << "Tournament started: " << game.tournament->stages() << " stages, "
+                   << game.tournament->decksPerShoe() << "-deck shoes, stage min bet " << config.minBetStage1 << ".";
+    game.appMode = AppMode::Tournament;
 }
 
 // begin/restart the dashboard from the main menu. Delegates verbatim: flattening completed-shoe

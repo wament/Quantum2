@@ -365,9 +365,6 @@ void Game::update(float deltaTime)
     case AppMode::StrategyTrainer:
         trainer->update(deltaTime);
         return;
-    case AppMode::Tournament:
-        tournament->update(deltaTime);
-        return;
     case AppMode::StatsDashboard:
         statsDashboard->update(deltaTime);
         return;
@@ -393,12 +390,13 @@ void Game::update(float deltaTime)
         break;   // falls through to the Playing guard below (never reaches RoundEngine).
     }
     case AppMode::Playing:
-        break;   // sole mode that advances the turn/round state machine via RoundEngine.
+    case AppMode::Tournament:
+        break;   // both advance the turn/round state machine via RoundEngine (tournament reuses ordinary play end-to-end).
     }
 
-    // Non-Playing modes return before RoundEngine here (identical to the original guards). Paused / Achievements are driven
-    // elsewhere and only hold AppMode parity: they fall through this same guard, exactly as they did before the refactor.
-    if (appMode != AppMode::Playing)
+    // Non-Playing modes return before RoundEngine here. Tournament is treated like Playing above so it plays exactly an
+    // ordinary shoe under tournament rules; Paused / Achievements are driven elsewhere and only hold AppMode parity.
+    if (appMode != AppMode::Playing && appMode != AppMode::Tournament)
         return;
 
     // Delegate the turn/round state machine to RoundEngine.
@@ -986,10 +984,20 @@ int Game::calculateOptimalBet(float trueCount, float kellyFraction, int bankroll
     return betting_->calculateOptimalBet(trueCount, kellyFraction, bankroll, minBet, maxBet, countingStyle);
 }
 
+int Game::activeMinBet() const
+{
+    // A tournament escalates the minimum every stage; ordinary play keeps the table MINIMUM_BET. Centralised so betting,
+    // auto-play and the UI all honour the same floor without repeating it.
+    if (tournamentActive_ && tournament)
+        return tournament->minBetForStage(tournament->currentStage());
+    return Constants::MINIMUM_BET;
+}
+
 void Game::confirmBet()
 {
     int currentBet = players[0].hands[0].getBet();
-    if (currentBet < Constants::MINIMUM_BET || currentBet > Constants::MAXIMUM_BET)
+    int floorBet = activeMinBet();
+    if (currentBet < floorBet || currentBet > Constants::MAXIMUM_BET)
         return;
 
     if (!players[0].placeBet(currentBet))
@@ -1021,8 +1029,8 @@ void Game::confirmBet()
     // NPCs bet according to their strategy
     for (size_t i = 1; i < players.size(); i++)
     {
-        // Skip NPCs who can't afford the minimum bet
-        if (players[i].getBankroll() < Constants::MINIMUM_BET)
+        // Skip NPCs who can't afford this stage's minimum bet (which rises each tournament stage)
+        if (players[i].getBankroll() < activeMinBet())
         {
             Logger::info() << players[i].getName() << " is out of chips and sits out this round.";
             players[i].hands[0].setBet(0);
@@ -1031,8 +1039,9 @@ void Game::confirmBet()
 
         int npcBet = players[i].determineRoundBet(BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size())));
 
-        // Apply table limits, then cap at bankroll
-        npcBet = std::max(npcBet, Constants::MINIMUM_BET);
+        // Apply table limits, then cap at bankroll. The floor is the stage minimum (escalating in a tournament); ordinary
+        // play uses the same helper and keeps it at the table MINIMUM_BET.
+        npcBet = std::max(npcBet, activeMinBet());
         npcBet = std::min(npcBet, Constants::MAXIMUM_BET);
         npcBet = std::min(npcBet, players[i].getBankroll());
 
@@ -1178,7 +1187,9 @@ void Game::npcTakeTurn()
         return;
 
     Logger::debug(p.getName() + " is thinking...");
-    char action = giveBasicStrategyAdvice(hand, dealer);
+    // Under tournament rules the AI opponents play a deliberately more aggressive strategy (split tens, double any hard eight)
+    // to grow their bankroll in the short window; ordinary play keeps ordinary basic strategy unchanged.
+    char action = tournamentActive_ ? tournament->aiAdvice(hand, dealer.getDealerUpCard()) : giveBasicStrategyAdvice(hand, dealer);
 
     // If strategy says split but we've reached max split hands,
     // fall back to hard hand strategy
@@ -1215,6 +1226,47 @@ void Game::npcTakeTurn()
         break;
     }
 }
+// Tournament shoe boundary (called from dealerTurn() after the last hand of a stage's shoe). Advances to the next stage by
+// reshuffling a fresh four-deck shoe and re-opening betting at the higher stage minimum, or marks the tournament complete once
+// the final stage has run out. Bankrolls carry across stages so the run is decided purely by who ends with the most chips.
+void Game::finishTournamentShoe()
+{
+    // Surface the live leaderboard ordering (by bankroll) so the HUD can rank seats and name this stage's leader.
+    std::vector<std::string> names;
+    std::vector<int> chips;
+    names.reserve(players.size());
+    chips.reserve(players.size());
+    for (const auto& p : players)
+    {
+        names.push_back(p.getName());
+        chips.push_back(p.getBankroll());
+    }
+
+    bool anotherStage = tournament->advanceStage();
+    const int stage = tournament->currentStage();
+
+    if (!anotherStage)
+    {
+        // Final stage has finished: the tournament is over. GameOver stays set (assigned by dealerTurn's LastHand branch) so no
+        // further hands are dealt; GameRenderer draws the leaderboard + winner and Escape returns to the menu.
+        const auto order = tournament->rankOrder(names, chips);
+        Logger::info() << "Tournament complete after " << tournament->shoesPlayed() << " stage(s). Winner: "
+                       << names[order.front()] << " with " << chips[order.front()] << " chips.";
+        return;
+    }
+
+    // Advance to the next stage: a fresh four-deck shoe (regardless of the table's normal deck count), analytics reset for
+    // recalibration, and betting re-opened at the higher stage minimum. resetShoeAnalytics() also restores GameState::Started,
+    // which lets play continue into the new stage rather than being parked at GameOver.
+    Logger::info() << "Tournament -> Stage " << stage << " of " << tournament->stages()
+                   << " (min bet " << activeMinBet() << "). Fresh " << tournament->decksPerShoe() << "-deck shoe.";
+    resetShoeAnalytics();
+    deck.create(tournament->decksPerShoe());
+    deck.shuffle();
+    currentShoeRecord = {};
+    nextRound(); // begins the new betting round at the stage minimum bet
+}
+
 void Game::afterDraw(Card card)
 {
     // Advance BOTH counting systems every draw
@@ -1449,16 +1501,26 @@ void Game::dealerTurn()
         players[0].saveProfile();
 
         currentShoeRecord = {};
-        Logger::info() << "Shoe completed. Final shoe profit: " << shoeCumulativeWinLoss << ".";
 
-        if (GameTiming::isAutoPlaying(gameSpeed))
+        if (tournamentActive_)
         {
-            Logger::info() << "Auto-play: Starting a new shoe.";
-            hudState.afterShoeTimer = GameTiming::afterShoeWait(gameSpeed);
+            // A tournament stage's shoe has finished: advance to the next stage (fresh 4-deck shoe, higher minimum bet) or,
+            // once the final stage has run out, mark the tournament complete so the leaderboard + winner are shown instead.
+            finishTournamentShoe();
         }
         else
         {
-            Logger::info() << "New shoe required. Press R.";
+            Logger::info() << "Shoe completed. Final shoe profit: " << shoeCumulativeWinLoss << ".";
+
+            if (GameTiming::isAutoPlaying(gameSpeed))
+            {
+                Logger::info() << "Auto-play: Starting a new shoe.";
+                hudState.afterShoeTimer = GameTiming::afterShoeWait(gameSpeed);
+            }
+            else
+            {
+                Logger::info() << "New shoe required. Press R.";
+            }
         }
     }
 }

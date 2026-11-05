@@ -172,6 +172,13 @@ class Game
     // and assert the Escape -> main-menu path switched modes (see InputHandler::returnToMainMenu) without an event loop.
     AppMode getAppModeForTest() const { return appMode; }
     void setAppModeForTest(AppMode mode) { appMode = mode; }
+
+    // Tournament hooks (see startTournamentSession): whether the shared play path is running under tournament rules, plus the
+    // current stage / completion for tests that drive tournament play headlessly through Game's delegating methods.
+    bool tournamentActiveForTest() const { return tournamentActive_; }
+    void setTournamentActiveForTest(bool active) { tournamentActive_ = active; }
+    int currentTournamentStageForTest() const { return tournament ? tournament->currentStage() : 0; }
+    bool isTournamentCompleteForTest() const { return tournament && tournament->isComplete(); }
     // The StrategyTrainer is otherwise private (built only in the full constructor). Exposed out-of-line
     // assert the StrategyTrainer AppMode routes to trainer->update() and advances session time (see Game::trainerElapsedSecondsForTest).
     float trainerElapsedSecondsForTest() const;
@@ -205,6 +212,11 @@ class Game
     // (index 0) and betting isn't auto-advanced by AutoPlay/Hyper/Gamer. Mirrors InputHandler's input gate
     // hints use one shared predicate; returns false outside PlaceBets. Used to decide whether to draw the side-bet control line.
     bool canPlaceBets() const;
+
+    // Minimum bet the human seat must reach before confirming: a tournament's escalating stage minimum when the shared play
+    // path is running under tournament rules, otherwise the ordinary table MINIMUM_BET. Consulted by betting so both the UI
+    // and auto-play honour the same floor without repeating it.
+    int activeMinBet() const;
 
     void run();
 
@@ -305,6 +317,11 @@ class Game
 
     float dealerStartDelayTimer = 0.0f;
     bool dealerTurnStarted = false;
+
+    // When true, the shared play path runs under tournament rules (staged 4-deck shoes, escalating stage minimum bet, the AI
+    // opponents' modified basic strategy); consulted at each betting/NPC/shoe-boundary seam in Game.cpp so ordinary play is
+    // byte-identical when false. The Tournament controller holds all the rule state; Game owns it as a unique_ptr like Replay.
+    bool tournamentActive_ = false;
 
     int playerCount = GameConfig::DEFAULT_PLAYER_COUNT;
 
@@ -411,6 +428,11 @@ class Game
     void loadAssets();
 
     void nextRound();
+
+    // Tournament-only shoe boundary: advance to the next stage (reshuffling a fresh four-deck shoe and re-opening betting at
+    // the higher stage minimum) when another remains, or mark the tournament complete once the final stage has run out. Called
+    // from dealerTurn() after the last hand of a stage's shoe while tournamentActive_. Private; Game.cpp owns the logic.
+    void finishTournamentShoe();
 
     void deal();
 

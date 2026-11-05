@@ -1,155 +1,155 @@
 #include <catch2/catch_all.hpp>
 #include "test_support.hpp"
 
-#include "Constants.hpp"
-#include "Card.hpp"
-#include "Hand.hpp"
-#include "BasicStrategy.hpp"
-#include "Tournament.hpp"
+#include <Constants.hpp>
+#include <Card.hpp>
+#include <Hand.hpp>
+#include <BasicStrategy.hpp>
+#include <Tournament.hpp>
+
+// ---------------------------------------------------------------------------
+// Tournament mode (Feature): the rules controller + AI strategy are tested headless-first against an injected shoe,
+// mirroring test_strategy_trainer.cpp. All pure-logic cases run over the Graphics-only Blackjack2Tests binary with no SFML.
+// Game-integration cases then confirm the shared play path runs under tournament rules.
+// ---------------------------------------------------------------------------
 
 using namespace BasicStrategy;
 
 namespace
 {
-
-    // A full 52-card shoe rotated by `offset`: deterministic per offset (so the same offset always yields the same
-    // tournament), varied across offsets. Used to prove the winner-selection invariant over many distinct deals.
-    std::vector<Card> rotatedDeck(int offset)
+    // Build a two-card hand from (value,suit) pairs for the advisor tests.
+    Hand makeHand(int v0, int s0, int v1, int s1)
     {
-        const int rank[13] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13};
-        std::vector<Card> deck;
-        deck.reserve(52);
-        for (int i = 0; i < 52; ++i)
-        {
-            int idx = (i + offset) % 52;
-            deck.push_back(test_support::make_card(rank[idx % 13], static_cast<Suit>(idx / 13)));
-        }
-        return deck;
+        Hand h;
+        h.addCard(test_support::make_card(v0, static_cast<Suit>(s0)));
+        h.addCard(test_support::make_card(v1, static_cast<Suit>(s1)));
+        return h;
     }
 }
 
-// ---------------------------------------------------------------------------
-// Feature 9 (Tournament Mode): the logic layer is tested headless-first, exactly mirroring test_strategy_trainer.cpp
-// - pure play-out + winner selection via an injected shoe and playHand(), before any UI. No SFML in these cases; they
-// run over the Graphics-only Blackjack2Tests binary.
-// ---------------------------------------------------------------------------
-
-TEST_CASE("Tournament: start creates equal starting chips and honours config", "[Tournament][Setup]")
+TEST_CASE("Tournament: config defaults are a six-stage tournament of four-deck shoes", "[Tournament][Setup]")
 {
     Tournament t;
-    Tournament::TournamentConfig cfg;
-    cfg.handsToPlay = 7;
-    cfg.startingChips = 500;
-    cfg.blindBet = 25;
-    cfg.seatNames = {"Alice", "Bob"};
+    Tournament::TournamentConfig cfg; // all defaults
+    t.start(cfg);
 
-    t.start(cfg, 6); // shuffled shoe (no injection here)
-
-    CHECK(t.seatCountForTest() == 2);
-    CHECK(t.handsToPlayForTest() == 7);
-    CHECK(t.chipsForTest(0) == 500);
-    CHECK(t.chipsForTest(1) == 500);
+    CHECK(t.stages() == 6);
+    CHECK(t.decksPerShoe() == 4);
+    // stage-1 minimum is ten, growing five units per stage across the six stages (10,15,20,25,30,35).
+    for (int s = 1; s <= 6; ++s)
+        CHECK(t.minBetForStageForTest(s) == 10 + (s - 1) * 5);
     CHECK(!t.isCompleteForTest());
+    CHECK(t.currentStageForTest() == 1);
 }
 
-TEST_CASE("Tournament: winner is the seat with the highest chips", "[Tournament][Winner]")
+TEST_CASE("Tournament: min bet escalates per stage and clamps outside the range", "[Tournament][Betting]")
 {
     Tournament t;
     Tournament::TournamentConfig cfg;
-    cfg.handsToPlay = 1;
-    cfg.startingChips = 100;
-    cfg.blindBet = 10;
-    cfg.seatNames = {"Alice", "Bob"};
+    cfg.stages = 4;
+    cfg.minBetStage1 = 20;
+    cfg.minBetGrowth = 7;   // 20, 27, 34, 41
+    t.start(cfg);
 
-    // Natural DEAL order (first drawn first, after setDeck's internal reversal). Round-robin two cards each seat,
-    // then the dealer. Both seats resolve on their initial two cards only - Alice on a natural 21 (auto-stand), Bob
-    // on a hard 16 that stands against the dealer's 3 (HARD[16][3] = 'S' in BasicStrategy) - so neither draws an extra
-    // card and exactly seven cards are consumed (no overdraw). Alice's natural 21 beats the dealer's non-natural 19;
-    // Bob's hard 16 loses to it. This makes the winner deterministic without depending on advisor table nuances.
-    std::vector<Card> shoe = {
-        test_support::make_card(1, Suit::Hearts),    // d1 -> Alice card 1 (Ace)
-        test_support::make_card(13, Suit::Spades),   // d2 -> Bob   card 1 (King=10)
-        test_support::make_card(12, Suit::Clubs),    // d3 -> Alice card 2 (Queen=10) -> natural blackjack 21
-        test_support::make_card(6, Suit::Diamonds),  // d4 -> Bob   card 2 (6) -> hard 16
-        test_support::make_card(3, Suit::Hearts),    // d5 -> dealer up-card; Bob's 16 stands vs a 3
-        test_support::make_card(6, Suit::Spades),    // d6 -> dealer hole card: 3+6 = 9, hits
-        test_support::make_card(13, Suit::Clubs),    // d7 -> dealer hit (King=10): 19, stands on all-17 (not busted)
-    };
-    t.setDeck(shoe);
-    t.start(cfg, 0); // injected deck persists; deckCount is ignored when one was set
-    CHECK(t.seatCountForTest() == 2);
-
-    t.playHand();
-
-    // Alice's natural 21 pays 3:2 (+15) -> 115; Bob's hard 16 loses to the dealer's 19 (-10) -> 90. The winner is the
-    // seat with the strictly higher chip count.
-    CHECK(t.isCompleteForTest());
-    CHECK(t.chipsForTest(0) == 115);
-    CHECK(t.chipsForTest(1) == 90);
-    CHECK(t.winnerIndexForTest() == 0);
-    CHECK(t.winnerNameForTest() == "Alice");
+    CHECK(t.minBetForStageForTest(1) == 20);
+    CHECK(t.minBetForStageForTest(2) == 27);
+    CHECK(t.minBetForStageForTest(4) == 41);
+    // clamps: below range -> stage-1 minimum; past the end -> final stage's minimum.
+    CHECK(t.minBetForStageForTest(0) == 20);
+    CHECK(t.minBetForStageForTest(99) == 41);
 }
 
-TEST_CASE("Tournament: declared winner always has the highest chip count across varied shoes", "[Tournament][Winner]")
-{
-    for (int offset = 0; offset < 24; ++offset)
-    {
-        Tournament t;
-        Tournament::TournamentConfig cfg;
-        cfg.handsToPlay = 3; // bounded so the 52-card shoe never runs out mid-hand
-        cfg.startingChips = 1000;
-        cfg.blindBet = 10;
-        cfg.seatNames = {"P1", "P2"};
-        t.setDeck(rotatedDeck(offset));
-        t.start(cfg, 0);
-
-        while (!t.isCompleteForTest())
-            t.playHand();
-
-        const int winner = t.winnerIndexForTest();
-        CHECK(winner >= 0);
-        CHECK(winner < static_cast<int>(t.seatCountForTest()));
-        // The declared winner must be a global maximum of the final chip counts.
-        for (std::size_t i = 0; i < t.seatCountForTest(); ++i)
-            CHECK(t.chipsForTest(winner) >= t.chipsForTest(i));
-    }
-}
-
-TEST_CASE("Tournament: identical shoe produces the same winner every run", "[Tournament][Determinism]")
-{
-    auto run = []() {
-        Tournament t;
-        Tournament::TournamentConfig cfg;
-        cfg.handsToPlay = 5;
-        cfg.startingChips = 1000;
-        cfg.blindBet = 10;
-        cfg.seatNames = {"A", "B", "C"};
-        t.setDeck(rotatedDeck(5));
-        t.start(cfg, 0);
-        while (!t.isCompleteForTest())
-            t.playHand();
-        return t.winnerIndexForTest();
-    };
-
-    CHECK(run() == run());
-}
-
-TEST_CASE("Tournament: seats that cannot afford the blind bet sit out unchanged", "[Tournament][Betting]")
+TEST_CASE("Tournament: advancing through every stage completes it, then holds", "[Tournament][Stages]")
 {
     Tournament t;
     Tournament::TournamentConfig cfg;
-    cfg.handsToPlay = 3;
-    cfg.startingChips = 5; // below the blind bet -> nobody can place a bet this run
-    cfg.blindBet = 10;
-    cfg.seatNames = {"X", "Y"};
-    t.setDeck(rotatedDeck(2));
-    t.start(cfg, 0);
+    cfg.stages = 3;
+    t.start(cfg);
 
-    while (!t.isCompleteForTest())
-        t.playHand();
-
-    CHECK(t.chipsForTest(0) == 5); // untouched because the seat sat out every round
-    CHECK(t.chipsForTest(1) == 5);
+    CHECK(t.advanceStage() == true);   // -> stage 2 (another remains)
+    CHECK(t.currentStageForTest() == 2);
+    CHECK(t.advanceStage() == true);   // -> stage 3 (the final stage)
+    CHECK(t.currentStageForTest() == 3);
+    CHECK(t.advanceStage() == false);  // final stage run out -> tournament complete
     CHECK(t.isCompleteForTest());
-    CHECK(t.winnerIndexForTest() == 0); // a tie is broken to the lowest index
+    CHECK(t.shoesPlayedForTest() == 3);
+
+    // Staying on the completed tournament is a no-op.
+    CHECK(t.advanceStage() == false);
+}
+
+TEST_CASE("Tournament: AI opponents split tens and double any hard eight, else follow basic strategy", "[Tournament][Strategy]")
+{
+    Tournament t;
+    Tournament::TournamentConfig cfg;
+    t.start(cfg);
+
+    // Always split tens (a hard 20) against ANY dealer up-card.
+    auto tens = makeHand(10, 0, 10, 1);   // two ten-value cards
+    CHECK(t.aiAdvice(tens, test_support::make_card(6, Suit::Spades)) == 'P');
+    CHECK(t.aiAdvice(tens, test_support::make_card(11, Suit::Clubs)) == 'P'); // vs an ace too
+
+    // Always double a hard eight, regardless of the dealer.
+    auto eight = makeHand(5, 0, 3, 1);    // hard 8, not a pair
+    CHECK(t.aiAdvice(eight, test_support::make_card(6, Suit::Spades)) == 'D');
+    CHECK(t.aiAdvice(eight, test_support::make_card(10, Suit::Clubs)) == 'D');
+
+    // Every other hand follows ordinary basic strategy unchanged: compare directly for the same parameters.
+    auto sixteen = makeHand(10, 2, 6, 3); // hard 16
+    Card up = test_support::make_card(6, Suit::Hearts);
+    bool isPair = sixteen.size() == 2 &&
+                  sixteen.getCard(0).getBlackjackValue() == sixteen.getCard(1).getBlackjackValue();
+    int pairValue = isPair ? sixteen.getCard(0).getBlackjackValue() : 0;
+    CHECK(t.aiAdvice(sixteen, up) ==
+          getRecommendedAction(sixteen.getValue(), up.getBlackjackValue(), sixteen.isSoft(), isPair, pairValue));
+
+    // Sanity: the plain advisor itself does NOT split tens and does not double a hard eight vs a 7 (so the override is real).
+    CHECK(getRecommendedAction(20, 6, false, true, 10) != 'P');
+    CHECK(getRecommendedAction(8, 7, false, false, 0) != 'D');
+}
+
+TEST_CASE("Tournament: leaderboard ranks by bankroll descending with stable ties", "[Tournament][Leaderboard]")
+{
+    Tournament t;
+    std::vector<std::string> names = {"Alice", "Bob", "Carol", "Dan"};
+    std::vector<int> chips = {1000, 2500, 2500, 500};
+
+    auto order = t.rankOrder(names, chips);
+
+    // Richest first: Bob and Carol (tie) keep original order, then Alice, then Dan.
+    CHECK(order.size() == 4);
+    CHECK(order[0] == 1);   // Bob
+    CHECK(order[1] == 2);   // Carol (stable tie with Bob)
+    CHECK(order[2] == 0);   // Alice
+    CHECK(order[3] == 3);   // Dan
+    // The winner is the first ranked seat.
+    CHECK(names[order.front()] == "Bob");
+}
+
+// ---------------------------------------------------------------------------
+// Game integration: the shared play path runs under tournament rules (equal chips, escalating stage minimum, human acts).
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Tournament game: builds an equal-chip table under active tournament rules", "[Tournament][Game]")
+{
+    Game game(true);  // headless: no window/assets/replay/HUD, pure game state only
+    Tournament::TournamentConfig cfg;
+    cfg.stages = 6;
+    cfg.startingChips = 2000;
+    cfg.minBetStage1 = 25;
+    cfg.minBetGrowth = 5;
+
+    game.startTournamentSession(cfg);
+
+    REQUIRE(game.getAppModeForTest() == AppMode::Tournament);
+    REQUIRE(game.tournamentActiveForTest());
+    REQUIRE(game.currentTournamentStageForTest() == 1);
+
+    auto& seats = game.playersForTest();
+    REQUIRE(seats.size() >= 2);                 // human + at least one opponent to beat
+    for (auto& p : seats)
+        CHECK(p.getBankroll() == cfg.startingChips);   // equal starting chips for every seat
+
+    // The stage-1 minimum bet is enforced as the betting floor for this run.
+    REQUIRE(game.activeMinBet() == 25);
 }

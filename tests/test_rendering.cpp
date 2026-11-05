@@ -28,7 +28,7 @@ std::vector<std::pair<AppMode, std::optional<sf::Color>>> expectedBackdrops()
         {AppMode::Playing,          std::nullopt},   // felt behind the table
         {AppMode::Paused,           std::nullopt},   // felt behind the paused table
         {AppMode::StrategyTrainer,  sf::Color(96, 0, 128)}, // royal-purple training backdrop
-        {AppMode::Tournament,       sf::Color(25, 32, 48)}, // tournament slate (own paint)
+        {AppMode::Tournament,       std::nullopt},    // felt like Playing; tournament overlays are drawn on top
         {AppMode::Achievements,     sf::Color(18, 28, 24)}, // dark-slate list backdrop
         {AppMode::GameRules,        sf::Color(30, 30, 40)}, // rules-config backdrop
         {AppMode::StatsDashboard,   sf::Color(15, 22, 30)}, // deep-teal dashboard (own paint)
@@ -65,13 +65,13 @@ TEST_CASE("Game::update routes every non-Playing mode without advancing the play
 {
     Game game(true);
     seedRound(game, {test_support::make_card(5, Suit::Hearts), test_support::make_card(6, Suit::Clubs)});  // one easy dealt round
-    const RoundState initialRound = game.roundStateForTest();
 
     auto driveInMode = [&](AppMode mode) {
         game.setAppModeForTest(mode);
+        const RoundState beforeUpdate = game.roundStateForTest();   // the round's state just before this update()
         game.update(0.0f);
         REQUIRE(game.getAppModeForTest() == mode);       // routed to this mode's own updater, did not switch modes away
-        REQUIRE(game.roundStateForTest() == initialRound);  // RoundEngine was skipped -> no turn/round progress happened
+        REQUIRE(game.roundStateForTest() == beforeUpdate);  // RoundEngine was skipped -> no turn/round progress happened
     };
 
     // Null-safe view/pause/rules modes: their updater runs inline (GameRules) or returns early; none touch the playing round.
@@ -85,6 +85,8 @@ TEST_CASE("Game::update routes every non-Playing mode without advancing the play
     game.startStatsSession();
     driveInMode(AppMode::StatsDashboard);
 
+    // A tournament builds a real table and opens this stage's PlaceBets screen (a fresh four-deck shoe) so the human places a bet to
+    // deal; update(0) with no auto-play must not advance past that betting screen. driveInMode captures the post-start state as its reference.
     game.startTournamentSession();
     driveInMode(AppMode::Tournament);
 

@@ -116,6 +116,13 @@ private:
     void drawChips(Game &game, const std::vector<PlayerHandLayout>& lanes);
     // Shared table-draw (dealer + players + chips) used by both Playing and Paused.
     void drawGameTable(Game &game);
+    // Felt table + HUD + betting/side-bet/summary/achievement readouts shared by Playing and Tournament, so a tournament renders
+    // exactly like an ordinary game with no duplicate rendering. Both modes call it once; the Tournament entry adds overlays after.
+    void drawPlaySession(Game &game);
+    // Tournament-only overlays: the live "Stage X of N · min bet" banner during play, and the end-of-tournament ranked leaderboard
+    // + winner drawn once the final stage has run out. Pure presentation; reads game.tournament through Game's friend link.
+    void drawTournamentBanner(Game &game);
+    void drawTournamentLeaderboard(Game &game);
     void drawDeck(Game &game);
     // thin sound-status indicator (bottom-right corner)
     // panel. Pure presentation; reads game.sound_ through the Game friend link.
