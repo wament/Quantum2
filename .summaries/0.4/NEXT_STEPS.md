@@ -129,12 +129,12 @@ configure and build clean (warnings only — the pre-existing `[=]` implicit-`th
 | B1 | 🔴 Critical | Tournament mode overwrites the saved career profile | `src/SessionLifecycle.cpp:35` | 0 |
 | B2 | 🔴 Critical | Achievement toast never clears (permanent "NEW!" banner) | `src/AchievementFeeder.cpp:48` / `src/GameRenderer.cpp:154` | 0 |
 | B3 | 🔴 Critical | Side-bet result always prints "WON" (LOST branch is dead) | `src/GameRenderer.cpp:997-1000` | 0 |
-| B4 | 🔴 Critical | Reko count seeded with compile-time deck count, not the rule | `src/Game.cpp:254` (+ `src/Deck.cpp:71`) | 0 |
+| B4 | 🔴 Critical | Reko count seeded with compile-time deck count, not the rule | `src/Game.cpp:254` (+ `src/Deck.cpp:73`) | 0 |
 | B13 | 🔴 Critical | Quitting mid-shoe silently deletes those hands from career stats | `include/Serialization.hpp:193-210` + `src/PlayerProfile.cpp:68` | 0 |
 | B5 | 🟠 High | Main bet never escrowed → bankroll can go negative | `src/Player.cpp:89` | 1 |
 | B6 | 🟠 High | Rules panel keyboard edit is unthrottled (multi-step per tap) | `src/Game.cpp:383-388` | 1 |
 | B7 | 🟠 High | Escape-to-quit from the main menu skips the profile save | `src/Game.cpp:189` + `src/InputHandler.cpp:520` | 1 |
-| B8 | 🟠 High | `Deck::draw()` has no empty-shoe guard (pre-existing, known) | `src/Deck.cpp:121-135` | 1 |
+| B8 | 🟠 High | `Deck::draw()` has no empty-shoe guard (pre-existing, known) | `src/Deck.cpp:123-137` | 1 |
 | B14 | 🟠 High | Save is non-atomic and a failed load silently resets to a fresh profile | `src/PlayerProfile.cpp:50-61` + `:28-48` | 1 |
 | B15 | 🟠 High | Two live copies of `Serialization.hpp`; game and tests compile different files | `src/Serialization.hpp` vs `include/Serialization.hpp` | 1 |
 | B9 | 🟠 High | One unreproducible crash; logger loses all output on abort | `src/Logger.cpp` (stdout buffering) | 2 |
@@ -330,7 +330,7 @@ Error by shoe: 1 deck off by 19 (-20 vs -1), 2 off by 15, 4 off by 8, 8 off by 7
 "True Count" *is* the running count (`src/Game.cpp:483`), this corrupts the True Count readout, Edge % and
 Kelly / Auto-Kelly sizing from the first hand.
 
-**Same defect, second site.** `Deck::reshuffleWithRemaining()` (`src/Deck.cpp:71`) rebuilds with
+**Same defect, second site.** `Deck::reshuffleWithRemaining()` (`src/Deck.cpp:73`) rebuilds with
 `for (int deck = 0; deck < Constants::NUM_DECKS; ++deck)` — a mid-shoe reshuffle on a 1-deck table silently
 rebuilds a 6-deck shoe.
 
@@ -535,7 +535,7 @@ Confirm double-saving is harmless (idempotent).
 
 ## B8 — `Deck::draw()` has no empty-shoe guard 🟠 (pre-existing, known)
 
-`src/Deck.cpp:121-135` calls `cards.back()` / `pop_back()` with no size check, and a **second** unguarded
+`src/Deck.cpp:123-137` calls `cards.back()` / `pop_back()` with no size check, and a **second** unguarded
 `cards.back()` after the cut-card pop. Already logged in 0.3 §6 as an ASan heap-buffer-overflow reachable when
 more hands are drawn than the shoe holds (Tournament / StrategyTrainer with injected decks).
 
@@ -777,7 +777,7 @@ anywhere and the profile's `name` field ships as `""`. Ship-blocking for anythin
 field backed by the existing profile field.
 
 **U8 — 10× bankroll mismatch.** The human starts at **$1,000** (`PlayerProfile.hpp:66`) while NPCs start at
-**$10,000** (`Constants.hpp:270` `STARTING_BANKROLL`) — visible side by side on the table, and `MAXIMUM_BET` is
+**$10,000** (`Constants.hpp:273` `STARTING_BANKROLL`) — visible side by side on the table, and `MAXIMUM_BET` is
 1000, i.e. the human's entire stack. *Fix:* reconcile to one number; if $1,000 is intended, drop the NPC stacks.
 
 **U9 — No side-bet paytable anywhere.** Perfect Pairs (10/25/30:1) and 21+3 (2/5/9/30/40:1) are offered with no
@@ -804,7 +804,7 @@ additive.
 **B16 — `reconstructDeckAtRound()` is dead code, and wrong.** 🟡
 `include/GameRecord.hpp:307-329` is the only occurrence of the symbol in the whole tree — no caller, no test. It
 rebuilds a shoe by popping the **front** of a deque built from `initialDeck`, but `Deck::draw()`
-(`src/Deck.cpp:121-135`) deals from the **back** (`cards.back()` / `pop_back()`), and `initialDeck` is stored as
+(`src/Deck.cpp:123-137`) deals from the **back** (`cards.back()` / `pop_back()`), and `initialDeck` is stored as
 `deck.getCards()` verbatim (`src/Game.cpp:276`, `:1349`; `src/SessionLifecycle.cpp:55`, `:198`). So it removes
 cards that have *not* been dealt. It also ignores the cut card's extra draw and mid-shoe reshuffles.
 

@@ -37,7 +37,7 @@ referred to the working tree rather than `HEAD`. That work has since landed as *
 branch `3.1`, together with these three documents. On **2026-11-06** every `file:line` citation in this file and
 in `NEXT_STEPS.md` was re-checked against that commit; the citations held, including the fiddly ones
 (`Game.cpp:483`, `Game.cpp:766`, `Game.cpp:1340`/`:1499`, `RoundDealer.cpp:35`/`:45`/`:46`,
-`GameRenderer.cpp:1020-1023`, `GameRecord.hpp:307`, `PlayerProfile.hpp:66`, `Constants.hpp:270`). Trust the line
+`GameRenderer.cpp:1020-1023`, `GameRecord.hpp:307`, `PlayerProfile.hpp:66`, `Constants.hpp:273`). Trust the line
 numbers. What did *not* hold were several structural claims, and those are corrected in place — see §13.
 
 ## 2. Posture change entering 0.4
@@ -107,7 +107,7 @@ Two things worth internalising before touching this code:
 
 **File:** `$HOME/.local/share/blackjack/saves/player_profile.json` (`getSavePath()`, `src/Player.cpp:14-25`;
 falls back to `Constants::PLAYER_FILE_FALLBACK` = `saves/player_profile.json` when `HOME` is unset,
-`include/Constants.hpp:239`). Written by `PlayerProfile::save()` (`src/PlayerProfile.cpp:50-95`), read by
+`include/Constants.hpp:242`). Written by `PlayerProfile::save()` (`src/PlayerProfile.cpp:50-95`), read by
 `PlayerProfile::load()` (`:28-48`), shaped by `to_json`/`from_json` (`include/Serialization.hpp:191-231`).
 
 **⚠ There are two copies of this header, and both are live.** `src/Serialization.hpp` (236 lines) and
@@ -181,6 +181,7 @@ retained only as an additive migration fallback so pre-B12 saves keep loading.
 - Whether `maxSplitHands` is exposed or deleted (B10).
 - The canonical starting bankroll for human and NPC seats (U8).
 - B12 additive-migration strategy (resolved 2026-11-06): `resplitTentsAllowed` was misspelled in every save file, so the rename to `resplitTensAllowed` had to be additive — `to_json` writes only the corrected key, and `from_json` reads it first then falls back to the legacy typo'd key (new wins when both present) so pre-B12 saves keep loading. Honours the 0.3 schema contract: every existing field stays optional with a default; no profile is ever wiped by the rename.
+- B2 achievement-toast lifetime (resolved 2026-11-06; default chosen from §10 #7): toast stays on screen for `GameTiming::ACHIEVEMENT_TOAST_SECONDS` (=4.0s), armed in `AchievementFeeder.cpp:48` on each unlock and cleared at zero by `RoundEngine::tick` alongside the other HUD timers (the renderer already draws only while a name is set, so clearing ends the draw). No new persisted field; purely in-memory HUD state.
 
 ---
 
@@ -373,10 +374,10 @@ after the phase-0.4 changes:
 | 4 | Expose `maxSplitHands` or delete it? | expose (2–4) / delete | B10 |
 | 5 | Should the console control banner survive at all? | keep trimmed / replace with in-game Controls screen | B11, U4 |
 | 6 | Is a name-entry screen in scope for 0.4, or deferred? | in scope / defer with a tracking note | U7 |
-| 7 | How long should the achievement toast show? | suggested 4s | B2 |
+| 7 | How long should the achievement toast show? | suggested 4s | B2 | **Resolved** — chose 4s, implemented in B2 (`f3aeb1f`) |
 
 Defaults if nobody answers: 1(a), 2(a), 3 = $1,000 everywhere, 4 = expose, 5 = keep trimmed + add Controls,
-6 = defer, 7 = 4s. Record the final choice in §5's decision list.
+6 = defer, 7 = 4s (resolved: implemented as `ACHIEVEMENT_TOAST_SECONDS` = 4.0 in B2, `f3aeb1f`). Record the final choice in §5's decision list.
 
 ## 11. Status tracker
 
@@ -393,14 +394,14 @@ word "reproduced" implied.
 | ID | Sev | Title | Status | Evidence as of 2026-11-06 |
 |---|---|---|---|---|
 | B1 | 🔴 | Tournament overwrites career profile | **Open** | Mechanism re-confirmed in code: `SessionLifecycle.cpp:34` `players.clear()` + `:35` NPC ctor. Playtest repro not re-run this pass |
-| B2 | 🔴 | Achievement toast never clears | **Open** | Re-confirmed by grep: one write (`AchievementFeeder.cpp:48`), one read (`GameRenderer.cpp:154`), zero clears; no `achievementToastTimer` symbol exists |
+| B2 | 🔴 | Achievement toast never clears | **Resolved 2026-11-06 (`f3aeb1f`)** | Added `achievementToastTimer` to `HUDState.hpp`; armed in `AchievementFeeder.cpp:48` on each unlock, ticked in `RoundEngine.cpp` alongside the other HUD timers and cleared at 0 (renderer draws only while a name is set). Test #210 arms/advances past lifetime/re-arms (fails before fix). Suite 275/275 |
 | B3 | 🔴 | Side bet always reports "WON" | **Resolved 2026-11-06 (`c7978f1`)** | Fixed in `include/SideBetLabels.hpp`: branch won/lost/push on net with the sign preserved; `GameRenderer.cpp:997` calls the pure fn. Guard test in `test_side_bets.cpp` asserts WON +20 / LOST -20 / PUSH 0 (fails before fix). Suite 266/266 |
-| B4 | 🔴 | Reko seed ignores deck count | **Open** | Re-confirmed: `Game.cpp:254` and `Deck.cpp:71` both use `Constants::NUM_DECKS` (6) |
+| B4 | 🔴 | Reko seed ignores deck count | **Resolved 2026-11-06 (`3924b56`)** | Seeds from `gameRules_.numDecks` in `resetShoeAnalytics()` (`Game.cpp:254`); `Deck::create()` remembers shoe size and reshuffle rebuilds from it (`Deck.cpp:73`). Tests assert the roadmap seeds 1/2/4/6/8 → -1/-5/-12/-20/-27 through a headless Game, plus a one-deck reshuffle stays ~53 cards (both fail before fix). Two `test_deck.cpp` reshuffle-size assertions were corrected from the old NUM_DECKS behavior. Suite 274/274 |
 | B13 | 🔴 | Mid-shoe quit deletes those hands from career stats | **Resolved 2026-11-06 (`387a3e0`)** | Persist in-progress shoe rounds (currentHistory) so quitting mid-shoe still books them into career stats; guarded read. Test #270 passes; hist_proof.cpp (§6.10) confirms shipped schema. §11 listed it Open after the commit and was corrected here |
 | B5 | 🟠 | Main bet not escrowed; bankroll can go negative | Open | `Player.cpp:89` still a bare affordability check; no `getAvailableBankroll` in the tree. Negative balance not re-reproduced on screen |
 | B6 | 🟠 | Rules panel key repeat | **Open** | `Game.cpp:383-388` still polls held keys with no edge detection |
 | B7 | 🟠 | Escape-quit skips the save | **Open** | No `persistOnExit`; save still only in the `Event::Closed` branch (`InputHandler.cpp:247-257`) |
-| B8 | 🟠 | `Deck::draw()` no empty guard | Known (0.3 §6) | Two unguarded `back()`/`pop_back()` pairs confirmed at `Deck.cpp:121-135` |
+| B8 | 🟠 | `Deck::draw()` no empty guard | Known (0.3 §6) | Two unguarded `back()`/`pop_back()` pairs confirmed at `Deck.cpp:123-137` |
 | B9 | 🟠 | Flaky crash + unflushable logger | Open — crash unrepro | `Logger.cpp:34` still writes `std::cout` with no flush/unitbuf |
 | B14 | 🟠 | Non-atomic save; corrupt file → silent wipe | **Resolved 2026-11-06 (`9d1d125`)** | Atomic write + corrupt-save rescue under a `.corrupt.<ts>` suffix, and partial-JSON field retention in `PlayerProfile.cpp`. Tests #229/#230 pass. §11 listed it Open after the commit and was corrected here |
 | B15 | 🟠 | Two live copies of `Serialization.hpp` | **Resolved 2026-11-06 (`9a89185`)** | Deleted `src/Serialization.hpp`; exactly one copy remains (include/), enforced by a guard test that fails with two / passes with one. No CMake edit needed; `PlayerProfile.cpp` now resolves to the include copy, unblocking every schema edit (B12/B13/B14) |
@@ -535,3 +536,26 @@ The `B13` (`387a3e0`) and `B14` (`9d1d125`) fixes landed on 2026-11-06 with pass
 marked only B3 + B15 resolved) still listed both as Open. Verified each against source and moved both rows to Resolved with
 the commit hash plus test IDs as evidence, so the table matches what is actually implemented. No code or other citations
 changed — status correction only; the B14 primary-site citation (`src/PlayerProfile.cpp`) was re-checked and still holds.
+
+### 2026-11-06 — resolved B4 (Reko seed) + B2 (achievement toast); corrected drifted citations
+
+Two more Phase-0 criticals landed with passing tests, each committed separately (`3924b56`, `f3aeb1f`) and verified via the full gate. Both are in the presentation/lifecycle seam the headless contract misses, so they needed dedicated tests to lock them.
+
+- **B4 (`3924b56`).** `resetShoeAnalytics()` seeds Reko from the live rule now (`Game.cpp:254`, `gameRules_.numDecks`)
+  instead of compile-time `NUM_DECKS`; a one-deck shoe starts at -1, an 8-deck at -27. Added `Deck::shoeDecks_` (set in
+  `create()`, used by the reshuffle loop) so a mid-shoe reshuffle on a non-default shoe keeps its real card count
+  (`Deck.cpp:73`). New tests in `test_reko_counting.cpp` assert the roadmap seeds through a headless Game across 1/2/4/6/8
+  decks, plus a one-deck reshuffle stays ~53 cards; both failed before the fix. Two existing `test_deck.cpp` reshuffle-size
+  assertions encoded the old NUM_DECKS behavior on a create(1) shoe and were corrected to the single-deck size. Suite
+  274/274 (baseline 272, +2).
+
+- **B2 (`f3aeb1f`).** The achievement toast now has a finite lifetime: `achievementToastTimer` added to `HUDState.hpp`,
+  armed in `AchievementFeeder.cpp:48` on each unlock, ticked in `RoundEngine.cpp` alongside the other HUD timers and cleared
+  at zero (the renderer already draws only while a name is set). New test #210 arms / advances past lifetime / re-arms via
+  `advanceTurnState()` (which folds `RoundEngine::tick`) — an inert round state + non-AutoPlay speed makes the frame run only
+  the timer countdown, so no session setup is needed. It fails before the fix. Suite 275/275 (+1 over B4).
+
+**Citation drift to re-check (my two edits moved line numbers; nothing else changed).**
+- `Deck.hpp` +4 and `Deck.cpp` +2 after B4's `create()` edit: the reshuffle loop is now `Deck.cpp:73`, and the `draw()` guard region `121-135` → `123-137`. Corrected in §11 (B4/B8 rows) and throughout NEXT_STEPS.md.
+- `Constants.hpp` +3 after B2's toast constant insertion: `PLAYER_FILE_FALLBACK` is now `:242` (old `:239` → `:242`); the §1 recheck-list entry `:270` → `:273`, and STARTING_BANKROLL in NEXT_STEPS.md U8 likewise. All corrected.
+
