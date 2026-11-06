@@ -524,3 +524,52 @@ TEST_CASE("Achievement blackjacks read the same record-derived source as PlayerS
     // The invariant Phase-4 locks for persistence/dashboard: incrementally-maintained == record-recomputed.
     CHECK(game.achievementsForTest().careerBlackjacks() == cs.blackjacks);
 }
+
+// B2: the achievement toast must have a finite lifetime — armed on unlock, decremented per frame by RoundEngine::tick
+// alongside the other HUD timers, and cleared once it elapses. Without that it is written once and never cleared, so
+// the banner persists across every round (the bug). Frames are driven through advanceTurnState(), which folds
+// RoundEngine::tick exactly like update()'s Playing path — no window needed.
+TEST_CASE("Achievement toast clears after its lifetime and re-arms on a fresh unlock", "[Achievement][Toast][B2]")
+{
+    Game game(true);   // headless: no window/assets/audio device
+
+    RoundRecord round;
+    {
+        HandOutcome h;
+        h.playerIndex = 0;
+        h.wager = 0;                 // flat bankroll keeps Perfect Shoe / Comeback King off the shoe-end set...
+        h.won = true;
+        h.cards = twoCards(1, 10);   // ...only Deviation Free surfaces at the boundary (Natural-21 also unlocks inline).
+        round.playerHands.push_back(h);
+    }
+
+    game.recordHandAchievements(round);      // inline unlock (First Deal + Natural 21)
+    game.startNewShoe();                       // resetShoeAnalytics -> surfaceNewlyUnlocked sets popup AND arms its timer
+
+    CHECK(!game.hudStateForTest().pendingAchievementName.empty());   // a toast is armed
+    CHECK(game.hudStateForTest().achievementToastTimer > 0.0f);      // finite, non-zero lifetime - not left armed forever
+
+    // Advance one frame past the ~4s toast lifetime. A benign round state plus a non-AutoPlay speed makes RoundEngine::tick
+    // run only its shared timer countdown (no seat or deck access), so the achievementToastTimer decrement + clear-at-zero
+    // runs without any session setup - exactly the B2 fix path that update()'s Playing branch also takes.
+    game.setRoundStateForTest(RoundState::Cleanup);
+    game.setGameSpeedForTest(GameSpeed::Normal);
+    game.advanceTurnState(GameTiming::ACHIEVEMENT_TOAST_SECONDS + 1.0f);
+
+    CHECK(game.hudStateForTest().achievementToastTimer <= 0.0f);   // elapsed to zero
+    CHECK(game.hudStateForTest().pendingAchievementName.empty());  // popup cleared, not left on screen forever
+
+    // A genuinely new unlock re-arms the toast: a winning split (Split Success) is fresh here, so it surfaces through the
+    // feeder and arms its timer again exactly like the first unlock did. Two seat-0 hands make recordHandAchievements set
+    // splitHand=true + wonAny=true; this path is deterministic and independent of bankroll.
+    RoundRecord splitRound;
+    {
+        HandOutcome h0; h0.playerIndex = 0; h0.wager = 10; h0.won = true; h0.cards = twoCards(2, 5);
+        splitRound.playerHands.push_back(h0);
+        HandOutcome h1; h1.playerIndex = 0; h1.wager = 10; h1.won = true; h1.cards = twoCards(3, 6);
+        splitRound.playerHands.push_back(h1);
+    }
+    game.recordHandAchievements(splitRound);
+    CHECK(!game.hudStateForTest().pendingAchievementName.empty());   // armed again
+    CHECK(game.hudStateForTest().achievementToastTimer > 0.0f);      // lifetime reset to full, not stuck at zero
+}

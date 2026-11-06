@@ -79,8 +79,10 @@ struct HUDState
     float summaryTimer = 0.0f;
 
     // name of the most recently unlocked achievement, set by Game when an unlock fires so
-    // HUDState/GameRenderer can surface a brief popup. Empty means "no notification pending". Cleared after it is shown.
+    // HUDState/GameRenderer can surface a brief popup. Empty means "no notification pending"; cleared once its
+    // lifetime (achievementToastTimer) elapses via RoundEngine::tick — never left on screen forever.
     std::string pendingAchievementName;
+    float achievementToastTimer = 0.0f;   // seconds remaining for the popup; 0 means no toast is armed
 
     // Auto-play timers (0 means no wait)
     float afterHandTimer = 0.0f;

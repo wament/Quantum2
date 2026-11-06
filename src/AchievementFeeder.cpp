@@ -46,6 +46,7 @@ void AchievementFeeder::surfaceNewlyUnlocked(const std::vector<Achievement::Id>&
             if (def.id == id)
             {
                 game.hudState.pendingAchievementName = def.name;
+                game.hudState.achievementToastTimer = GameTiming::ACHIEVEMENT_TOAST_SECONDS; // re-arm the popup lifetime
                 return;
             }
 }

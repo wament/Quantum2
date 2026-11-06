@@ -148,8 +148,9 @@ void GameRenderer::drawAchievementList(Game& game)
     game.window.draw(hint);
 }
 
-// brief popup for the most recently unlocked achievement during play. Shown only while HUDState has a name set
-// (Game sets it at settlement and clears it next round); drawn just above the end-of-round summary line.
+// brief popup for the most recently unlocked achievement during play. Shown only while HUDState has a name set;
+// Game arms its lifetime on unlock and RoundEngine::tick clears the name once that lifetime elapses, so it never
+// persists past ~ACHIEVEMENT_TOAST_SECONDS. Drawn just above the end-of-round summary line.
 void GameRenderer::drawPendingAchievement(Game& game)
 {
     if (game.hudState.pendingAchievementName.empty())

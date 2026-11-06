@@ -26,6 +26,9 @@ constexpr float SUMMARY_FAST_AUTOPLAY = 2.0f;
 constexpr float SUMMARY_NORMAL_SLOW = 5.0f;
 constexpr float SUMMARY_HYPER = 0.3f; // Hyper: just long enough to read
 
+// How long a just-unlocked achievement toast stays on screen before it clears (seconds).
+constexpr float ACHIEVEMENT_TOAST_SECONDS = 4.0f;
+
 constexpr float AUTOPLAY_AFTER_HAND_DELAY = 1.0f; // hold between hands in AutoPlay
 constexpr float AUTOPLAY_AFTER_SHOE_DELAY = 3.0f; // hold before dealing the next shoe
 

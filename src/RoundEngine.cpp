@@ -13,6 +13,11 @@ void RoundEngine::tick(float deltaTime, Game& game)
     game.tickTimer(game.hudState.summaryTimer, deltaTime);
     game.tickTimer(game.hudState.afterHandTimer, deltaTime);
     game.tickTimer(game.hudState.afterShoeTimer, deltaTime);
+    // Achievement toast: tick its lifetime alongside the other HUD timers and clear the popup once it elapses so a
+    // never-cleared banner cannot persist across rounds (B2). The renderer only draws while a name is set.
+    game.tickTimer(game.hudState.achievementToastTimer, deltaTime);
+    if (game.hudState.achievementToastTimer <= 0.0f)
+        game.hudState.pendingAchievementName.clear();
 
     // Auto-play: auto-advance to new shoe after shoe delay. A finished tournament holds here instead so Escape can return to the
     // menu rather than looping into another stage.
