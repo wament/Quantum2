@@ -5,6 +5,7 @@
 #include "Constants.hpp"
 #include "Game.hpp"
 #include "SideBet.hpp"
+#include "SideBetLabels.hpp"
 #include "test_support.hpp"
 #include <catch2/catch_all.hpp>
 
@@ -492,3 +493,21 @@ TEST_CASE("canPlaceBets is true only in an interactive PlaceBets phase for the h
     game.setRoundStateForTest(RoundState::PlayerTurn);
     CHECK(!game.canPlaceBets());
 }
+
+// B3 regression: the side-bet readout must report WON / LOST / PUSH by net result, not always WON. The buggy renderer
+// took abs() before testing the sign, so a lost stake displayed "WON +20". This asserts all three outcomes against the
+// pure label builder; it fails today (loss and push both print WON) and passes once the sign is preserved.
+TEST_CASE("B3: side-bet label reports WON / LOST / PUSH by net result", "[SideBets][Label]")
+{
+    using namespace sidebet;
+
+    // Won: payout exceeds the stake -> net gain, printed with a plus.
+    CHECK(resultLabel(20, 40) == "  WON +20");
+
+    // Lost: resolveSideBets pays nothing on a loss (payout 0), so the full stake is gone -> net loss, minus sign.
+    CHECK(resultLabel(20, 0) == "  LOST -20");
+
+    // Push: payout equals the stake -> zero net, which is a push, not a win.
+    CHECK(resultLabel(20, 20) == "  PUSH  0");
+}
+

@@ -1,6 +1,7 @@
 #include <cmath>
 #include "Game.hpp"
 #include "GameRenderer.hpp"
+#include "SideBetLabels.hpp"
 #include "Constants.hpp"
 #include "Graphics.hpp"
 #include "Replay.hpp"
@@ -994,10 +995,7 @@ void GameRenderer::drawSideBet(Game& game)
     std::string label = "Side Bet: " + sideBetKindName(game.hudState.sideBetKind) + " $" + std::to_string(game.hudState.sideBetWager);
     if (game.roundState == RoundState::DealerTurn || game.roundState == RoundState::Cleanup)
     {
-        int net = game.hudState.sideBetPayout - game.hudState.sideBetWager; // gross payout - stake == net on the bankroll
-        if (net < 0)
-            net = -net;
-        label += (net >= 0 ? "  WON +" : "  LOST ") + std::to_string(net);
+        label += sidebet::resultLabel(game.hudState.sideBetWager, game.hudState.sideBetPayout);
     }
 
     sf::Text text(FontManager::get(), label, 12.f);
