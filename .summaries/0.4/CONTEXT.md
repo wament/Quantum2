@@ -400,7 +400,7 @@ word "reproduced" implied.
 | B13 | 🔴 | Mid-shoe quit deletes those hands from career stats | **Resolved 2026-11-06 (`387a3e0`)** | Persist in-progress shoe rounds (currentHistory) so quitting mid-shoe still books them into career stats; guarded read. Test #270 passes; hist_proof.cpp (§6.10) confirms shipped schema. §11 listed it Open after the commit and was corrected here |
 | B5 | 🟠 | Main bet not escrowed; bankroll can go negative | Open | `Player.cpp:89` still a bare affordability check; no `getAvailableBankroll` in the tree. Negative balance not re-reproduced on screen |
 | B6 | 🟠 | Rules panel key repeat | **Open** | `Game.cpp:383-388` still polls held keys with no edge detection |
-| B7 | 🟠 | Escape-quit skips the save | **Open** | No `persistOnExit`; save still only in the `Event::Closed` branch (`InputHandler.cpp:247-257`) |
+| B7 | 🟠 | Escape-quit skips the save | **Resolved 2026-11-06 (`11b187b`)** | Centralised persist-on-exit into `Game::persistOnExit()` (shoe record + current table settings + unlocked achievements, then save) routed through `InputHandler::returnToMainMenu()`, so every Escape->menu route persists like the window-close path did; guarded against an empty seat vector. Headless test #276 (`test_input_return_to_main_menu.cpp`) fails before / passes after; full suite 276/276 (+1) |
 | B8 | 🟠 | `Deck::draw()` no empty guard | Known (0.3 §6) | Two unguarded `back()`/`pop_back()` pairs confirmed at `Deck.cpp:123-137` |
 | B9 | 🟠 | Flaky crash + unflushable logger | Open — crash unrepro | `Logger.cpp:34` still writes `std::cout` with no flush/unitbuf |
 | B14 | 🟠 | Non-atomic save; corrupt file → silent wipe | **Resolved 2026-11-06 (`9d1d125`)** | Atomic write + corrupt-save rescue under a `.corrupt.<ts>` suffix, and partial-JSON field retention in `PlayerProfile.cpp`. Tests #229/#230 pass. §11 listed it Open after the commit and was corrected here |
@@ -558,4 +558,17 @@ Two more Phase-0 criticals landed with passing tests, each committed separately 
 **Citation drift to re-check (my two edits moved line numbers; nothing else changed).**
 - `Deck.hpp` +4 and `Deck.cpp` +2 after B4's `create()` edit: the reshuffle loop is now `Deck.cpp:73`, and the `draw()` guard region `121-135` → `123-137`. Corrected in §11 (B4/B8 rows) and throughout NEXT_STEPS.md.
 - `Constants.hpp` +3 after B2's toast constant insertion: `PLAYER_FILE_FALLBACK` is now `:242` (old `:239` → `:242`); the §1 recheck-list entry `:270` → `:273`, and STARTING_BANKROLL in NEXT_STEPS.md U8 likewise. All corrected.
+
+### 2026-11-06 — B7 (Escape-to-main-menu exit skips the save) resolved
+
+Added `Game::persistOnExit()` (`src/Game.cpp:198-219`) as the single persist-on-exit choke point and routed it through
+`InputHandler::returnToMainMenu()` (`src/InputHandler.cpp:28`). It stamps shoe-record bookkeeping + current table settings
++ unlocked achievements onto the profile, then saves — identical to what the pause-menu Quit-to-Menu path did before B7,
+just centralised so no Escape route can silently drop a session's bankroll / record / settings (the defect: window-close
+saved on exit, an Escape quit did not). Guarded against an empty seat vector; pure Game state, headless-testable.
+
+Test `#276` in `test_input_return_to_main_menu.cpp` drives an Escape through a per-mode handler on a headless `Game(true)`
+with `HOME` redirected to an isolated temp dir (so `Player::getSavePath()` writes there), then reads the profile back: it
+failed before the fix (`fs::exists` false, load fell back to default bankroll 1000 != 98765) and passes after. Full suite
+276/276 (+1). §11 B7 row moved Open → Resolved with this hash; no JSON-schema change, no new profile field.
 
