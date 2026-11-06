@@ -4,6 +4,7 @@
 #include "Logger.hpp"
 #include <fstream>
 #include <filesystem>
+#include <chrono>
 
 namespace fs = std::filesystem;
 
@@ -42,7 +43,21 @@ PlayerProfile PlayerProfile::load(const std::string& filename)
     }
     catch (const std::exception& e)
     {
-        Logger::error() << "Error loading profile: " << e.what() << ". Starting fresh.";
+        // A corrupt or partially-written save must never be silently blanked: relocate it to a dated .corrupt.<ts>.json
+        // copy so the user can recover it, then start fresh WITHOUT overwriting the damaged file. The next successful
+        // save replaces that recovered copy via the atomic rename path in save().
+        std::error_code ec;
+        const auto epoch = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+                               .count();
+        const fs::path base(filename);
+        const fs::path recovered = base.parent_path() / (base.stem().string() + ".corrupt." + std::to_string(epoch) + base.extension().string());
+        fs::rename(base, recovered, ec);   // error_code overload returns void; inspect ec afterwards
+        if (ec)
+            Logger::warn() << "Could not relocate corrupt profile " << filename << ": " << ec.message();
+        else
+            Logger::error() << "Corrupt profile at " << filename << " relocated to " << recovered.string()
+                            << " (" << e.what() << "). Starting fresh.";
+
         return PlayerProfile();
     }
 }
@@ -52,13 +67,6 @@ void PlayerProfile::save(const std::string& filename) const
     // Ensure save directory exists
     fs::path p(filename);
     fs::create_directories(p.parent_path());
-
-    std::ofstream file(filename);
-    if (!file.is_open())
-    {
-        Logger::error() << "Error: could not open " << filename << " for writing.";
-        return;
-    }
 
     // Streamline persistence around a single source of truth. When there is recorded history, the career stats written to disk are
     // recomputed from those shoes via computeCareerStatsHistory --
@@ -90,8 +98,25 @@ void PlayerProfile::save(const std::string& filename) const
         reconciled.stats.sideBetProfitSum = authoritative.sideBetProfitSum;
     }
 
-    json j = reconciled;
-    file << j.dump(2);
+    // Atomic write: stream to a sibling .tmp file, then rename over the target. fs::rename within one filesystem is atomic
+    // on POSIX, so an interrupted or crashed write can never leave truncated JSON where a future load() would read it. The
+    // recovery path in load() moves any pre-existing damaged file aside first, making this overwrite safe.
+    const std::string tmp = filename + ".tmp";
+    {
+        std::ofstream out(tmp);
+        if (!out.is_open())
+        {
+            Logger::error() << "Error: could not open " << tmp << " for writing.";
+            return;
+        }
+        json out_json = reconciled;
+        out << out_json.dump(2);
+    }
+
+    std::error_code ec;
+    fs::rename(tmp, filename, ec);
+    if (ec)
+        Logger::error() << "Error: could not atomically move " << tmp << " to " << filename << ": " << ec.message();
 }
 
 const std::vector<ShoeRecord>& PlayerProfile::getLongHistory() const { return longHistory; }

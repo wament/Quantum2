@@ -70,6 +70,84 @@ TEST_CASE("Profiles saved before table settings existed still load with defaults
     fs::remove(path);
 }
 
+namespace {
+    // Isolated directory for B14 recovery tests: clean slate so a recovered .corrupt.<ts>.json from one run cannot be
+    // confused with another, keeping the "file survives" assertion unambiguous.
+    fs::path b14_dir(const std::string& tag)
+    {
+        const fs::path dir = fs::temp_directory_path() / ("bj_b14_" + tag);
+        fs::remove_all(dir);   // clean slate
+        fs::create_directories(dir);
+        return dir;
+    }
+} // namespace
+
+// B14 half 2 -- a truncated (corrupt) save must be relocated to a dated .corrupt.<ts>.json copy and never silently
+// blanked. Before the fix load() catches the parse error, logs "Starting fresh.", returns a default profile while
+// leaving the damaged file in place for the game's next save to overwrite; after the fix it relocates the bad file so
+// recovery stays possible. This is the whole defect expressed as an assertion: without the fix no .corrupt.* exists.
+TEST_CASE("B14: a truncated corrupt save is recovered under a .corrupt.<ts> name, not silently blanked", "[Schema][Persistence]")
+{
+    const fs::path dir = b14_dir("corrupt");
+    const fs::path save = dir / "player_profile.json";
+
+    // A partially-written file: valid-looking keys then cut off mid-object -- exactly what a crash/power-loss leaves.
+    {
+        std::ofstream f(save);
+        f << "{ \"name\": \"Ada\", \"bankroll\": 5000, ";   // truncated -> nlohmann throws on load
+    }
+
+    PlayerProfile p = PlayerProfile::load(save.string());
+    CHECK(p.getName() == "");       // fresh profile, as the recovery contract requires
+    CHECK(p.getBankroll() == 1000); // ...with the standard starting bankroll
+
+    // The damaged file must still be recoverable: load renamed it to a dated .corrupt.<ts>.json copy.
+    std::error_code ec;
+    bool recovered = false;
+    for (const auto& entry : fs::directory_iterator(dir, ec))
+        if (entry.path().filename().string().find(".corrupt.") != std::string::npos)
+            recovered = true;
+    CHECK(recovered);
+
+    // Nothing clobbers the recovered copy: a fresh save next to it leaves both files intact.
+    p.setBankroll(1234);
+    p.save(save.string());
+    fs::remove(save, ec);
+    bool still_recovered = false;
+    for (const auto& entry : fs::directory_iterator(dir, ec))
+        if (entry.path().filename().string().find(".corrupt.") != std::string::npos)
+            still_recovered = true;
+    CHECK(still_recovered);
+
+    fs::remove_all(dir);
+}
+
+// B14 half 3 -- a valid-but-partial JSON must keep its present core fields and fill the rest with defaults rather than
+// throwing on a missing key and discarding everything. Also asserts the atomic write leaves no .tmp behind after save.
+TEST_CASE("B14: partial-but-valid JSON keeps present fields; saves leave no temp file behind", "[Schema][Persistence]")
+{
+    const fs::path dir = b14_dir("partial");
+    const fs::path save = dir / "player_profile.json";
+
+    // Valid JSON, but missing name/stats/longHistory -- only bankroll present.
+    {
+        std::ofstream f(save);
+        f << "{ \"bankroll\": 5000 }";
+    }
+
+    PlayerProfile q = PlayerProfile::load(save.string());
+    CHECK(q.getBankroll() == 5000);   // the present field is kept (throws -> fresh -> 1000 before the fix)
+    CHECK(q.getName() == "");         // missing fields fall back to their defaults
+
+    // The atomic write must leave no sibling temp file once save returns.
+    q.setBankroll(777);
+    q.save(save.string());
+    std::error_code ec;
+    CHECK(!fs::exists(save.string() + ".tmp", ec));
+
+    fs::remove_all(dir);
+}
+
 // B15 regression guard: exactly one Serialization.hpp must exist anywhere in the repo (outside the build tree), so a
 // future schema edit cannot silently diverge the shipped copy from the tested copy. Counts by walking the project root
 // derived from this file's own location, which keeps the check correct regardless of the working directory ctest runs

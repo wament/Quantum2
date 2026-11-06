@@ -214,10 +214,13 @@ inline void to_json(json& j, const PlayerProfile& p)
 
 inline void from_json(const json& j, PlayerProfile& p)
 {
-    j.at("name").get_to(p.name);
-    j.at("bankroll").get_to(p.bankroll);
-    j.at("stats").get_to(p.stats);
-    j.at("longHistory").get_to(p.longHistory);
+    // Core fields read additively (j.value with the struct's own default) so a file missing one key degrades instead of
+    // throwing -- consistent with every other additive field, and required by B14 so a partial save keeps its present
+    // fields rather than being discarded to a fresh profile. name/bankroll/stats/longHistory all carry defaults below.
+    p.name = j.value("name", std::string{});
+    p.bankroll = j.value("bankroll", 1000);
+    p.stats = j.value("stats", PlayerStats{});
+    p.longHistory = j.value("longHistory", std::vector<ShoeRecord>{});
     // additive: absent "currentHistory" keeps its default (empty) so legacy mid-shoe-quit saves before this field still load.
     p.currentHistory = j.value("currentHistory", std::vector<RoundRecord>{});
     // additive: missing key falls back to default; pre-table-settings profiles still load.
