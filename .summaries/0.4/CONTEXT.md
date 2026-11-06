@@ -10,14 +10,20 @@ history; this file is the authority on current defects.
 used only afterwards to explain what was observed. Where a claim is code-only (not reproduced on screen) it is
 labelled as such.
 
+**Status: audited 2026-11-06 against `96fd416` on branch `3.1`.** Baseline re-measured at 264/264 passing; every
+`file:line` citation re-checked and correct; the B13 proof re-run and reproducing. Several *structural* claims in
+the first revision were wrong and have been corrected in place — the audit log in §13 lists exactly which, so you
+can tell a verified claim from an inherited one. Read §13 before treating any statement here as settled.
+
 ---
 
 ## 1. Project snapshot
 
 - **What:** Desktop blackjack simulator — Kelly betting, Hi-Lo/Reko counting, basic-strategy advisor, per-shoe
   analytics, replay/shoe history, player profiles, side bets, strategy trainer, tournament, achievements.
-- **Stack:** C++17 (tests C++20), SFML 3.0 (Graphics/Window/System/Audio/Network), CMake ≥3.10, Catch2 v3.6,
-  vendored nlohmann/json in `include/nlohmann`.
+- **Stack:** C++17 for the game, C++20 for the tests (`CMakeLists.txt:4` and `:198`); SFML 3.x — `CMakeLists.txt`
+  requires ≥3.0 and this machine has **3.1.0** (`find_package` reports "Found SFML 3.1.0"); CMake ≥3.10; Catch2
+  **v3.6.0** pulled by `FetchContent` (`CMakeLists.txt:124-130`); vendored nlohmann/json in `include/nlohmann`.
 - **Build:** `cmake --preset "GCC 13.3.0 x86_64-linux-gnu"` → `out/build/GCC 13.3.0 x86_64-linux-gnu/`.
 - **Test:** `ctest --test-dir 'out/build/GCC 13.3.0 x86_64-linux-gnu'`. Baseline **264/264 pass**.
 - **Entry:** `main.cpp` → `Game::run()` (`src/Game.cpp:185`).
@@ -25,12 +31,14 @@ labelled as such.
   (`getSavePath()`, `src/Player.cpp:14-25`; falls back to `saves/player_profile.json` if `HOME` is unset).
 - **Window:** 1600×900 default, resizable (`Constants::WINDOW_WIDTH/HEIGHT`).
 
-**Working tree is dirty — every line number in these two docs refers to the working tree, not `HEAD`.** At the
-time of writing, 11 files carry uncommitted changes (584 insertions / 465 deletions), mostly the Tournament
-refactor: `include/{Game,GameRenderer,Tournament}.hpp`, `src/{Game,GameRenderer,InputHandler,RoundEngine,
-SessionLifecycle,Tournament}.cpp`, `tests/test_{rendering,tournament_mode}.cpp`. Two of the files this phase must
-change — `src/SessionLifecycle.cpp` (B1) and `src/GameRenderer.cpp` (B2/B3/U1–U3) — are in that set. Commit or
-stash that work before starting 0.4, or the diffs will be hard to read.
+**The working tree is clean, and every line number in these two docs is accurate against `HEAD`.** An earlier
+revision of this file warned that 11 files carried uncommitted Tournament-refactor changes and that line numbers
+referred to the working tree rather than `HEAD`. That work has since landed as **`96fd416 "new horizons"`** on
+branch `3.1`, together with these three documents. On **2026-11-06** every `file:line` citation in this file and
+in `NEXT_STEPS.md` was re-checked against that commit; the citations held, including the fiddly ones
+(`Game.cpp:483`, `Game.cpp:766`, `Game.cpp:1340`/`:1499`, `RoundDealer.cpp:35`/`:45`/`:46`,
+`GameRenderer.cpp:1020-1023`, `GameRecord.hpp:307`, `PlayerProfile.hpp:66`, `Constants.hpp:270`). Trust the line
+numbers. What did *not* hold were several structural claims, and those are corrected in place — see §13.
 
 ## 2. Posture change entering 0.4
 
@@ -98,15 +106,36 @@ Two things worth internalising before touching this code:
 ## 5. Persistence and the data model
 
 **File:** `$HOME/.local/share/blackjack/saves/player_profile.json` (`getSavePath()`, `src/Player.cpp:14-25`;
-falls back to `saves/player_profile.json` when `HOME` is unset). Written by `PlayerProfile::save()`
-(`src/PlayerProfile.cpp:50-95`), read by `PlayerProfile::load()` (`:28-48`), shaped by
-`to_json`/`from_json` (`include/Serialization.hpp:193-231`).
+falls back to `Constants::PLAYER_FILE_FALLBACK` = `saves/player_profile.json` when `HOME` is unset,
+`include/Constants.hpp:239`). Written by `PlayerProfile::save()` (`src/PlayerProfile.cpp:50-95`), read by
+`PlayerProfile::load()` (`:28-48`), shaped by `to_json`/`from_json` (`include/Serialization.hpp:191-231`).
 
 **⚠ There are two copies of this header, and both are live.** `src/Serialization.hpp` (236 lines) and
-`include/Serialization.hpp` (231 lines) are code-identical today — `diff` shows comment-only divergence — but
-`src/PlayerProfile.cpp` compiles the `src/` copy (quoted includes check the includer's directory first) while
-`tests/test_achievements.cpp` compiles the `include/` copy. Editing the wrong one makes a test pass against a
-binary that never changed. **Resolve B15 before touching this schema.** See NEXT_STEPS B15.
+`include/Serialization.hpp` (231 lines) are code-identical today — strip whole-line `//` comments
+(`grep -v '^\s*//'`) and the two files diff **empty** at 211 lines each. So nothing is broken, which is precisely
+why this is dangerous: the divergence is invisible until someone edits one copy.
+
+The split is **worse than the first draft of this document said.** It is not "the game vs. one achievement test" —
+the two tests that actually lock the save schema both read the `include/` copy:
+
+| TU | Resolves to | Why |
+|---|---|---|
+| `src/PlayerProfile.cpp` — the only TU that puts the schema into the **shipped binary** | **`src/Serialization.hpp`** | quoted includes check the includer's own directory first |
+| `tests/test_profile_settings.cpp` | **`include/Serialization.hpp`** | `#include <Serialization.hpp>`; no copy in `tests/`, so it falls through to `-I include` |
+| `tests/test_game_rules.cpp` | **`include/Serialization.hpp`** | same |
+| `tests/test_achievements.cpp` | **`include/Serialization.hpp`** | same |
+| `.summaries/0.4/hist_proof.cpp` (§6.10) | **`src/Serialization.hpp`** | it compiles `src/PlayerProfile.cpp` directly |
+
+The practical consequence for this phase: **a B13 or B12 fix written into `include/Serialization.hpp` turns the
+suite green while the shipped binary stays byte-for-byte unchanged.** The proof program in §6.10 reads the *other*
+copy, so it would keep reporting the bug after a "successful" fix. Verify with:
+
+```bash
+g++ -std=c++17 -I include -M src/PlayerProfile.cpp | tr ' ' '\n' | grep Serialization.hpp
+# -> src/Serialization.hpp
+```
+
+**Resolve B15 before touching this schema.** See NEXT_STEPS B15.
 
 **Top-level keys actually written today** (verified against a live file):
 
@@ -114,7 +143,7 @@ binary that never changed. **Resolve B15 before touching this schema.** See NEXT
 |---|---|---|---|
 | `name` | ✔ | `j.at()` **throws if absent** | always `""` — nothing ever sets it (U7) |
 | `bankroll` | ✔ | `j.at()` **throws if absent** | default 1000 (`PlayerProfile.hpp:66`) |
-| `stats` | ✔ | `j.at()` **throws if absent** | 24 fields; newer ones use `j.value()` defaults |
+| `stats` | ✔ | `j.at()` **throws if absent** | 26 fields; newer ones use `j.value()` defaults |
 | `longHistory` | ✔ | `j.at()` **throws if absent** | completed shoes only; grows forever (T2) |
 | `preferredPlayerCount/Speed/CountingStyle` | ✔ | `j.value()` + default | |
 | `preferredSoundVolume/MusicVolume/Muted` | ✔ | `j.value()` + default | |
@@ -215,17 +244,17 @@ Recorded so the next window does not re-litigate them.
 
 ### 6.10 B13 — the standalone proof (reproducible in 30 seconds)
 
-`/tmp/hist_proof.cpp` drives the real `PlayerProfile` with no game, no display and no test framework:
+`.summaries/0.4/hist_proof.cpp` drives the real `PlayerProfile` with no game, no display and no test framework:
 
 ```bash
 cd /home/william-ament/Documents/Quantum2
-g++ -std=c++17 -I include -I /usr/local/include /tmp/hist_proof.cpp \
+g++ -std=c++17 -I include -I /usr/local/include .summaries/0.4/hist_proof.cpp \
     src/PlayerProfile.cpp src/Logger.cpp \
     -o /tmp/hist_proof -L/usr/local/lib -lsfml-graphics -lsfml-system
-/tmp/hist_proof
+/tmp/hist_proof   # exits 1 while B13 is open
 ```
 
-Output:
+Re-run **2026-11-06** at `96fd416`; output is byte-identical to the original finding:
 
 ```
 reload #1: handsFinished=8  shoes=1   (expected 8)
@@ -237,8 +266,13 @@ The program: add 5 rounds → `addShoeRecord()` → add 3 rounds → `save()` �
 `load()`. The career hand count goes **backwards** across a save that added a hand. Port this verbatim into
 `tests/test_profile_settings.cpp` as the regression test.
 
-*Note:* `/tmp` does not survive a reboot. Re-create the file from this section if it is gone — the sequence above
-is the whole program's logic.
+*Note:* this proof originally lived at `/tmp/hist_proof.cpp` and did not survive a reboot — that is why it is now
+checked in beside these docs. Two things to keep in mind when you run it:
+
+- It compiles `src/PlayerProfile.cpp`, so it exercises **`src/Serialization.hpp`**, not the `include/` copy the
+  test suite reads (§5). After the B13 fix lands, re-run it to confirm the *shipped* schema changed and not just
+  the tested one.
+- It writes `/tmp/hist_proof_profile.json`, never the real save file. Safe to run with a live profile present.
 
 ---
 
@@ -261,8 +295,17 @@ These are load-bearing; several bugs above are deviations from them.
 
 ## 8. Environment notes and doc drift
 
-**Verified on this machine:** `Xvfb` ✔, ImageMagick `import` ✔, `xwd` ✔, `convert` ✔, python3 +
-`python-xlib 0.33` ✔. **`xdotool` ✘ and `scrot` ✘ are not installed** — don't write a repro recipe around them.
+**Verified on this machine** (re-checked 2026-11-06): `Xvfb` ✔, ImageMagick `import` ✔, `xwd` ✔, `convert` ✔,
+python3 + `python-xlib 0.33` ✔. **`xdotool` ✘ and `scrot` ✘ are not installed** — don't write a repro recipe
+around them.
+
+**⚠ Never append `-M` to a command copied out of `compile_commands.json`.** The CMake compile line ends in
+`-MD -MT <obj> -MF <dep> -o <obj> -c <src>`. Adding `-M` switches GCC to dependency mode, and in that mode the
+dependency list is written to the `-o` **target** — i.e. straight over the `.o` file. The object is silently
+replaced with text, the next link dies with `file format not recognized; treating as linker script`, and the
+blame lands on whatever you edited last. This was hit for real on 2026-11-06 while auditing B15: four objects were
+clobbered and had to be deleted before the build would link again. Run the sweep with a hand-written include list
+and no `-o` (so deps go to stdout), and if you must reuse a real compile command, strip `-o`/`-c` first.
 
 Driving the game headlessly:
 
@@ -291,6 +334,11 @@ Two things that cost time and are worth repeating:
 3. **Tests are one Catch2 binary**, `Blackjack2Tests`, with an **explicit source list** in `CMakeLists.txt:132` —
    not a glob. Adding a new `tests/*.cpp` means editing that list. It links `SFML::Graphics` **and**
    `SFML::Audio` (SoundManager is in the test binary).
+4. **The installed SFML is 3.1.0, not 3.0.** `CMakeLists.txt` asks for `find_package(SFML 3.0 …)`, which resolves
+   to the 3.1.0 install under `/usr/local`. Nothing in 0.4 depends on the difference; the note is here so nobody
+   "fixes" the version or reads a 3.0-specific behaviour into a bug.
+
+Items 1–3 were re-checked on 2026-11-06 and still hold.
 
 ---
 
@@ -331,27 +379,33 @@ Defaults if nobody answers: 1(a), 2(a), 3 = $1,000 everywhere, 4 = expose, 5 = k
 
 Update this table as work lands; it is the first thing the next window should read.
 
-| ID | Sev | Title | Status |
-|---|---|---|---|
-| B1 | 🔴 | Tournament overwrites career profile | **Open — reproduced** |
-| B2 | 🔴 | Achievement toast never clears | **Open — reproduced** |
-| B3 | 🔴 | Side bet always reports "WON" | **Open — reproduced** |
-| B4 | 🔴 | Reko seed ignores deck count | **Open — reproduced** |
-| B13 | 🔴 | Mid-shoe quit deletes those hands from career stats | **Open — proven standalone** |
-| B5 | 🟠 | Main bet not escrowed; bankroll can go negative | Open — code-verified |
-| B6 | 🟠 | Rules panel key repeat | **Open — reproduced** |
-| B7 | 🟠 | Escape-quit skips the save | **Open — reproduced** |
-| B8 | 🟠 | `Deck::draw()` no empty guard | Known (0.3 §6) |
-| B9 | 🟠 | Flaky crash + unflushable logger | Open — crash unrepro |
-| B14 | 🟠 | Non-atomic save; corrupt file → silent wipe | Open — code-verified |
-| B15 | 🟠 | Two live copies of `Serialization.hpp` (game vs tests) | **Open — proven via `g++ -M`** |
-| B10 | 🟡 | `maxSplitHands` dead config | Open |
-| B11 | 🟡 | Control banner mislabels keys | Open |
-| B12 | 🟡 | `resplitTentsAllowed` typo in save schema | Open |
-| U1–U10 | 🟡 | UI/UX set (see NEXT_STEPS Phase 4) | Open |
-| T1–T2 | 🟢 | Save amplification; unbounded history | Open |
-| — | ✅ | `handActions` indexing | **Cleared — not a bug** |
-| — | ✅ | Settlement math | **Cleared — correct** |
+**Re-audited 2026-11-06 at `96fd416`: nothing has landed. All 15 defects (B1–B15) plus U1–U10, T1–T2 and B16 are
+still open.** Each row below was re-checked against the source rather than trusted from the previous revision —
+the "Evidence" column now says what the 2026-11-06 check actually was, which for several items is weaker than the
+word "reproduced" implied.
+
+| ID | Sev | Title | Status | Evidence as of 2026-11-06 |
+|---|---|---|---|---|
+| B1 | 🔴 | Tournament overwrites career profile | **Open** | Mechanism re-confirmed in code: `SessionLifecycle.cpp:34` `players.clear()` + `:35` NPC ctor. Playtest repro not re-run this pass |
+| B2 | 🔴 | Achievement toast never clears | **Open** | Re-confirmed by grep: one write (`AchievementFeeder.cpp:48`), one read (`GameRenderer.cpp:154`), zero clears; no `achievementToastTimer` symbol exists |
+| B3 | 🔴 | Side bet always reports "WON" | **Open** | Re-confirmed in source: `GameRenderer.cpp:1000` still tests the sign after `abs()` |
+| B4 | 🔴 | Reko seed ignores deck count | **Open** | Re-confirmed: `Game.cpp:254` and `Deck.cpp:71` both use `Constants::NUM_DECKS` (6) |
+| B13 | 🔴 | Mid-shoe quit deletes those hands from career stats | **Open — re-proven** | `hist_proof.cpp` re-run 2026-11-06, output identical (§6.10) |
+| B5 | 🟠 | Main bet not escrowed; bankroll can go negative | Open | `Player.cpp:89` still a bare affordability check; no `getAvailableBankroll` in the tree. Negative balance not re-reproduced on screen |
+| B6 | 🟠 | Rules panel key repeat | **Open** | `Game.cpp:383-388` still polls held keys with no edge detection |
+| B7 | 🟠 | Escape-quit skips the save | **Open** | No `persistOnExit`; save still only in the `Event::Closed` branch (`InputHandler.cpp:247-257`) |
+| B8 | 🟠 | `Deck::draw()` no empty guard | Known (0.3 §6) | Two unguarded `back()`/`pop_back()` pairs confirmed at `Deck.cpp:121-135` |
+| B9 | 🟠 | Flaky crash + unflushable logger | Open — crash unrepro | `Logger.cpp:34` still writes `std::cout` with no flush/unitbuf |
+| B14 | 🟠 | Non-atomic save; corrupt file → silent wipe | Open | `save()` plain `ofstream`; `load()` catch → `return PlayerProfile()` |
+| B15 | 🟠 | Two live copies of `Serialization.hpp` | **Open — proven, and worse than stated** | `src/PlayerProfile.cpp` → `src/` copy; `test_profile_settings.cpp`, `test_game_rules.cpp`, `test_achievements.cpp` → `include/` copy (§5) |
+| B10 | 🟡 | `maxSplitHands` dead config | Open | Enforced at `Game.cpp:777` / `RoundEngine.cpp:121`; absent from `to_json` and `gameRuleRows()` |
+| B11 | 🟡 | Control banner mislabels keys | Open | `Game.cpp:162-163` vs real bindings `InputHandler.cpp:591-602` |
+| B12 | 🟡 | `resplitTentsAllowed` typo in save schema | Open | Still the on-disk key: `GameRules.hpp:54`/`:66` |
+| B16 | 🟡 | `reconstructDeckAtRound()` dead and wrong | Open | Still zero callers; sole occurrence is its own definition at `GameRecord.hpp:307` |
+| U1–U10 | 🟡 | UI/UX set (see NEXT_STEPS Phase 4) | Open | Not re-verified on screen this pass; cited renderer lines all resolve to the claimed functions |
+| T1–T2 | 🟢 | Save amplification; unbounded history | Open | `HandEvaluator.cpp:297` still saves every settled round |
+| — | ✅ | `handActions` indexing | **Cleared — not a bug** | Do not "fix" without also changing turn order (§6.9) |
+| — | ✅ | Settlement math | **Cleared — correct** | |
 
 ## 12. How to use these two files
 
@@ -366,3 +420,55 @@ append any decision to §5. Keep commits one-bug-one-commit.
 
 If a fix reveals that a finding here is wrong, **correct this file** rather than quietly working around it — the
 next window trusts it.
+
+## 13. Document audit log
+
+These documents are load-bearing, so they get audited like code. Each entry records what was checked, against
+what, and what changed. If you correct something, add a bullet here — a silent edit is how the next window ends up
+trusting a stale claim again.
+
+### 2026-11-06 — full claim audit against `96fd416` (branch `3.1`)
+
+Method: re-ran configure/build/`ctest -j8`; re-checked every `file:line` citation in both docs against the source;
+re-ran the B13 standalone proof; re-derived the B15 include split with `g++ -M`; re-checked the §8 environment
+list. **No code was changed in this pass — it is a documentation-only revision.**
+
+Corrected:
+
+1. **§1 / NEXT_STEPS header — "the working tree is dirty" was false.** The Tournament refactor landed as
+   `96fd416`, taking these docs with it. Replaced with a clean-tree statement plus the note that the citations were
+   re-verified against that commit.
+2. **B15 prescribed a CMake edit for a file CMake never referenced.** The fix said to remove `src/Serialization.hpp`
+   "from both `add_executable` source lists (it is listed as a source in each)". It is in neither, and in fact
+   appears nowhere in `CMakeLists.txt`. Deleting the file is the whole build-side change.
+3. **B15 understated its own blast radius.** It named `test_achievements.cpp` as the only `include/`-copy consumer.
+   `test_profile_settings.cpp` and `test_game_rules.cpp` — the two tests that lock the save schema, and the ones
+   B10/B12/B13/B14 all extend — also read the `include/` copy. Rewritten in §5 with a full consumer table and the
+   proof command. This is what turns B15 from a tidiness item into a prerequisite.
+4. **B1 named three save sites where there are six**, and mislabelled two of them (`InputHandler.cpp:117` is
+   `:119` QuitToMenu; the window-close save is `:254`, not `:252`; `:104` is **Restart**, not Quit-to-Menu). Added
+   the full table, and the `players.clear()` at `SessionLifecycle.cpp:34` that explains the Stats-Dashboard
+   symptom.
+5. **B13's proof program no longer existed.** `/tmp/hist_proof.cpp` did not survive a reboot. Re-created as
+   `.summaries/0.4/hist_proof.cpp`, re-run, output byte-identical to the recorded finding. §6.10 now points at the
+   checked-in copy and warns that it exercises the `src/` schema copy.
+6. **B13 gained two implementation hazards** the original entry missed: `addShoeRecord()` discards the caller's
+   `rounds` (`PlayerProfile.cpp:20-26`), and `SessionLifecycle.cpp:100-110` already de-duplicates rounds that land
+   in both `currentHistory` and the stale `currentShoeRecord` mirror — a path the fix can disturb.
+7. **Counts and versions.** `stats` is 26 fields, not 24. The defect count is 15 (B1–B15), not 14. SFML is 3.1.0
+   installed against a ≥3.0 requirement. Comment-stripped `Serialization.hpp` is 211 lines, not 194. Catch2 pinned
+   v3.6.0 at `CMakeLists.txt:124-130`.
+8. **NEXT_STEPS verification gate** no longer runs under `env ASAN_OPTIONS=detect_leaks=0`. The doc's own §8 says
+   that variable is a no-op in this build, so leaving it in the gate advertised protection the build does not have.
+   Gate now uses `-j8`.
+9. **§11 tracker** gained an Evidence column stating what each 2026-11-06 check actually established. Several rows
+   previously read "reproduced" on the strength of a playtest that this pass did not re-run; they now say so. B16
+   was missing from the tracker entirely and has been added.
+10. **New §8 warning about `-M` and `compile_commands.json`,** learned the hard way while auditing B15: replaying a
+    CMake compile command with `-M` appended overwrites the `.o` with the dependency list, and the resulting link
+    failure looks like it was caused by your most recent edit. Four objects were clobbered and deleted during this
+    audit; the build and suite are back to 264/264. The recovery one-liner is recorded in NEXT_STEPS B15 step 3.
+
+Confirmed accurate, no change needed: every `file:line` citation listed in §1; the §3 blind-spot analysis; the §4
+architecture map; the §5 two-tier read contract and `gameRules` key list; §6.1–§6.9 evidence; §7 conventions; §8
+drift items 1–3; §9; §10.

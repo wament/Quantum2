@@ -6,9 +6,9 @@ specific file:line. Companion document: `.summaries/0.4/CONTEXT.md` — read it 
 architecture and guardrails.
 
 **Posture change from 0.3:** feature work stays frozen. This phase is defect removal + the missing test seam.
-The suite is **264/264 green** while **14 logic/data defects and 10 UI issues** exist. That gap is the theme of
-this phase: every bug lives in the presentation/lifecycle seam that the headless-first contract deliberately
-leaves untested.
+The suite is **264/264 green** while **15 logic/data defects (B1–B15) and 10 UI issues (U1–U10)** exist, plus
+three tech-debt items (T1, T2, B16). That gap is the theme of this phase: every bug lives in the
+presentation/lifecycle seam that the headless-first contract deliberately leaves untested.
 
 **Handoff prompt — paste into a fresh window:**
 
@@ -25,20 +25,23 @@ leaves untested.
 ```bash
 cmake --preset "GCC 13.3.0 x86_64-linux-gnu"
 cmake --build 'out/build/GCC 13.3.0 x86_64-linux-gnu' --parallel
-env ASAN_OPTIONS=detect_leaks=0 ctest --test-dir 'out/build/GCC 13.3.0 x86_64-linux-gnu' --output-on-failure
+ctest --test-dir 'out/build/GCC 13.3.0 x86_64-linux-gnu' -j8 --output-on-failure
 ```
 
-Baseline at time of writing: **264/264 pass in ~8s** (`-j8`) — re-verified when this document was written. Never
-commit with a lower count than you started.
+Baseline: **264/264 pass in ~8s** (`-j8`). Re-verified **2026-11-06** at commit `96fd416`: 264/264 in 8.15 s,
+configure and build clean (warnings only — the pre-existing `[=]` implicit-`this` deprecation in
+`GameRenderer.cpp`'s `modeTable()` lambdas). Never commit with a lower count than you started.
 
-> **The working tree is not clean.** 11 files carry uncommitted Tournament-refactor changes, including
-> `src/SessionLifecycle.cpp` and `src/GameRenderer.cpp`, both of which this phase must edit. Commit or stash
-> first. All line numbers in these two docs refer to the **working tree**, not `HEAD`. See CONTEXT.md §1.
+> **The working tree is clean.** The Tournament refactor this document used to describe as "uncommitted" landed
+> as `96fd416 "new horizons"` on branch `3.1`, and it carried the `.summaries/0.4/` docs in with it. Every line
+> number in these two docs was re-checked against that commit on 2026-11-06 and is accurate. See CONTEXT.md §1.
 
-> **Correction to the 0.3 docs:** the configured build dir has **no AddressSanitizer**
-> (`CMakeCache.txt` has no `-fsanitize`; `nm Blackjack2 | grep -c asan_report` == 0). The 0.3 note about
-> "~75 SFML tests failing at exit from libdbus LeakSanitizer teardown" does **not** apply to this build —
-> `ASAN_OPTIONS` is a no-op here. Do not chase it. See CONTEXT.md §8 (doc drift).
+> **Do not put `ASAN_OPTIONS` in the gate.** An earlier revision of this gate ran
+> `env ASAN_OPTIONS=detect_leaks=0 ctest …`. The configured build dir has **no AddressSanitizer**
+> (`CMakeCache.txt` has no `-fsanitize`; `nm Blackjack2 | grep -c asan_report` == 0), so that variable is a no-op
+> and only makes the gate look like it does something the build cannot support. The 0.3 note about "~75 SFML tests
+> failing at exit from libdbus LeakSanitizer teardown" does **not** apply to this build. If you want ASan — and
+> B8/B9 argue you should — configure it explicitly in a separate build dir. See CONTEXT.md §8 (doc drift).
 
 ---
 
@@ -64,6 +67,13 @@ commit with a lower count than you started.
 | U1–U10 | 🟡 Medium | UI/UX defects (see Phase 4) | various | 4 |
 | T1–T2 | 🟢 Low | Save-write amplification; unbounded history | `src/HandEvaluator.cpp:297` | 5 |
 | B16 | 🟡 Medium | `reconstructDeckAtRound()` is dead code and reconstructs from the wrong end | `include/GameRecord.hpp:307-329` | 5 |
+
+**Every "Primary site" above was re-checked against `96fd416` on 2026-11-06 and is correct**, as is every
+`file:line` citation in the body of this document — the citations are the reliable part of these docs. What the
+audit did find were errors in the *structural* claims around those citations: a stale dirty-tree warning, B1
+naming three save sites where there are six, B15 prescribing a CMake edit for a file CMake never referenced, and
+B15 understating which translation units read which header. Those are corrected in place; the running list is in
+CONTEXT.md §13.
 
 **Not a bug (investigated and cleared):** `handActions` flat-indexing looks wrong when `split()`
 (`src/Game.cpp:766`) appends at the end, but is safe because seats act strictly in order, so later slots are still
@@ -120,10 +130,30 @@ game.players[0].setBankroll(config.startingChips); // tournament chips are in-me
 ```
 
 Then make the tournament genuinely non-persisting. **Preferred:** gate the profile writes behind
-`Game::tournamentActive_` at the three save sites — `src/HandEvaluator.cpp:297`, `src/InputHandler.cpp:117`
-(QuitToMenu) and `src/InputHandler.cpp:252` (window close). Alternative: snapshot the real profile on entry and
-restore on exit. Prefer gating — it matches the intent that a tournament is a competition, not career progress,
-and record the decision in CONTEXT.md §5.
+`Game::tournamentActive_`.
+
+**There are six `saveProfile()` call sites, not three.** The first draft of this entry named three and got two of
+their line numbers wrong; gating only those three leaves four unguarded and the profile still gets clobbered. The
+complete set, verified 2026-11-06:
+
+| Site | Path | Note |
+|---|---|---|
+| `src/HandEvaluator.cpp:297` | every settled round | also T1's write-amplification site |
+| `src/InputHandler.cpp:104` | pause → **Restart** | the draft mislabelled this one as Quit-to-Menu |
+| `src/InputHandler.cpp:119` | pause → **QuitToMenu** | |
+| `src/InputHandler.cpp:254` | **window close** (`Event::Closed`) | the B1 repro route; draft said `:252` |
+| `src/Game.cpp:1342` | shoe boundary | |
+| `src/Game.cpp:1501` | shoe boundary (second path) | |
+
+Note also *when* the damage is done: `startTournamentSession()` calls `game.players.clear()`
+(`src/SessionLifecycle.cpp:34`) **before** pushing the ephemeral seat, so the loaded career profile is destroyed
+the instant Tournament is entered — not at save time. That is the mechanism behind the second symptom (the Stats
+Dashboard reading zeros), and it is why gating the writes is not sufficient on its own: the constructor fix at
+`:35` is what preserves the in-memory profile, and the gates are what stop a tournament session writing its
+throwaway chips and empty stats over the career file.
+
+Alternative: snapshot the real profile on entry and restore on exit. Prefer gating — it matches the intent that a
+tournament is a competition, not career progress, and record the decision in CONTEXT.md §5.
 
 **Test.** New headless case in `tests/test_session_lifecycle.cpp`:
 1. Build a profile with a non-zero bankroll + one round of history and save it.
@@ -241,8 +271,8 @@ rebuilds a 6-deck shoe.
 
 ## B13 — Quitting mid-shoe deletes those hands from career stats 🔴
 
-**Proven, not inferred.** A standalone program against the real `PlayerProfile` code
-(`/tmp/hist_proof.cpp`, build in CONTEXT.md §6.10) shows the career hand count moving **backwards**:
+**Proven, not inferred — and re-proven 2026-11-06.** A standalone program against the real `PlayerProfile` code
+(`.summaries/0.4/hist_proof.cpp`, build in CONTEXT.md §6.10) shows the career hand count moving **backwards**:
 
 ```
 reload #1: handsFinished=8  shoes=1   (expected 8)   <- correct
@@ -254,10 +284,11 @@ window. Nothing else required.
 
 **Root cause — two correct-looking halves that don't compose.**
 
-1. `to_json(const PlayerProfile&)` (`include/Serialization.hpp:193-210`) persists `longHistory` but **not
-   `currentHistory`** — the in-progress shoe's rounds are simply never written. (`grep -rn currentHistory
-   include/ src/` finds it in `PlayerProfile.hpp/.cpp` and two comments only; it appears nowhere in
-   `Serialization.hpp`.)
+1. `to_json(const PlayerProfile&)` (`include/Serialization.hpp:191-210`; `from_json` is `:212-231`) persists
+   `longHistory` but **not `currentHistory`** — the in-progress shoe's rounds are simply never written. Verified
+   2026-11-06: `grep -rn currentHistory include/ src/` finds it only in `PlayerProfile.hpp` (the member plus one
+   comment), `PlayerProfile.cpp` (the member's four uses plus one comment) and two comments in
+   `SessionLifecycle.cpp:101-102`. It appears in **neither** copy of `Serialization.hpp`.
 2. `PlayerProfile::save()` (`src/PlayerProfile.cpp:68-91`) treats the record as the source of truth: when
    `longHistory` is non-empty it **overwrites** every record-derivable stat with `careerStatsFromHistory()`.
 
@@ -288,13 +319,30 @@ p.currentHistory = j.value("currentHistory", std::vector<RoundRecord>{});
 ```
 
 That alone makes the recompute correct, because `careerStatsFromHistory()` already knows how to fold
-`currentHistory` in. Two supporting changes:
+`currentHistory` in.
+
+**Two hazards the first draft of this entry missed.** Both were found by reading the code on 2026-11-06; neither
+is theoretical, and the second one is the reason this fix can *introduce* a bug while fixing one.
+
+- **`addShoeRecord()` ignores the rounds you hand it.** `src/PlayerProfile.cpp:20-26` copies the argument, then
+  overwrites `shoe.rounds = currentHistory` and clears `currentHistory`. So a shoe's rounds always come from
+  `currentHistory`, never from the caller's `game.currentShoeRecord`. This is what makes the additive fix safe
+  (no double count: the move clears the source), but it also means the parameter's `rounds` field is dead — do not
+  "improve" the fix by populating it.
+- **A round can already be stored twice, and there is a guard for it.** `src/SessionLifecycle.cpp:100-110`
+  de-duplicates by fingerprint (`dealerCards` + `playerHands`) because a settled round lands in **both**
+  `profile.currentHistory` and `game.currentShoeRecord.rounds`, and the stale mirror survives `addShoeRecord()`.
+  Once `currentHistory` round-trips through disk, that mirror relationship survives a reload too. If you also take
+  the "call the shoe-flush on window close" option below, re-check this dedupe path — the dashboard is the surface
+  where a double count would appear.
+
+Two supporting changes:
 - Call the existing shoe-flush in the window-close handler (`src/InputHandler.cpp:247-257`) so it matches the
   Quit-to-Menu path, or accept the additive field as sufficient and note why.
 - Add a debug assertion in `save()` that a save never *decreases* `handsFinished` relative to the in-memory
   stats — that invariant is what would have caught this class of bug at development time.
 
-**Test.** `tests/test_profile_settings.cpp`, mirroring `/tmp/hist_proof.cpp` exactly: complete a shoe, add 3
+**Test.** `tests/test_profile_settings.cpp`, mirroring `.summaries/0.4/hist_proof.cpp` exactly: complete a shoe, add 3
 rounds, save, reload, add 1 round, save, reload, assert `handsFinished == 9`. Assert a legacy profile with no
 `currentHistory` key still loads. **This test fails against the current code** — write it first.
 
@@ -465,27 +513,53 @@ in. Add a round-trip test that a save leaves no `.tmp` behind.
 **Do this before B12/B13/B14.** They all edit this header, and there are two of them.
 
 **Evidence.** `src/Serialization.hpp` (236 lines) and `include/Serialization.hpp` (231 lines) both exist.
-`diff` shows the divergence is **comments only** — strip comments and the code is byte-identical (194 lines each).
-So nothing is broken today, which is exactly why this is dangerous.
+`diff` shows the divergence is **comments only** — `grep -v '^\s*//'` on each leaves 211 identical lines, and the
+diff between them is empty. So nothing is broken today, which is exactly why this is dangerous.
 
 Both are live, and different consumers get different files:
 
 | TU | Resolves to | Why |
 |---|---|---|
 | `src/PlayerProfile.cpp` | **`src/Serialization.hpp`** | quoted includes search the includer's own directory first — proven with `g++ -std=c++17 -I include -M src/PlayerProfile.cpp` |
-| `tests/test_achievements.cpp` | **`include/Serialization.hpp`** | `tests/` has no `Serialization.hpp`, so it falls through to `-I include` |
+| `tests/test_profile_settings.cpp` | **`include/Serialization.hpp`** | `tests/` has no `Serialization.hpp`, so it falls through to `-I include` |
+| `tests/test_game_rules.cpp` | **`include/Serialization.hpp`** | same |
+| `tests/test_achievements.cpp` | **`include/Serialization.hpp`** | same |
+
+**This is worse than the first draft of this entry claimed.** The original table listed only
+`test_achievements.cpp` as an `include/`-copy consumer, which made the hazard sound hypothetical. In fact the two
+tests that lock the save schema — `test_profile_settings.cpp` (B12, B13, B14 all add cases here) and
+`test_game_rules.cpp` (B10) — read the copy the shipped binary **never compiles**. `src/PlayerProfile.cpp` is the
+only TU that puts this schema into the game, and it reads the other one.
 
 The shipped game and the test suite are therefore compiling **different copies of the save schema**. The moment
 one copy is edited, a regression test can pass while the shipped binary is unchanged — or the binary changes and
-the test that is supposed to protect it never sees it.
+the test that is supposed to protect it never sees it. For B13 specifically: editing `include/Serialization.hpp`
+alone makes the new test green and leaves the bug fully intact in the game.
 
 **Fix.**
 1. Delete `src/Serialization.hpp`; keep `include/Serialization.hpp` (it is on the public include path and carries
    the better comments).
-2. Remove `src/Serialization.hpp` from both `add_executable` source lists in `CMakeLists.txt` (it is listed as a
-   source in each).
+2. ~~Remove `src/Serialization.hpp` from both `add_executable` source lists in `CMakeLists.txt`.~~ **No CMake edit
+   is needed** — this step was wrong in the first draft. `Serialization.hpp` appears **nowhere** in
+   `CMakeLists.txt`: the game's sources are listed in `target_sources(Blackjack2 PRIVATE …)`
+   (`CMakeLists.txt:80`) and no headers are listed there or in `add_executable(Blackjack2Tests …)`
+   (`CMakeLists.txt:132`). Confirmed with `grep -n 'Serialization.hpp' CMakeLists.txt` → no matches. Deleting the
+   file is the whole build-side change.
 3. Verify every consumer now resolves to the same file:
    `for f in src/*.cpp tests/*.cpp; do g++ -std=c++17 -I include -I tests -I /usr/local/include -M "$f" 2>/dev/null | tr ' ' '\n' | grep -H 'Serialization.hpp' && echo "  ^ $f"; done`
+
+   Two ways this sweep lies. Both were hit for real on 2026-11-06:
+
+   - **It silently reports nothing for the Catch2 TUs** unless the generated `catch2/catch_user_config.hpp`
+     include dir is added — Catch2 lives in `_deps/catch2-src/src` **and** `_deps/catch2-build/src`. A TU that
+     fails to preprocess looks exactly like a TU with no such dependency, so drop `2>/dev/null` at least once and
+     read the stderr.
+   - **Do not "speed it up" by replaying commands from `compile_commands.json` with `-M` appended.** Those
+     commands end in `-o <obj> -c <src>`, and in dependency mode GCC writes the dependency list to the `-o`
+     target — overwriting the `.o` with text. The build then fails to link with *"file format not recognized;
+     treating as linker script"*, pointing the finger at your last edit rather than at the sweep. If it happens,
+     find the non-ELF objects and delete them:
+     `python3 -c "import os;[print(p) for r,_,fs in os.walk('CMakeFiles') for f in fs if f.endswith('.o') for p in [os.path.join(r,f)] if open(p,'rb').read(4)!=b'\x7fELF']"`
 4. Add a cheap guard so it cannot recur — a test or CI step asserting
    `find . -name Serialization.hpp -not -path './out/*' | wc -l` equals 1.
 
@@ -664,9 +738,9 @@ from the back, account for the cut card, and cover it with a test that reconstru
 
 # Testing strategy — close the seam that let all this through
 
-The suite is **264/264 green** while 14 logic/data defects exist. Every one sits in the presentation / lifecycle
-seam that the headless-first contract deliberately leaves untested. Two cheap additions would have caught the top
-three:
+The suite is **264/264 green** while 15 logic/data defects (B1–B15) exist. Every one sits in the presentation /
+lifecycle seam that the headless-first contract deliberately leaves untested. Two cheap additions would have
+caught the top three:
 
 1. **Persistence round-trip integration test.** Play → save → enter mode → save → reload → assert invariants.
    Catches B1 and B7. Belongs in `tests/test_session_lifecycle.cpp`.
@@ -703,3 +777,19 @@ never cleared" (catches B2 — grep every `hudState.` field for a reset path).
   not a plan, it is not estimated as commitment, and nothing in it is in scope for this phase. Its only legitimate
   influence on 0.4 is the note at its end: build the shared "this game does not persist progress" gate as part of
   the B1 fix, because five of those ideas depend on it and it costs nothing to do now.
+
+---
+
+# Document audit log
+
+**2026-11-06 — audited against `96fd416` (branch `3.1`).** Baseline re-measured at **264/264 in 8.15 s**; every
+`file:line` citation in this ledger re-checked and correct; B13's standalone proof re-run and reproducing.
+
+Four structural claims did **not** survive the audit and are fixed above: the "working tree is not clean" warning
+(stale — that work landed as `96fd416`); B1's "three save sites" (there are six, and two line numbers were wrong);
+B15's instruction to edit `CMakeLists.txt` (that file never mentioned `Serialization.hpp`); and B15's consumer
+table, which named one `include/`-copy test where there are three — including the two that lock the save schema.
+The verification gate also dropped its no-op `ASAN_OPTIONS` prefix.
+
+The detailed changelog, and the list of claims confirmed unchanged, live in **CONTEXT.md §13**. Update both files
+together; they contradict each other more cheaply than either contradicts the code.
