@@ -69,3 +69,27 @@ TEST_CASE("Profiles saved before table settings existed still load with defaults
 
     fs::remove(path);
 }
+
+// B15 regression guard: exactly one Serialization.hpp must exist anywhere in the repo (outside the build tree), so a
+// future schema edit cannot silently diverge the shipped copy from the tested copy. Counts by walking the project root
+// derived from this file's own location, which keeps the check correct regardless of the working directory ctest runs
+// it under. This fails while src/Serialization.hpp and include/Serialization.hpp both exist, and passes once src/ has
+// been deleted -- that is the whole B15 fix expressed as an invariant.
+TEST_CASE("B15: exactly one Serialization.hpp exists outside the build tree", "[Schema][Build]")
+{
+    const fs::path here = fs::path(__FILE__).parent_path();          // .../tests
+    const fs::path root = here.parent_path();                        // repository root
+
+    int count = 0;
+    std::error_code ec;
+    for (const auto& entry : fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied, ec))
+    {
+        if (ec)
+            break;
+        const fs::path& p = entry.path();
+        if (p.filename() == "Serialization.hpp" && p.string().find("/out/") == std::string::npos)
+            ++count;
+    }
+
+    CHECK(count == 1);
+}
