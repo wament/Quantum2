@@ -413,6 +413,10 @@ word "reproduced" implied.
 - **`NEXT_STEPS.md`** = what to change, in what order, with the test to write for each.
 - **`IDEAS.md`** = ten unscheduled feature propositions. **Not a plan.** Read it only after the defect phases are
   done, or not at all; nothing in it is committed work.
+- **The copy-paste handoff prompt** lives at the top of `NEXT_STEPS.md`. It encodes the working contract (read
+  order, verification gate, test-first rule, guardrails) and the hard-won gotchas — B15-before-schema, B1's six
+  save sites, the `-M` trap. Regenerate it whenever this file's §10–§13 change; a stale prompt reproduces stale
+  assumptions in a fresh window that has no way to check them.
 
 Work top to bottom through NEXT_STEPS' phases. For each fix: write the named test first (several are specified as
 tests that *fail today* — that is the point), then the fix, then the verification gate, then update §11 here and
@@ -468,6 +472,12 @@ Corrected:
     CMake compile command with `-M` appended overwrites the `.o` with the dependency list, and the resulting link
     failure looks like it was caused by your most recent edit. Four objects were clobbered and deleted during this
     audit; the build and suite are back to 264/264. The recovery one-liner is recorded in NEXT_STEPS B15 step 3.
+11. **The handoff prompt at the top of `NEXT_STEPS.md` was rewritten.** The old six-line version still described
+    the pre-audit world — it told a fresh window to "work the phases in order" with no mention of the B15
+    prerequisite, B1's six save sites, or the two-copy schema hazard, and its "don't trust the docs blindly" step
+    had no way to say *which* parts of the docs are now verified. The new version carries the read order (§13
+    first), a calibration note so the next window knows what to re-verify versus what to trust, the gotchas as
+    working rules, and the §13-update obligation in Step 4. §12 now says to regenerate it whenever §10–§13 change.
 
 Confirmed accurate, no change needed: every `file:line` citation listed in §1; the §3 blind-spot analysis; the §4
 architecture map; the §5 two-tier read contract and `gameRules` key list; §6.1–§6.9 evidence; §7 conventions; §8

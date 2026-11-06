@@ -10,13 +10,90 @@ The suite is **264/264 green** while **15 logic/data defects (B1–B15) and 10 U
 three tech-debt items (T1, T2, B16). That gap is the theme of this phase: every bug lives in the
 presentation/lifecycle seam that the headless-first contract deliberately leaves untested.
 
-**Handoff prompt — paste into a fresh window:**
+**Handoff prompt — paste into a fresh window** (regenerated 2026-11-06 to match the audited docs; keep it in sync
+with CONTEXT.md §13 whenever the ledger changes):
 
-> Blackjack2 (C++17 / SFML 3 / CMake / Catch2), phase 0.4 QA hardening. Read
-> `.summaries/0.4/CONTEXT.md` then `.summaries/0.4/NEXT_STEPS.md`. Work the phases in order; Phase 0 (B1–B4,
-> B13) are small fixes with the largest user impact — two of them destroy saved progress. Do not add features.
-> Do not widen `GameRules` or revive counting Feature 6. After every fix run the verification gate and add the
-> named regression test.
+````markdown
+You are continuing work on Blackjack2 (C++17 game / C++20 tests, SFML 3, CMake, Catch2 v3.6.0), a desktop
+blackjack teaching simulator. Phase 0.4 is a QA-hardening pass: defect removal, not feature work.
+
+## Step 0 — this iteration
+Branch:            3.1   <- edit if different
+Focus this round:  <e.g. "B15 + B13 only">
+Already done:      <e.g. "nothing" / "B15 landed">
+Anything I should know: <optional>
+
+## Step 1 — read these, in this order, before touching code
+All three live in `.summaries/0.4/` on branch `3.1`. (`master` is a frozen checkpoint at 380da26 and does NOT
+contain them — if they're missing, you are on the wrong branch.)
+
+1. `.summaries/0.4/CONTEXT.md` **§13 (Document audit log)** — what has actually been verified, and how. Read first;
+   it tells you which claims in these docs are load-bearing and which were inherited from a playtest.
+2. `.summaries/0.4/CONTEXT.md` — the rest, fully. Background, evidence, guardrails.
+3. `.summaries/0.4/NEXT_STEPS.md` — the actionable ledger.
+4. `.summaries/0.4/IDEAS.md` — DO NOT read or implement unless I explicitly ask this round. Not a plan.
+
+Key sections: CONTEXT §3 testing blind spot · §4 architecture map · §5 persistence & data model · §6 evidence log
+(§6.9 "cleared — not bugs", §6.10 B13 proof) · §7 conventions · §8 environment (incl. the `-M` trap) · §10 open
+decisions · §11 status tracker. NEXT_STEPS: Verification gate · Triage table · Phases 0–5 · Testing strategy ·
+Definition of done · Explicitly out of scope.
+
+## Step 2 — establish real state, do not trust the docs blindly
+The docs were written at a point in time and may be stale. Before coding:
+
+  git status && git --no-pager log --oneline -3
+  cmake --preset "GCC 13.3.0 x86_64-linux-gnu"
+  cmake --build 'out/build/GCC 13.3.0 x86_64-linux-gnu' --parallel
+  ctest --test-dir 'out/build/GCC 13.3.0 x86_64-linux-gnu' -j8 --output-on-failure
+
+Then report back, BEFORE writing any code:
+  - current test count and pass/fail (baseline 264/264)
+  - which §11 IDs are actually still open — verify against the source, don't trust the table
+  - any doc claim that no longer matches the code
+  - your proposed plan for this round's focus, and any open §10 decision that blocks it
+
+Calibration: on 2026-11-06 every `file:line` citation in both docs was re-checked against `96fd416` and held, and
+the structural claims were corrected in place (`f3c6ce1`). Those citations stay trustworthy until the **code**
+moves, not until the docs do — so if `git status` is clean and `git log --oneline -- include src tests CMakeLists.txt`
+still shows `96fd416` as the last code change, trust the citations and spend your effort on the §11 **Evidence**
+column instead: several rows are marked code-only or "not re-run this pass", and those are the ones worth
+re-testing. If any code has landed since, re-verify the sites you're about to touch.
+
+Wait for my go-ahead.
+
+## Step 3 — working rules
+- One bug = one commit. Test first, then fix: several items specify a test that must FAIL before the fix. If it
+  passes immediately, you edited the wrong file (see B15).
+- Re-run the full suite after every fix. Never finish with a lower test count than you started.
+- Headless-first tests only: `Game(true)` + `setDeck(...)` + `*ForTest()` accessors. No display.
+- New JSON fields must be optional with a default. Never break a legacy profile.
+- `Player::getProfile()` returns BY VALUE — never bind it to `const auto&`.
+- If a doc is wrong, FIX THE DOC in the same commit. Don't work around it silently.
+- **B15 lands before B12/B13/B14.** There are two live copies of `Serialization.hpp`: the shipped binary compiles
+  `src/`'s copy via `src/PlayerProfile.cpp`, while `test_profile_settings.cpp` / `test_game_rules.cpp` /
+  `test_achievements.cpp` compile `include/`'s. A schema fix in the wrong copy goes green with an unchanged binary.
+- **B1 has SIX `saveProfile()` call sites**, not three — the table is in the B1 entry. Gating three leaves the bug.
+- `.summaries/0.4/hist_proof.cpp` is the checked-in B13 proof; it exits 1 today and is the fastest way to confirm
+  a B13 fix reached the *shipped* schema rather than just the tested one.
+- Never append `-M` to a command copied from `compile_commands.json` — it overwrites the `.o` with the dependency
+  list. See CONTEXT §8.
+
+## Step 4 — before you finish
+- Update the §11 status tracker in CONTEXT.md.
+- Append any decision made to the decision list in CONTEXT.md §5.
+- Add a dated entry to CONTEXT.md §13 if you corrected any claim in these docs.
+- Tell me: what landed, what's still open, what you'd do next.
+
+## Hard guardrails
+- No new features. IDEAS.md is not a plan.
+- Do not revive Feature 6 (KO / Wong Halves / Omega II counting).
+- Do not widen `GameRules` beyond exposing `maxSplitHands` (B10).
+- Do not change the `AppMode` enum except by adding a value with its own state machine.
+- Do not "fix" the `handActions` indexing — it is correct; see CONTEXT §6.9.
+- Do not re-litigate anything already cleared in §6.9.
+- Do not break the additive-JSON contract: every new field optional, with a default.
+````
+
 
 ---
 
