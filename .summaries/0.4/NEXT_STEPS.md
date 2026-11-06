@@ -129,11 +129,11 @@ configure and build clean (warnings only — the pre-existing `[=]` implicit-`th
 | B1 | 🔴 Critical | Tournament mode overwrites the saved career profile | `src/SessionLifecycle.cpp:35` | 0 |
 | B2 | 🔴 Critical | Achievement toast never clears (permanent "NEW!" banner) | `src/AchievementFeeder.cpp:48` / `src/GameRenderer.cpp:154` | 0 |
 | B3 | 🔴 Critical | Side-bet result always prints "WON" (LOST branch is dead) | `src/GameRenderer.cpp:997-1000` | 0 |
-| B4 | 🔴 Critical | Reko count seeded with compile-time deck count, not the rule | `src/Game.cpp:254` (+ `src/Deck.cpp:73`) | 0 |
+| B4 | 🔴 Critical | Reko count seeded with compile-time deck count, not the rule | `src/Game.cpp:277` (+ `src/Deck.cpp:73`) | 0 |
 | B13 | 🔴 Critical | Quitting mid-shoe silently deletes those hands from career stats | `include/Serialization.hpp:193-210` + `src/PlayerProfile.cpp:68` | 0 |
 | B5 | 🟠 High | Main bet never escrowed → bankroll can go negative | `src/Player.cpp:89` | 1 |
-| B6 | 🟠 High | Rules panel keyboard edit is unthrottled (multi-step per tap) | `src/Game.cpp:383-388` | 1 |
-| B7 | 🟠 High | Escape-to-quit from the main menu skips the profile save | `src/Game.cpp:189` + `src/InputHandler.cpp:520` | 1 |
+| B6 | 🟠 High | Rules panel keyboard edit is unthrottled (multi-step per tap) | `src/Game.cpp:418-433` | 1 |
+| B7 | 🟠 High | Escape-to-quit from the main menu skips the profile save | `src/Game.cpp:189` + `src/InputHandler.cpp:251-258` | 1 |
 | B8 | 🟠 High | `Deck::draw()` has no empty-shoe guard (pre-existing, known) | `src/Deck.cpp:123-137` | 1 |
 | B14 | 🟠 High | Save is non-atomic and a failed load silently resets to a fresh profile | `src/PlayerProfile.cpp:50-61` + `:28-48` | 1 |
 | B15 | 🟠 High | Two live copies of `Serialization.hpp`; game and tests compile different files | `src/Serialization.hpp` vs `include/Serialization.hpp` | 1 |
@@ -153,7 +153,7 @@ B15 understating which translation units read which header. Those are corrected 
 CONTEXT.md §13.
 
 **Not a bug (investigated and cleared):** `handActions` flat-indexing looks wrong when `split()`
-(`src/Game.cpp:766`) appends at the end, but is safe because seats act strictly in order, so later slots are still
+(`src/Game.cpp:810`) appends at the end, but is safe because seats act strictly in order, so later slots are still
 empty. Do not "fix" this without also changing turn order. See CONTEXT.md §6.9.
 
 ---
@@ -196,7 +196,7 @@ game.players.push_back(Player("William", config.startingChips));
 `Player(name, startingBankroll)` (`src/Player.cpp:47-52`) is the NPC path: it fabricates a fresh empty
 `PlayerProfile` and never reads disk. Contrast `startNewGame()` (`src/SessionLifecycle.cpp:182`), which uses the
 loading constructor `Player("William")`. So after entering Tournament, `players[0]` is no longer the career
-profile, and the window-close handler (`src/InputHandler.cpp:247-257`) saves `players[0].getProfile()` over the
+profile, and the window-close handler (`src/InputHandler.cpp:251-258`) saves `players[0].getProfile()` over the
 real file.
 
 **Fix.** In `startTournamentSession()`, use the loading constructor and override only the in-memory chips:
@@ -216,11 +216,11 @@ complete set, verified 2026-11-06:
 | Site | Path | Note |
 |---|---|---|
 | `src/HandEvaluator.cpp:297` | every settled round | also T1's write-amplification site |
-| `src/InputHandler.cpp:104` | pause → **Restart** | the draft mislabelled this one as Quit-to-Menu |
-| `src/InputHandler.cpp:119` | pause → **QuitToMenu** | |
-| `src/InputHandler.cpp:254` | **window close** (`Event::Closed`) | the B1 repro route; draft said `:252` |
-| `src/Game.cpp:1342` | shoe boundary | |
-| `src/Game.cpp:1501` | shoe boundary (second path) | |
+| `src/InputHandler.cpp:108` | pause → **Restart** | the draft mislabelled this one as Quit-to-Menu |
+| `src/InputHandler.cpp:123` | pause → **QuitToMenu** | |
+| `src/InputHandler.cpp:258` | **window close** (`Event::Closed`) | the B1 repro route; draft said `:252` |
+| `src/Game.cpp:1386` | shoe boundary | |
+| `src/Game.cpp:1545` | shoe boundary (second path) | |
 | `src/SessionLifecycle.cpp:287` | shoe/lifecycle boundary | **missing from the original six; added 2026-11-06 — an unguarded saveProfile that B1's tournament-time gate must also cover** |
 
 Note also *when* the damage is done: `startTournamentSession()` calls `game.players.clear()`
@@ -295,7 +295,7 @@ label += (net >= 0 ? "  WON +" : "  LOST ") + std::to_string(net);
 
 The absolute value runs *before* the sign test, so `net >= 0` is unconditionally true and **"LOST" is dead code**.
 Upstream data is correct: `resolveSideBets()` sets payout 0 on a loss (`src/RoundDealer.cpp:46`) and
-`syncBettingAndSideBet()` copies it faithfully (`src/Game.cpp:451`).
+`syncBettingAndSideBet()` copies it faithfully (`src/Game.cpp:485`).
 
 **Fix.** Drop the `abs()` and branch three ways — a zero net is a push, not a win:
 
@@ -319,7 +319,7 @@ extract-the-string-then-test-the-string pattern is the one to reuse throughout P
 4×52 + cut card) but the fresh, undealt shoe showed **`Count -20`**. The correct Reko seed for 4 decks is
 **-12**.
 
-**Root cause.** `src/Game.cpp:254`:
+**Root cause.** `src/Game.cpp:277`:
 
 ```cpp
 const int rekoSeed = BasicStrategy::rekoStartingOffset(Constants::NUM_DECKS);
@@ -327,7 +327,7 @@ const int rekoSeed = BasicStrategy::rekoStartingOffset(Constants::NUM_DECKS);
 
 `Constants::NUM_DECKS` is the compile-time 6, so the seed is always -20 regardless of `gameRules_.numDecks`.
 Error by shoe: 1 deck off by 19 (-20 vs -1), 2 off by 15, 4 off by 8, 8 off by 7 (-20 vs -27). Because Reko's
-"True Count" *is* the running count (`src/Game.cpp:483`), this corrupts the True Count readout, Edge % and
+"True Count" *is* the running count (`src/Game.cpp:1012`), this corrupts the True Count readout, Edge % and
 Kelly / Auto-Kelly sizing from the first hand.
 
 **Same defect, second site.** `Deck::reshuffleWithRemaining()` (`src/Deck.cpp:73`) rebuilds with
@@ -376,8 +376,8 @@ reload `currentHistory` is empty, so the *next* save recomputes from `longHistor
 correct numbers with smaller ones. The loss is invisible when it happens and lands one save later.
 
 **Why the close path is the trigger.** `addShoeRecord()` is what moves `currentHistory` → `longHistory`, and it
-is called at the shoe boundary (`src/Game.cpp:1340`, `:1499`) and on **Quit to Menu** (`src/InputHandler.cpp:102`,
-`:115`) — but **not** in the window-close handler (`src/InputHandler.cpp:247-257`), which jumps straight to
+is called at the shoe boundary (`src/Game.cpp:1384`, `:1543`) and on **Quit to Menu** (`src/InputHandler.cpp:106`,
+`:119`) — but **not** in the window-close handler (`src/InputHandler.cpp:251-258`), which jumps straight to
 `saveProfile()`. So quitting with the title-bar X mid-shoe orphans the current shoe's rounds.
 
 **Blast radius.** Every record-derivable stat regresses, not just `handsFinished`: wins/losses/pushes,
@@ -415,7 +415,7 @@ is theoretical, and the second one is the reason this fix can *introduce* a bug 
   where a double count would appear.
 
 Two supporting changes:
-- Call the existing shoe-flush in the window-close handler (`src/InputHandler.cpp:247-257`) so it matches the
+- Call the existing shoe-flush in the window-close handler (`src/InputHandler.cpp:251-258`) so it matches the
   Quit-to-Menu path, or accept the additive field as sufficient and note why.
 - Add a debug assertion in `save()` that a save never *decreases* `handsFinished` relative to the in-memory
   stats — that invariant is what would have caught this class of bug at development time.
@@ -448,7 +448,7 @@ deal and before the player acts. Two consequences:
 
 1. **Inconsistent mid-hand readout.** Observed live: bankroll 980 with `Bet 50` still shown — the side bet is
    already gone, the main bet is still counted as yours.
-2. **Over-commitment.** `Game::placeSideBet()` (`src/Game.cpp:1130`, affordability check at `:1134`) checks
+2. **Over-commitment.** `Game::placeSideBet()` (`src/Game.cpp:1174`, affordability check at `:1180`) checks
    `players[0].getBankroll() < wager` against a bankroll that still contains the pending main bet. With $1000 you
    can set a $1000 main bet *and* a $1000 side bet, then lose both → `loseBet()` twice → **bankroll −1000**.
    `Player::adjustHandBet()` (`src/Player.cpp:200-211`) clamps only to `MINIMUM_BET`/`MAXIMUM_BET`, never to the
@@ -475,7 +475,7 @@ sidePayout`.
 **Symptom (reproduced).** A single tap of Left on the Decks row jumped 6 → 1 (three steps). Four taps on Surrender
 landed back on "Off" instead of "Early". Sometimes one tap = one step, sometimes several.
 
-**Root cause.** `src/Game.cpp:383-388` polls held-key state every frame with no edge detection:
+**Root cause (pre-fix).** The polling block was at `src/Game.cpp:383-388`; it polled held keys every frame with no edge detection. **Fixed** — the rules case is now edge-gated (`&& !rulesRightPrev_` / `&& !rulesLeftPrev_`) at `src/Game.cpp:420-433`.
 
 ```cpp
 const bool rightHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right);
@@ -517,8 +517,8 @@ while (window.isOpen())
 ```
 
 The save lives in the `Event::Closed` branch of `InputHandler::processEvents()`
-(`src/InputHandler.cpp:247-257`). Clicking the title-bar X queues a Closed event that *does* get polled, so that
-route saves. But main-menu Escape calls `game.window.close()` directly (`src/InputHandler.cpp:520-521`); on the
+(`src/InputHandler.cpp:251-258`). Clicking the title-bar X queues a Closed event that *does* get polled, so that
+route saves. But main-menu Escape calls `game.window.close()` directly (`src/InputHandler.cpp:524-525`); on the
 next iteration `window.isOpen()` is false, the loop exits, and the queued Closed event is never read. The save
 block is effectively dead for that route.
 
@@ -685,7 +685,7 @@ an out-of-bounds read. Add a bounds guard there regardless; it is free.
 ## B10 — `maxSplitHands` is dead config 🟡
 
 `GameRules` declares `int maxSplitHands = Constants::MAX_SPLIT_HANDS;` (`include/GameRules.hpp:36`) and
-`Game::split()` enforces it (`src/Game.cpp:777`), but:
+`Game::split()` enforces it (`src/Game.cpp:821`), but:
 - `gameRuleRows()` (`src/GameRules.cpp:15-27`) exposes only 6 rows — there is **no UI row**, and
   `applyGameRuleEdit()` has no case for it.
 - `to_json(const GameRules&)` **omits it**, so it could never round-trip even if it were editable.
@@ -764,7 +764,7 @@ assert no rect overlap at both 1600×900 and 900×560.
 displayed during PlaceBets. *Fix:* show only the current `RoundState`'s controls, one format, legible size; move
 the rest to the Controls screen from B11.
 
-**U5 — "True Count" shows the running count under Reko** (`Game.cpp:483`). Deliberate, but a fresh 6-deck shoe
+**U5 — "True Count" shows the running count under Reko** (`Game.cpp:1012`). Deliberate, but a fresh 6-deck shoe
 displaying `True Count -20.0` reads as broken, and a learner has no way to know it is intended. *Fix:* relabel the
 box to "Betting Count (Reko)", or show RC and TC side by side.
 
@@ -805,7 +805,7 @@ additive.
 `include/GameRecord.hpp:307-329` is the only occurrence of the symbol in the whole tree — no caller, no test. It
 rebuilds a shoe by popping the **front** of a deque built from `initialDeck`, but `Deck::draw()`
 (`src/Deck.cpp:123-137`) deals from the **back** (`cards.back()` / `pop_back()`), and `initialDeck` is stored as
-`deck.getCards()` verbatim (`src/Game.cpp:276`, `:1349`; `src/SessionLifecycle.cpp:55`, `:198`). So it removes
+`deck.getCards()` verbatim (`src/Game.cpp:299`, `1393`; `src/SessionLifecycle.cpp:55`, `:198`). So it removes
 cards that have *not* been dealt. It also ignores the cut card's extra draw and mid-shoe reshuffles.
 
 No runtime impact today because nothing calls it. It is a landmine for anyone building replay analysis, decision

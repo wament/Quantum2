@@ -171,7 +171,7 @@ Proven in §6.10.
 **`gameRules` nested object** — written keys: `numDecks`, `dealerStandsOnSoft17`, `doublesAfterSplitAllowed`,
 `resplitAcesAllowed`, `resplitTensAllowed`, `surrenderType`. The per-field hooks live in `include/GameRules.hpp`
 (ADL'd from the delegation at `Serialization.hpp:212/238`). `maxSplitHands` is a real field enforced at
-`src/Game.cpp:777` but is **absent from `to_json`** and has no UI row — dead config (B10). Spelling: B12 renamed the
+`src/Game.cpp:821` but is **absent from `to_json`** and has no UI row — dead config (B10). Spelling: B12 renamed the
 written key to `resplitTensAllowed`; on load the corrected key wins, with the legacy typo'd `resplitTentsAllowed`
 retained only as an additive migration fallback so pre-B12 saves keep loading.
 
@@ -182,6 +182,8 @@ retained only as an additive migration fallback so pre-B12 saves keep loading.
 - The canonical starting bankroll for human and NPC seats (U8).
 - B12 additive-migration strategy (resolved 2026-11-06): `resplitTentsAllowed` was misspelled in every save file, so the rename to `resplitTensAllowed` had to be additive — `to_json` writes only the corrected key, and `from_json` reads it first then falls back to the legacy typo'd key (new wins when both present) so pre-B12 saves keep loading. Honours the 0.3 schema contract: every existing field stays optional with a default; no profile is ever wiped by the rename.
 - B2 achievement-toast lifetime (resolved 2026-11-06; default chosen from §10 #7): toast stays on screen for `GameTiming::ACHIEVEMENT_TOAST_SECONDS` (=4.0s), armed in `AchievementFeeder.cpp:48` on each unlock and cleared at zero by `RoundEngine::tick` alongside the other HUD timers (the renderer already draws only while a name is set, so clearing ends the draw). No new persisted field; purely in-memory HUD state.
+- **B7 persist-on-exit choke point** (resolved 2026-11-06): exit-persist is centralised into `Game::persistOnExit()`, called from `InputHandler::returnToMainMenu()` so every Escape→main-menu route persists like the window-close path did. It stamps shoe record + current table settings + unlocked achievements then saveProfile through the existing profile plumbing — no new persisted field, purely re-routing an already-existing save. Guarded against an empty seat vector (headless tests build a bare Game). The single-choke-point placement is what keeps the fix one small method instead of sprinkling another `saveProfile()` onto each exit route.
+- **B6 rules-panel keyboard edit edge-triggered** (resolved 2026-11-06): Left/Right rule edits fire only on a false→true key transition (`&& !rulesRightPrev_` / `&& !rulesLeftPrev_`) so one tap = one step at any framerate. Deliberate decision — Up/Down highlight navigation keeps its held-key repeat (moving the highlight fast is the point, so it's desirable) and stays plain held-key polling; only the rule-edit axis was throttled. That split call-out lives in the B6 commit message.
 
 ---
 
@@ -396,17 +398,17 @@ word "reproduced" implied.
 | B1 | 🔴 | Tournament overwrites career profile | **Open** | Mechanism re-confirmed in code: `SessionLifecycle.cpp:34` `players.clear()` + `:35` NPC ctor. Playtest repro not re-run this pass |
 | B2 | 🔴 | Achievement toast never clears | **Resolved 2026-11-06 (`f3aeb1f`)** | Added `achievementToastTimer` to `HUDState.hpp`; armed in `AchievementFeeder.cpp:48` on each unlock, ticked in `RoundEngine.cpp` alongside the other HUD timers and cleared at 0 (renderer draws only while a name is set). Test #210 arms/advances past lifetime/re-arms (fails before fix). Suite 275/275 |
 | B3 | 🔴 | Side bet always reports "WON" | **Resolved 2026-11-06 (`c7978f1`)** | Fixed in `include/SideBetLabels.hpp`: branch won/lost/push on net with the sign preserved; `GameRenderer.cpp:997` calls the pure fn. Guard test in `test_side_bets.cpp` asserts WON +20 / LOST -20 / PUSH 0 (fails before fix). Suite 266/266 |
-| B4 | 🔴 | Reko seed ignores deck count | **Resolved 2026-11-06 (`3924b56`)** | Seeds from `gameRules_.numDecks` in `resetShoeAnalytics()` (`Game.cpp:254`); `Deck::create()` remembers shoe size and reshuffle rebuilds from it (`Deck.cpp:73`). Tests assert the roadmap seeds 1/2/4/6/8 → -1/-5/-12/-20/-27 through a headless Game, plus a one-deck reshuffle stays ~53 cards (both fail before fix). Two `test_deck.cpp` reshuffle-size assertions were corrected from the old NUM_DECKS behavior. Suite 274/274 |
+| B4 | 🔴 | Reko seed ignores deck count | **Resolved 2026-11-06 (`3924b56`)** | Seeds from `gameRules_.numDecks` in `resetShoeAnalytics()` (`Game.cpp:277`); `Deck::create()` remembers shoe size and reshuffle rebuilds from it (`Deck.cpp:73`). Tests assert the roadmap seeds 1/2/4/6/8 → -1/-5/-12/-20/-27 through a headless Game, plus a one-deck reshuffle stays ~53 cards (both fail before fix). Two `test_deck.cpp` reshuffle-size assertions were corrected from the old NUM_DECKS behavior. Suite 274/274 |
 | B13 | 🔴 | Mid-shoe quit deletes those hands from career stats | **Resolved 2026-11-06 (`387a3e0`)** | Persist in-progress shoe rounds (currentHistory) so quitting mid-shoe still books them into career stats; guarded read. Test #270 passes; hist_proof.cpp (§6.10) confirms shipped schema. §11 listed it Open after the commit and was corrected here |
 | B5 | 🟠 | Main bet not escrowed; bankroll can go negative | Open | `Player.cpp:89` still a bare affordability check; no `getAvailableBankroll` in the tree. Negative balance not re-reproduced on screen |
-| B6 | 🟠 | Rules panel key repeat | **Open** | `Game.cpp:383-388` still polls held keys with no edge detection |
+| B6 | 🟠 | Rules panel key repeat | **Resolved 2026-11-06 (`584aa4b`)** | Added false->true edge detection in \`Game::update()\` rules case via \`rulesRightPrev_\`/\`rulesLeftPrev_\`; applyGameRuleEdit fires only on a press (one step per tap). Up/Down highlight repeat left as-is (desirable, called out in commit). Headless test #277 (\`test_rules_panel_editing.cpp\`) holds Right 25 frames and asserts result == one tap; fails before / passes after. Suite 277/277 (+1 over B7) |
 | B7 | 🟠 | Escape-quit skips the save | **Resolved 2026-11-06 (`11b187b`)** | Centralised persist-on-exit into `Game::persistOnExit()` (shoe record + current table settings + unlocked achievements, then save) routed through `InputHandler::returnToMainMenu()`, so every Escape->menu route persists like the window-close path did; guarded against an empty seat vector. Headless test #276 (`test_input_return_to_main_menu.cpp`) fails before / passes after; full suite 276/276 (+1) |
 | B8 | 🟠 | `Deck::draw()` no empty guard | Known (0.3 §6) | Two unguarded `back()`/`pop_back()` pairs confirmed at `Deck.cpp:123-137` |
 | B9 | 🟠 | Flaky crash + unflushable logger | Open — crash unrepro | `Logger.cpp:34` still writes `std::cout` with no flush/unitbuf |
 | B14 | 🟠 | Non-atomic save; corrupt file → silent wipe | **Resolved 2026-11-06 (`9d1d125`)** | Atomic write + corrupt-save rescue under a `.corrupt.<ts>` suffix, and partial-JSON field retention in `PlayerProfile.cpp`. Tests #229/#230 pass. §11 listed it Open after the commit and was corrected here |
 | B15 | 🟠 | Two live copies of `Serialization.hpp` | **Resolved 2026-11-06 (`9a89185`)** | Deleted `src/Serialization.hpp`; exactly one copy remains (include/), enforced by a guard test that fails with two / passes with one. No CMake edit needed; `PlayerProfile.cpp` now resolves to the include copy, unblocking every schema edit (B12/B13/B14) |
-| B10 | 🟡 | `maxSplitHands` dead config | Open | Enforced at `Game.cpp:777` / `RoundEngine.cpp:121`; absent from `to_json` and `gameRuleRows()` |
-| B11 | 🟡 | Control banner mislabels keys | Open | `Game.cpp:162-163` vs real bindings `InputHandler.cpp:591-602` |
+| B10 | 🟡 | `maxSplitHands` dead config | Open | Enforced at `Game.cpp:821` / `RoundEngine.cpp:121`; absent from `to_json` and `gameRuleRows()` |
+| B11 | 🟡 | Control banner mislabels keys | Open | `Game.cpp:162-163` vs real bindings `InputHandler.cpp:595-606` |
 | B12 | 🟡 | `resplitTentsAllowed` typo in save schema | **Resolved 2026-11-06** | Renamed field+enum to `resplitTensAllowed`/`ResplitTens`; `to_json` writes the corrected key, `from_json` reads it then falls back to the legacy typo'd key (new wins). On-disk writer verified via `test_profile_settings.cpp:232` using real `PlayerProfile::save()` — shipped binary now writes `resplitTensAllowed`. Suite 272/272 |
 | B16 | 🟡 | `reconstructDeckAtRound()` dead and wrong | Open | Still zero callers; sole occurrence is its own definition at `GameRecord.hpp:307` |
 | U1–U10 | 🟡 | UI/UX set (see NEXT_STEPS Phase 4) | Open | Not re-verified on screen this pass; cited renderer lines all resolve to the claimed functions |
@@ -541,7 +543,7 @@ changed — status correction only; the B14 primary-site citation (`src/PlayerPr
 
 Two more Phase-0 criticals landed with passing tests, each committed separately (`3924b56`, `f3aeb1f`) and verified via the full gate. Both are in the presentation/lifecycle seam the headless contract misses, so they needed dedicated tests to lock them.
 
-- **B4 (`3924b56`).** `resetShoeAnalytics()` seeds Reko from the live rule now (`Game.cpp:254`, `gameRules_.numDecks`)
+- **B4 (`3924b56`).** `resetShoeAnalytics()` seeds Reko from the live rule now (`Game.cpp:277`, `gameRules_.numDecks`)
   instead of compile-time `NUM_DECKS`; a one-deck shoe starts at -1, an 8-deck at -27. Added `Deck::shoeDecks_` (set in
   `create()`, used by the reshuffle loop) so a mid-shoe reshuffle on a non-default shoe keeps its real card count
   (`Deck.cpp:73`). New tests in `test_reko_counting.cpp` assert the roadmap seeds through a headless Game across 1/2/4/6/8
@@ -571,4 +573,41 @@ Test `#276` in `test_input_return_to_main_menu.cpp` drives an Escape through a p
 with `HOME` redirected to an isolated temp dir (so `Player::getSavePath()` writes there), then reads the profile back: it
 failed before the fix (`fs::exists` false, load fell back to default bankroll 1000 != 98765) and passes after. Full suite
 276/276 (+1). §11 B7 row moved Open → Resolved with this hash; no JSON-schema change, no new profile field.
+
+### 2026-11-06 — B6 (rules-panel keyboard edit is unthrottled / multi-step per tap) resolved
+
+Added false->true edge detection to the rules-panel case in `Game::update()` (`src/Game.cpp:418-433`): kept previous-frame
+held state (`rulesRightPrev_` / `rulesLeftPrev_`) so `applyGameRuleEdit` fires only on a press, making one tap exactly one
+step at any framerate instead of once per frame (the pre-fix `if (rightHeld || leftHeld)` re-edited every uncapped-fps frame).
+Up/Down highlight navigation keeps its held-key repeat -- repeating the highlight is desirable there, so only Left/Right editing
+was changed and that decision is called out explicitly in the commit. A headless test seam (`setRulesKeyHeldForTest` /
+`resetRulesKeyOverrideForTest`) lets update() read injected held-key state instead of real hardware keys (default override off =
+unchanged `isKeyPressed()`).
+
+Test `#277` in `tests/test_rules_panel_editing.cpp` holds Right down and drives `update()` for 25 frames, asserting the deck
+count equals holding it for ONE frame (held-N == held-1). It failed before the fix (`4 == 6`: 25 forward steps through the
+{1,2,4,6,8} brackets wrap back to start) and passes after. CMakeLists.txt registers the new test source. §11 B6 row moved Open
+-> Resolved with this hash; no schema change, no new profile field.
+
+### 2026-11-06 — citation drift reconciled against current source (accumulated across recent 0.4 commits)
+
+Recent 0.4 code changes shifted many later `file:line` numbers (`src/Game.cpp` / `src/InputHandler.cpp`) — B4's gameRules
+additions, then B6/B7 this pass — and the docs were not re-verified after each commit, so citations drifted. Every actionable
+citation below was checked against the current tree; the post-arrow numbers are now correct. The historical recheck-list prose in
+§1 (:39) still records its pre-shift audit and is left as that record — only post-audit drift has been corrected here. Verified unchanged (sits before the inserted code): banner controls `Game.cpp:162`,
+`run()` while-loop `189`, main→run entry `185`.
+
+- Reko seed / `resetShoeAnalytics()` (B4): `Game.cpp:254` → **277** (`resetShoeAnalytics` moved +23 when
+  `persistOnExit()` was inserted before it). `Deck.cpp:73` unchanged — verified.
+- B6 rules case: `Game.cpp:383-388` → **418-433** (old polling block gone; now edge-gated at 420-433).
+- `activeTrueCount()` / `"True Count == running count"` (B4 §6.5, U5): `Game.cpp:483` → **1012**.
+- B5 `placeSideBet()`: def `1130`→**1174**, affordability check `1134`→**1180**.
+- B10 `maxSplitHands` enforcement / `Game::split()`: `Game.cpp:777` → **821**; the cleared-item handActions note
+  (NEXT_STEPS :156) `split()` `766` → **810**.
+- Shoe-boundary save sites: mid-shoe addShoeRecord `1340`→**1384**, saveProfile **1386**; end-of-shoe addShoeRecord
+  `1499`→**1543**, saveProfile **1545**.
+- B3 `syncBettingAndSideBet()`: `Game.cpp:451` → **485**.
+- InputHandler window-close `Event::Closed`: `247-257` → **251-258**; Restart addShoeRecord/saveProfile `102/104` →
+  **106/108**; QuitToMenu `115/119` → **119/123**.
+- B16 `deck.getCards()`: `Game.cpp:276`/**1349** → **299**/**1393**.
 
