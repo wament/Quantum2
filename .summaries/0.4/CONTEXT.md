@@ -10,10 +10,11 @@ history; this file is the authority on current defects.
 used only afterwards to explain what was observed. Where a claim is code-only (not reproduced on screen) it is
 labelled as such.
 
-**Status: audited 2026-11-06 against `96fd416` on branch `3.1`.** Baseline re-measured at 264/264 passing; every
-`file:line` citation re-checked and correct; the B13 proof re-run and reproducing. Several *structural* claims in
-the first revision were wrong and have been corrected in place — the audit log in §13 lists exactly which, so you
-can tell a verified claim from an inherited one. Read §13 before treating any statement here as settled.
+**Status: audited 2026-11-06 on branch `3.1` (HEAD `356fc31`).** Baseline is now **277/277 passing**; every
+`file:line` citation re-checked and correct against HEAD, including the fiddly ones (`Game.cpp:1012`, `810`, …) in
+§1. Several *structural* claims in the original revision were wrong and have been corrected in place — §13 lists
+exactly which, so you can tell a verified claim from an inherited one. Nine defects are already **Resolved**
+(B2,B3,B4,B6,B7,B12,B13,B14,B15); see the tracker in §11. Read §13 before treating any statement here as settled.
 
 ---
 
@@ -25,7 +26,7 @@ can tell a verified claim from an inherited one. Read §13 before treating any s
   requires ≥3.0 and this machine has **3.1.0** (`find_package` reports "Found SFML 3.1.0"); CMake ≥3.10; Catch2
   **v3.6.0** pulled by `FetchContent` (`CMakeLists.txt:124-130`); vendored nlohmann/json in `include/nlohmann`.
 - **Build:** `cmake --preset "GCC 13.3.0 x86_64-linux-gnu"` → `out/build/GCC 13.3.0 x86_64-linux-gnu/`.
-- **Test:** `ctest --test-dir 'out/build/GCC 13.3.0 x86_64-linux-gnu'`. Baseline **264/264 pass**.
+- **Test:** `ctest --test-dir 'out/build/GCC 13.3.0 x86_64-linux-gnu'`. Baseline **277/277 pass** (HEAD `356fc31`).
 - **Entry:** `main.cpp` → `Game::run()` (`src/Game.cpp:185`).
 - **Save file:** `$HOME/.local/share/blackjack/saves/player_profile.json`
   (`getSavePath()`, `src/Player.cpp:14-25`; falls back to `saves/player_profile.json` if `HOME` is unset).
@@ -36,17 +37,22 @@ revision of this file warned that 11 files carried uncommitted Tournament-refact
 referred to the working tree rather than `HEAD`. That work has since landed as **`96fd416 "new horizons"`** on
 branch `3.1`, together with these three documents. On **2026-11-06** every `file:line` citation in this file and
 in `NEXT_STEPS.md` was re-checked against that commit; the citations held, including the fiddly ones
-(`Game.cpp:483`, `Game.cpp:766`, `Game.cpp:1340`/`:1499`, `RoundDealer.cpp:35`/`:45`/`:46`,
+(`Game.cpp:1012`, `Game.cpp:810`, `Game.cpp:1340`/`:1499`, `RoundDealer.cpp:35`/`:45`/`:46`,
 `GameRenderer.cpp:1020-1023`, `GameRecord.hpp:307`, `PlayerProfile.hpp:66`, `Constants.hpp:273`). Trust the line
-numbers. What did *not* hold were several structural claims, and those are corrected in place — see §13.
+numbers. Two of these shifted a few commits later (B4/B6 moved `activeTrueCount()` 483→1012 and `Game::split()`/its
+enforcement to :810–:821); §13 records them, so re-check if you are editing around there. What did *not* hold were
+several structural claims, and those are corrected in place — see §13.
 
 ## 2. Posture change entering 0.4
 
 Phases 0.0–0.3 were feature delivery then refactor. 0.4 is **defect removal**. Feature work stays frozen.
 
-The defining fact of this phase: **the test suite is fully green while the game has at least eight user-visible
-defects.** Four of them (B1–B4) are things a player meets in a normal session. That is not a criticism of the
-tests — it is a statement about *where* they look. See §3.
+The defining fact of this phase — **the test suite is fully green while the game carries user-visible defects the
+headless contract never exercises** — still holds, but the composition has changed: 9 of the original defects are now
+**Resolved** (B2, B3, B4, B6, B7, B12, B13, B14, B15) each with a dedicated regression test. The open ones left are
+B1, B5, B8, B9, B10, B11 — plus the UI/UX set U1–U10 and the tech-debt items T1, T2, B16 (all in §11). Of those,
+**B1 is the last red defect a player meets in a normal session**; it is the natural next target once this phase's
+lower-severity items are triaged. See §3 for where the remaining defects live.
 
 Working rule for the phase: **a fix is not done until a test exists that fails without it.** Several of these
 bugs are one-line changes that would otherwise be trivially re-broken.
@@ -55,7 +61,7 @@ bugs are one-line changes that would otherwise be trivially re-broken.
 
 The 0.3 testing contract is: *test pure logic headlessly through `Game(bool headless)` + `setDeck(...)` and read
 results via `*ForTest()` accessors; keep presentation out of the test binary.* That contract is good and has
-produced 264 meaningful tests. But it deliberately excludes exactly the layers where these bugs live:
+produced 277 meaningful tests. But it deliberately excludes exactly the layers where these bugs live:
 
 | Defect | Layer the contract excludes |
 |---|---|
@@ -149,7 +155,7 @@ g++ -std=c++17 -I include -M src/PlayerProfile.cpp | tr ' ' '\n' | grep Serializ
 | `preferredSoundVolume/MusicVolume/Muted` | ✔ | `j.value()` + default | |
 | `unlockedAchievementIds` | **only if non-empty** | `j.value()` + `{}` | |
 | `gameRules` | ✔ | guarded `contains()` | nested object, 6 keys |
-| `currentHistory` | ✘ **never** | — | **B13** |
+| `currentHistory` | ✔ (additive) | `j.value()` + `{}` on load | **B13** — now serialised; guarded read keeps legacy mid-shoe-quit saves loading (§6.10, test #273) |
 
 **Two-tier read contract.** Four core fields use `j.at()` and therefore *throw*; every additive field uses
 `j.value(key, default)` and degrades gracefully. The additive half is deliberate and well documented in the
@@ -162,11 +168,14 @@ source comments. The `at()` half is what turns a truncated file into a total wip
 profile can never drift from what was actually played — is good, and `tests/test_stats_batching.cpp` proves the
 recompute matches the live per-hand increments.
 
-**Why that design still loses data (B13).** `careerStatsFromHistory()` folds the in-progress shoe
-(`currentHistory`) in as a synthetic `completed = false` shoe, so the numbers are right *in session*. But
-`currentHistory` is not serialised, so after a reload the recompute runs on `longHistory` alone and the next save
-overwrites good numbers with smaller ones. Two individually-correct decisions compose into silent data loss.
-Proven in §6.10.
+**Why that design *was* losing data (B13).** `careerStatsFromHistory()` folds the in-progress shoe
+(`currentHistory`) in as a synthetic `completed = false` shoe, so the numbers are right *in session*. The latent
+trap was that `currentHistory` is not serialised, so after a reload the recompute runs on `longHistory` alone and
+the next save overwrites good numbers with smaller ones — two individually-correct decisions composing into silent
+data loss. Proven in §6.10. **B13 fixed it** by adding `currentHistory` to the write (a guarded read on load keeps
+legacy mid-shoe-quit saves loading) and a test (`test_profile_settings.cpp#273`) asserting an in-progress shoe's
+rounds survive a save/load round trip. If you touch this recompute again, that test is your guardrail: it fails the
+moment the in-progress shoe stops surviving a reload.
 
 **`gameRules` nested object** — written keys: `numDecks`, `dealerStandsOnSoft17`, `doublesAfterSplitAllowed`,
 `resplitAcesAllowed`, `resplitTensAllowed`, `surrenderType`. The per-field hooks live in `include/GameRules.hpp`
@@ -257,10 +266,10 @@ cd /home/william-ament/Documents/Quantum2
 g++ -std=c++17 -I include -I /usr/local/include .summaries/0.4/hist_proof.cpp \
     src/PlayerProfile.cpp src/Logger.cpp \
     -o /tmp/hist_proof -L/usr/local/lib -lsfml-graphics -lsfml-system
-/tmp/hist_proof   # exits 1 while B13 is open
+/tmp/hist_proof   # exits 1 while B13 is open; exits 0 once the fix lands
 ```
 
-Re-run **2026-11-06** at `96fd416`; output is byte-identical to the original finding:
+Original finding, reproduced **2026-11-06 at `96fd416`** (before any fix):
 
 ```
 reload #1: handsFinished=8  shoes=1   (expected 8)
@@ -269,15 +278,17 @@ BUG: hands silently lost from career stats
 ```
 
 The program: add 5 rounds → `addShoeRecord()` → add 3 rounds → `save()` → `load()` → add 1 round → `save()` →
-`load()`. The career hand count goes **backwards** across a save that added a hand. Port this verbatim into
-`tests/test_profile_settings.cpp` as the regression test.
+`load()`. The career hand count goes **backwards** across a save that added a hand. This is the regression test it
+now backs: `tests/test_profile_settings.cpp#273` ("B13: an in-progress shoe's rounds survive a save/load and still
+book into career stats"), which fails before the fix and passes after.
 
 *Note:* this proof originally lived at `/tmp/hist_proof.cpp` and did not survive a reboot — that is why it is now
 checked in beside these docs. Two things to keep in mind when you run it:
 
-- It compiles `src/PlayerProfile.cpp`, so it exercises **`src/Serialization.hpp`**, not the `include/` copy the
-  test suite reads (§5). After the B13 fix lands, re-run it to confirm the *shipped* schema changed and not just
-  the tested one.
+- It compiles `src/PlayerProfile.cpp`, so it exercises the **one** remaining `Serialization.hpp` (`include/`), which
+  both the shipped binary and the test suite read today (B15 unified on a single copy, §5). Run it to confirm the
+  *shipped* schema changed — but now that B13 is Resolved it should exit **0** ("OK", hands 8 → 9), not 1. If it
+  still exits 1 after your fix, you edited the wrong file (see B15's rule).
 - It writes `/tmp/hist_proof_profile.json`, never the real save file. Safe to run with a live profile present.
 
 ---
@@ -356,7 +367,7 @@ after the phase-0.4 changes:
 - **Core blackjack logic is correct.** Deal, hit, stand, double, split, surrender, insurance, dealer policy and
   settlement all produced correct outcomes and correct bankroll arithmetic across many hands and multiple seats.
   The B3 and B5 findings are a *display* bug and a *timing* question respectively — neither is a settlement error.
-- **The headless test suite is real.** 264 tests, ~8s, no flake observed, and they assert behaviour rather than
+- **The headless test suite is real.** 277 tests, ~8s, no flake observed, and they assert behaviour rather than
   implementation.
 - **The rules panel actually works.** Every rule changed took effect in the live game — deck count changed the
   shoe size, surrender type changed the available action, and so on. Only the *seed* (B4) and the *input
@@ -399,13 +410,13 @@ word "reproduced" implied.
 | B2 | 🔴 | Achievement toast never clears | **Resolved 2026-11-06 (`f3aeb1f`)** | Added `achievementToastTimer` to `HUDState.hpp`; armed in `AchievementFeeder.cpp:48` on each unlock, ticked in `RoundEngine.cpp` alongside the other HUD timers and cleared at 0 (renderer draws only while a name is set). Test #210 arms/advances past lifetime/re-arms (fails before fix). Suite 275/275 |
 | B3 | 🔴 | Side bet always reports "WON" | **Resolved 2026-11-06 (`c7978f1`)** | Fixed in `include/SideBetLabels.hpp`: branch won/lost/push on net with the sign preserved; `GameRenderer.cpp:997` calls the pure fn. Guard test in `test_side_bets.cpp` asserts WON +20 / LOST -20 / PUSH 0 (fails before fix). Suite 266/266 |
 | B4 | 🔴 | Reko seed ignores deck count | **Resolved 2026-11-06 (`3924b56`)** | Seeds from `gameRules_.numDecks` in `resetShoeAnalytics()` (`Game.cpp:277`); `Deck::create()` remembers shoe size and reshuffle rebuilds from it (`Deck.cpp:73`). Tests assert the roadmap seeds 1/2/4/6/8 → -1/-5/-12/-20/-27 through a headless Game, plus a one-deck reshuffle stays ~53 cards (both fail before fix). Two `test_deck.cpp` reshuffle-size assertions were corrected from the old NUM_DECKS behavior. Suite 274/274 |
-| B13 | 🔴 | Mid-shoe quit deletes those hands from career stats | **Resolved 2026-11-06 (`387a3e0`)** | Persist in-progress shoe rounds (currentHistory) so quitting mid-shoe still books them into career stats; guarded read. Test #270 passes; hist_proof.cpp (§6.10) confirms shipped schema. §11 listed it Open after the commit and was corrected here |
+| B13 | 🔴 | Mid-shoe quit deletes those hands from career stats | **Resolved 2026-11-06 (`387a3e0`)** | Persist in-progress shoe rounds (currentHistory) so quitting mid-shoe still books them into career stats; guarded read. Test #273 passes; hist_proof.cpp (§6.10) now exits 0 and confirms the shipped schema. §11 listed it Open after the commit and was corrected here |
 | B5 | 🟠 | Main bet not escrowed; bankroll can go negative | Open | `Player.cpp:89` still a bare affordability check; no `getAvailableBankroll` in the tree. Negative balance not re-reproduced on screen |
 | B6 | 🟠 | Rules panel key repeat | **Resolved 2026-11-06 (`584aa4b`)** | Added false->true edge detection in \`Game::update()\` rules case via \`rulesRightPrev_\`/\`rulesLeftPrev_\`; applyGameRuleEdit fires only on a press (one step per tap). Up/Down highlight repeat left as-is (desirable, called out in commit). Headless test #277 (\`test_rules_panel_editing.cpp\`) holds Right 25 frames and asserts result == one tap; fails before / passes after. Suite 277/277 (+1 over B7) |
 | B7 | 🟠 | Escape-quit skips the save | **Resolved 2026-11-06 (`11b187b`)** | Centralised persist-on-exit into `Game::persistOnExit()` (shoe record + current table settings + unlocked achievements, then save) routed through `InputHandler::returnToMainMenu()`, so every Escape->menu route persists like the window-close path did; guarded against an empty seat vector. Headless test #276 (`test_input_return_to_main_menu.cpp`) fails before / passes after; full suite 276/276 (+1) |
 | B8 | 🟠 | `Deck::draw()` no empty guard | Known (0.3 §6) | Two unguarded `back()`/`pop_back()` pairs confirmed at `Deck.cpp:123-137` |
 | B9 | 🟠 | Flaky crash + unflushable logger | Open — crash unrepro | `Logger.cpp:34` still writes `std::cout` with no flush/unitbuf |
-| B14 | 🟠 | Non-atomic save; corrupt file → silent wipe | **Resolved 2026-11-06 (`9d1d125`)** | Atomic write + corrupt-save rescue under a `.corrupt.<ts>` suffix, and partial-JSON field retention in `PlayerProfile.cpp`. Tests #229/#230 pass. §11 listed it Open after the commit and was corrected here |
+| B14 | 🟠 | Non-atomic save; corrupt file → silent wipe | **Resolved 2026-11-06 (`9d1d125`)** | Atomic write + corrupt-save rescue under a `.corrupt.<ts>` suffix, and partial-JSON field retention in `PlayerProfile.cpp`. Tests #232/#233 pass. §11 listed it Open after the commit and was corrected here |
 | B15 | 🟠 | Two live copies of `Serialization.hpp` | **Resolved 2026-11-06 (`9a89185`)** | Deleted `src/Serialization.hpp`; exactly one copy remains (include/), enforced by a guard test that fails with two / passes with one. No CMake edit needed; `PlayerProfile.cpp` now resolves to the include copy, unblocking every schema edit (B12/B13/B14) |
 | B10 | 🟡 | `maxSplitHands` dead config | Open | Enforced at `Game.cpp:821` / `RoundEngine.cpp:121`; absent from `to_json` and `gameRuleRows()` |
 | B11 | 🟡 | Control banner mislabels keys | Open | `Game.cpp:162-163` vs real bindings `InputHandler.cpp:595-606` |
@@ -539,6 +550,11 @@ marked only B3 + B15 resolved) still listed both as Open. Verified each against 
 the commit hash plus test IDs as evidence, so the table matches what is actually implemented. No code or other citations
 changed — status correction only; the B14 primary-site citation (`src/PlayerProfile.cpp`) was re-checked and still holds.
 
+> **Note (2026-11-06):** the test numbers here have since shifted by +3 as more Phase-0 regression tests were added, so
+> they are now historical rather than current — `#270` is no longer a B13 test (it is an advisor-DAS case), and the
+> authoritative current IDs are **B13 = #273**, **B14 = #232/#233** (see §5, §6.10). If you grep `ctest` by these old
+> numbers you will hit unrelated tests; use the current IDs.
+
 ### 2026-11-06 — resolved B4 (Reko seed) + B2 (achievement toast); corrected drifted citations
 
 Two more Phase-0 criticals landed with passing tests, each committed separately (`3924b56`, `f3aeb1f`) and verified via the full gate. Both are in the presentation/lifecycle seam the headless contract misses, so they needed dedicated tests to lock them.
@@ -605,6 +621,43 @@ citation below was checked against the current tree; the post-arrow numbers are 
 - B10 `maxSplitHands` enforcement / `Game::split()`: `Game.cpp:777` → **821**; the cleared-item handActions note
   (NEXT_STEPS :156) `split()` `766` → **810**.
 - Shoe-boundary save sites: mid-shoe addShoeRecord `1340`→**1384**, saveProfile **1386**; end-of-shoe addShoeRecord
+- B16 `deck.getCards()`: `Game.cpp:276`/**1349** → **299**/**1393**.
+
+### 2026-11-06 — progress reconciliation (assessed git tree, HEAD `356fc31`)
+
+The prior §13 entries all describe the *fixes* that landed; none reconciled the ledger against where things stand
+now. This pass re-read the tracker + evidence and corrected drift found there. Method: full `ctest -j8`, then verified
+each Resolved claim against source (not the table). Baseline is **277/277**.
+
+- **9 defects are now Resolved** with dedicated regression tests — B2 (`f3aeb1f`), B3 (`c7978f1`), B4 (`3924b56`),
+  B6 (`584aa4b`), B7 (`11b187b`), B12 (`31a3703`), B13 (`387a3e0`), B14 (`9d1d125`), B15 (`9a89185`). Open:
+  **B1, B5, B8, B9, B10, B11** plus the UI set U1–U10 and tech-debt T1, T2, B16. Of the reds left, **B1 is the last
+  one a player meets in a normal session** (tournament overwrites the career profile) — natural next target once the
+  lower-severity items are triaged.
+- **§6.10 (B13 proof) was written as if B13 were still open.** It said `/tmp/hist_proof` "exits 1 while B13 is open"
+  and showed a sample output of hands finishing 8 then **6** ("BUG"). Updated: the block now clearly labels that as the
+  *pre-fix* finding, states hist_proof exits **0** once B13 is Resolved, drops the stale `src/Serialization.hpp` copy note
+  (B15 unified to one `include/` copy), and points at the regression test it now backs — `test_profile_settings.cpp#273`.
+  If you run the proof after touching this schema it should exit 0; a lingering exit 1 means you edited the wrong file.
+- **§5 `currentHistory` row + paragraph described pre-fix behaviour.** Top-level-key row moved `✘ never` →
+  `✔ (additive)`, noting the guarded-load migration and test #273. The "why that design loses data" paragraph is now in
+  the past tense with B13's fix and its guardrail (§6.10 / #273) called out, so a reader does not think silent career-data
+  loss still happens.
+- **§11 test IDs had drifted.** B13 was `#270`; now it is **#273** (a uniform +3 shift — three more Phase-0 regression
+  tests were added). B14 was `#229/#230`; now **#232/#233**. §13:547–548 still cite the historical IDs, so a block there
+  flags them as stale and names the current ones. If you grep `ctest` by `270` you will hit an advisor-DAS test, not B13.
+- **§1 recheck list cited two post-audit-stale numbers.** `Game.cpp:483` (`activeTrueCount`) → now **1012**; `Game.cpp:766`
+  (`Game::split()`) → now **810**. Both shifted after the original audit (B4/B6), which §13 already records; the "trust the
+  line numbers" callout in §1 is corrected to current values with a one-line pointer back to that record.
+- **§1 status + §2 framing were stale.** Status callout now names HEAD `356fc31` and suite 277/277; §2's "at least eight
+  defects, four of them B1–B4" is updated to the current composition (nine Resolved, remaining reds named) while keeping
+  its core point — the green suite hides defects in the seam the headless contract never exercises.
+
+**Confirmed accurate this pass:** every `file:line` citation listed in §1 against HEAD; §5 two-tier read contract and
+`gameRules` key list; §6.1–§6.9 evidence; B8 (`Deck.cpp:123-137`) still open; §11 open rows for B5/B8/B9/B10/B11 match
+source (B10 `maxSplitHands` enforced at `Game.cpp:821`, Banner mislabels keys at `Game.cpp:162-163` vs bindings
+`InputHandler.cpp:595-606`). No code changed.
+
   `1499`→**1543**, saveProfile **1545**.
 - B3 `syncBettingAndSideBet()`: `Game.cpp:451` → **485**.
 - InputHandler window-close `Event::Closed`: `247-257` → **251-258**; Restart addShoeRecord/saveProfile `102/104` →

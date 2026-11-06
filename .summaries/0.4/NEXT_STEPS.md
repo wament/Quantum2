@@ -6,9 +6,11 @@ specific file:line. Companion document: `.summaries/0.4/CONTEXT.md` — read it 
 architecture and guardrails.
 
 **Posture change from 0.3:** feature work stays frozen. This phase is defect removal + the missing test seam.
-The suite is **264/264 green** while **15 logic/data defects (B1–B15) and 10 UI issues (U1–U10)** exist, plus
-three tech-debt items (T1, T2, B16). That gap is the theme of this phase: every bug lives in the
-presentation/lifecycle seam that the headless-first contract deliberately leaves untested.
+The suite is **277/277 green**. Nine of the original defects are already Resolved (B2,B3,B4,B6,B7,B12,B13,B14,
+B15) with dedicated regression tests; the ones left open are B1,B5,B8,B9,B10,B11 plus three tech-debt items
+(T1, T2, B16) and the 10 UI issues (U1–U10). That gap — every remaining bug lives in the presentation/lifecycle
+seam that the headless-first contract deliberately leaves untested — is still the theme of this phase; see §11 for
+the full open list.
 
 **Handoff prompt — paste into a fresh window** (regenerated 2026-11-06 to match the audited docs; keep it in sync
 with CONTEXT.md §13 whenever the ledger changes):
@@ -47,17 +49,18 @@ The docs were written at a point in time and may be stale. Before coding:
   ctest --test-dir 'out/build/GCC 13.3.0 x86_64-linux-gnu' -j8 --output-on-failure
 
 Then report back, BEFORE writing any code:
-  - current test count and pass/fail (baseline 264/264)
+  - current test count and pass/fail (baseline 277/277)
   - which §11 IDs are actually still open — verify against the source, don't trust the table
   - any doc claim that no longer matches the code
   - your proposed plan for this round's focus, and any open §10 decision that blocks it
 
-Calibration: on 2026-11-06 every `file:line` citation in both docs was re-checked against `96fd416` and held, and
-the structural claims were corrected in place (`f3c6ce1`). Those citations stay trustworthy until the **code**
+Calibration: on 2026-11-06 every `file:line` citation in both docs was re-checked against the current source and
+held; nine defects are Resolved with tests (see §5, §6.10). Those citations stay trustworthy until the **code**
 moves, not until the docs do — so if `git status` is clean and `git log --oneline -- include src tests CMakeLists.txt`
-still shows `96fd416` as the last code change, trust the citations and spend your effort on the §11 **Evidence**
-column instead: several rows are marked code-only or "not re-run this pass", and those are the ones worth
-re-testing. If any code has landed since, re-verify the sites you're about to touch.
+shows no code change since `356fc31`, trust the citations and spend your effort on the §11 **Evidence** column
+instead: several rows are marked code-only or "not re-run this pass", and those are the ones worth re-testing. If any
+code has landed since, re-verify the sites you're about to touch. Note that some historical §13 entries cite test
+IDs from before a +3 numbering shift (B13 was #270; it is now #273) — use the current IDs in §5, §6.10 and §11.
 
 Wait for my go-ahead.
 
@@ -72,9 +75,10 @@ Wait for my go-ahead.
 - **B15 lands before B12/B13/B14.** There are two live copies of `Serialization.hpp`: the shipped binary compiles
   `src/`'s copy via `src/PlayerProfile.cpp`, while `test_profile_settings.cpp` / `test_game_rules.cpp` /
   `test_achievements.cpp` compile `include/`'s. A schema fix in the wrong copy goes green with an unchanged binary.
-- **B1 has SIX `saveProfile()` call sites**, not three — the table is in the B1 entry. Gating three leaves the bug.
-- `.summaries/0.4/hist_proof.cpp` is the checked-in B13 proof; it exits 1 today and is the fastest way to confirm
-  a B13 fix reached the *shipped* schema rather than just the tested one.
+- **B1 has SEVEN `saveProfile()` call sites**, not three — the table is in the B1 entry (the seventh,
+  `SessionLifecycle.cpp:287`, was added after the six were enumerated). Gating three leaves the bug.
+- `.summaries/0.4/hist_proof.cpp` is the checked-in B13 proof; it exits **0** once B13 is fixed (it exited **1** while
+  open) and is the fastest way to confirm a B13 fix reached the *shipped* schema rather than just the tested one.
 - Never append `-M` to a command copied from `compile_commands.json` — it overwrites the `.o` with the dependency
   list. See CONTEXT §8.
 
@@ -105,9 +109,9 @@ cmake --build 'out/build/GCC 13.3.0 x86_64-linux-gnu' --parallel
 ctest --test-dir 'out/build/GCC 13.3.0 x86_64-linux-gnu' -j8 --output-on-failure
 ```
 
-Baseline: **264/264 pass in ~8s** (`-j8`). Re-verified **2026-11-06** at commit `96fd416`: 264/264 in 8.15 s,
-configure and build clean (warnings only — the pre-existing `[=]` implicit-`this` deprecation in
-`GameRenderer.cpp`'s `modeTable()` lambdas). Never commit with a lower count than you started.
+Baseline: **277/277 pass in ~8s** (`-j8`), HEAD `356fc31`. Configure and build are clean — warnings only (the pre-existing
+`=` implicit-`this` deprecation in `GameRenderer.cpp`'s `modeTable()` lambdas). Nine defects already have regression tests
+(B2,B3,B4,B6,B7,B12,B13,B14,B15); the open reds are B1,B5,B8,B9,B10,B11. Never commit with a lower count than you started.
 
 > **The working tree is clean.** The Tournament refactor this document used to describe as "uncommitted" landed
 > as `96fd416 "new horizons"` on branch `3.1`, and it carried the `.summaries/0.4/` docs in with it. Every line
@@ -816,8 +820,9 @@ from the back, account for the cut card, and cover it with a test that reconstru
 
 # Testing strategy — close the seam that let all this through
 
-The suite is **264/264 green** while 15 logic/data defects (B1–B15) exist. Every one sits in the presentation /
-lifecycle seam that the headless-first contract deliberately leaves untested. Two cheap additions would have
+The suite is **277/277 green**. Nine of the 15 logic/data defects are already Resolved (B2,B3,B4,B6,B7,B12,B13,B14,
+B15); the six open ones — B1,B5,B8,B9,B10,B11 — each sit in the presentation/lifecycle seam that the headless-first
+contract deliberately leaves untested. Two cheap additions would have
 caught the top three:
 
 1. **Persistence round-trip integration test.** Play → save → enter mode → save → reload → assert invariants.
@@ -840,7 +845,8 @@ never cleared" (catches B2 — grep every `hudState.` field for a reset path).
 - [ ] B10–B12 resolved; legacy profiles verified to still load.
 - [ ] U1, U2, U3, U7 addressed — the four a new player hits within five minutes.
 - [ ] Persistence round-trip + renderer-string extraction tests exist.
-- [ ] Full suite green with a **higher** test count than the 264 baseline.
+- [ ] Full suite green (currently **277/277**) with a test count at or above the current baseline, growing as each fix adds
+      its regression test.
 - [ ] `.summaries/0.4/CONTEXT.md` §11 status table and §10 decisions updated before handoff.
 
 # Explicitly out of scope
@@ -860,8 +866,10 @@ never cleared" (catches B2 — grep every `hudState.` field for a reset path).
 
 # Document audit log
 
-**2026-11-06 — audited against `96fd416` (branch `3.1`).** Baseline re-measured at **264/264 in 8.15 s**; every
-`file:line` citation in this ledger re-checked and correct; B13's standalone proof re-run and reproducing.
+**2026-11-06 — audited against `96fd416` (branch `3.1`).** Baseline at that time: **264/264 in 8.15 s**; every
+`file:line` citation in this ledger re-checked and correct; B13's standalone proof re-run and reproducing. That audit is
+now historical — nine of the defects it catalogued have since been Resolved (see §5, §6.10) and the suite is at **277/277**
+on HEAD `356fc31`; use §11 for what remains open.
 
 Four structural claims did **not** survive the audit and are fixed above: the "working tree is not clean" warning
 (stale — that work landed as `96fd416`); B1's "three save sites" (there are six, and two line numbers were wrong);
