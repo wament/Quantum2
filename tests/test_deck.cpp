@@ -89,10 +89,10 @@ TEST_CASE("reshuffleWithRemaining combines deck and table cards", "[Deck][Reshuf
         tableCards.push_back(deck.draw());
     }
 
-    // Rebuild a full NUM_DECKS shoe minus the dealt cards.
+    // Rebuild the one-deck shoe (create(1)) minus the dealt cards — not a fresh six-deck shoe.
     deck.reshuffleWithRemaining(tableCards);
 
-    size_t expectedSize = Constants::NUM_DECKS * 52 - tableCards.size() + 1;
+    size_t expectedSize = 1 * 52 - tableCards.size() + 1;
     CHECK(deck.size() == expectedSize);
 
     int cardsDrawn = 0;
@@ -164,10 +164,10 @@ TEST_CASE("reshuffleWithRemaining with empty table cards", "[Deck][Reshuffle]")
         (void)c;
     }
 
-    // Rebuild a full NUM_DECKS shoe with no played cards.
+    // Rebuild the one-deck shoe (create(1)) with no played cards — not a fresh six-deck shoe.
     std::vector<Card> emptyTable;
     deck.reshuffleWithRemaining(emptyTable);
 
-    size_t expectedSize = Constants::NUM_DECKS * 52 - emptyTable.size() + 1;
+    size_t expectedSize = 1 * 52 - emptyTable.size() + 1;
     CHECK(deck.size() == expectedSize);
 }

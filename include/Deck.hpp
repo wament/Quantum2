@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <cstddef>
 #include "Card.hpp"
+#include "Constants.hpp"
 #include <random>
 
 class Deck
@@ -36,6 +37,10 @@ class Deck
     std::mt19937 rng;
     unsigned long long lastShuffleSeed;
     bool cutCardReached = false;
+
+    // Shoe size this deck was created with. reshuffleWithRemaining() rebuilds from this (not the compile-time
+    // NUM_DECKS default) so a mid-shoe reshuffle on a non-default shoe keeps its real card count.
+    int shoeDecks_ = Constants::NUM_DECKS;
 
     // The record of the currently active shoe
     std::vector<Card> activeShoeRecord;

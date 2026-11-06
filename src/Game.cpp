@@ -250,8 +250,8 @@ void Game::resetShoeAnalytics()
     // swaps in when the player clicks the Count box
     // True Count boxes jump to stale numbers the first time the style was toggled after a reshuffle.
     // Reko is unbalanced and compensated by starting the count at its per-deck offset (per the roadmap table);
-    // Hi-Lo starts flat. rekoStartingOffset maps NUM_DECKS to -1/-5/-12/-20/-27 for 1/2/4/6/8 decks.
-    const int rekoSeed = BasicStrategy::rekoStartingOffset(Constants::NUM_DECKS);
+    // Hi-Lo starts flat. rekoStartingOffset maps the active deck count to -1/-5/-12/-20/-27 for 1/2/4/6/8 decks.
+    const int rekoSeed = BasicStrategy::rekoStartingOffset(gameRules_.numDecks);
     const bool rekoActive = (countingStyle == BasicStrategy::CountingStyle::REKO);
     runningCount = rekoActive ? rekoSeed : 0;
     backgroundRunningCount = rekoActive ? 0 : rekoSeed;

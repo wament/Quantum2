@@ -7,6 +7,8 @@
 
 void Deck::create(int numberOfDecks)
 {
+    shoeDecks_ = numberOfDecks;
+
     cards.clear();
     cutCardReached = false;
     activeShoeRecord.clear();
@@ -63,12 +65,12 @@ void Deck::reshuffleWithRemaining(const std::vector<Card>& playedCards)
         hasPreviousRecord = true;
     }
 
-    // Rebuild a fresh full NUM_DECKS shoe, then remove the cards that are currently dealt. The result is
+    // Rebuild a fresh full shoe of this size, then remove the cards that are currently dealt. The result is
     // only the unseen cards still in the shoe
     cards.clear();
     cutCardReached = false;
 
-    for (int deck = 0; deck < Constants::NUM_DECKS; ++deck)
+    for (int deck = 0; deck < shoeDecks_; ++deck)
     {
         for (int suit = 0; suit < 4; ++suit)
         {
