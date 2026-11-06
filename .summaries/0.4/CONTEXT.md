@@ -396,13 +396,13 @@ word "reproduced" implied.
 | B2 | 🔴 | Achievement toast never clears | **Open** | Re-confirmed by grep: one write (`AchievementFeeder.cpp:48`), one read (`GameRenderer.cpp:154`), zero clears; no `achievementToastTimer` symbol exists |
 | B3 | 🔴 | Side bet always reports "WON" | **Resolved 2026-11-06 (`c7978f1`)** | Fixed in `include/SideBetLabels.hpp`: branch won/lost/push on net with the sign preserved; `GameRenderer.cpp:997` calls the pure fn. Guard test in `test_side_bets.cpp` asserts WON +20 / LOST -20 / PUSH 0 (fails before fix). Suite 266/266 |
 | B4 | 🔴 | Reko seed ignores deck count | **Open** | Re-confirmed: `Game.cpp:254` and `Deck.cpp:71` both use `Constants::NUM_DECKS` (6) |
-| B13 | 🔴 | Mid-shoe quit deletes those hands from career stats | **Open — re-proven** | `hist_proof.cpp` re-run 2026-11-06, output identical (§6.10) |
+| B13 | 🔴 | Mid-shoe quit deletes those hands from career stats | **Resolved 2026-11-06 (`387a3e0`)** | Persist in-progress shoe rounds (currentHistory) so quitting mid-shoe still books them into career stats; guarded read. Test #270 passes; hist_proof.cpp (§6.10) confirms shipped schema. §11 listed it Open after the commit and was corrected here |
 | B5 | 🟠 | Main bet not escrowed; bankroll can go negative | Open | `Player.cpp:89` still a bare affordability check; no `getAvailableBankroll` in the tree. Negative balance not re-reproduced on screen |
 | B6 | 🟠 | Rules panel key repeat | **Open** | `Game.cpp:383-388` still polls held keys with no edge detection |
 | B7 | 🟠 | Escape-quit skips the save | **Open** | No `persistOnExit`; save still only in the `Event::Closed` branch (`InputHandler.cpp:247-257`) |
 | B8 | 🟠 | `Deck::draw()` no empty guard | Known (0.3 §6) | Two unguarded `back()`/`pop_back()` pairs confirmed at `Deck.cpp:121-135` |
 | B9 | 🟠 | Flaky crash + unflushable logger | Open — crash unrepro | `Logger.cpp:34` still writes `std::cout` with no flush/unitbuf |
-| B14 | 🟠 | Non-atomic save; corrupt file → silent wipe | Open | `save()` plain `ofstream`; `load()` catch → `return PlayerProfile()` |
+| B14 | 🟠 | Non-atomic save; corrupt file → silent wipe | **Resolved 2026-11-06 (`9d1d125`)** | Atomic write + corrupt-save rescue under a `.corrupt.<ts>` suffix, and partial-JSON field retention in `PlayerProfile.cpp`. Tests #229/#230 pass. §11 listed it Open after the commit and was corrected here |
 | B15 | 🟠 | Two live copies of `Serialization.hpp` | **Resolved 2026-11-06 (`9a89185`)** | Deleted `src/Serialization.hpp`; exactly one copy remains (include/), enforced by a guard test that fails with two / passes with one. No CMake edit needed; `PlayerProfile.cpp` now resolves to the include copy, unblocking every schema edit (B12/B13/B14) |
 | B10 | 🟡 | `maxSplitHands` dead config | Open | Enforced at `Game.cpp:777` / `RoundEngine.cpp:121`; absent from `to_json` and `gameRuleRows()` |
 | B11 | 🟡 | Control banner mislabels keys | Open | `Game.cpp:162-163` vs real bindings `InputHandler.cpp:591-602` |
@@ -527,3 +527,11 @@ the transient `-j8` ctest reported `BAD_COMMAND`, which is a runner artifact rig
 - Re-checked: §5 two-tier read contract and gameRules key list (§5:171–176) now match the corrected writer; §5
   consumer table still holds (the one-copy guard test in `test_profile_settings.cpp` is what makes this edit touch both
   binaries at once); B13/B14/B15 rows unaffected. No other claim changed.
+
+### 2026-11-06 — corrected stale status for B13 + B14 in §11
+
+The `B13` (`387a3e0`) and `B14` (`9d1d125`) fixes landed on 2026-11-06 with passing dedicated tests — `test_game_rules.cpp`
+#270 for B13, and `test_profile_settings.cpp` #229 + #230 for B14 — but the §11 tracker (last updated at `95a3d32`, which
+marked only B3 + B15 resolved) still listed both as Open. Verified each against source and moved both rows to Resolved with
+the commit hash plus test IDs as evidence, so the table matches what is actually implemented. No code or other citations
+changed — status correction only; the B14 primary-site citation (`src/PlayerProfile.cpp`) was re-checked and still holds.
