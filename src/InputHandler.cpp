@@ -22,6 +22,10 @@ InputHandler::InputHandler(Game& game) : game(game) {}
 void InputHandler::returnToMainMenu(Game& game, const char* fromMode)
 {
     Logger::info() << "Returned to main menu from the " << fromMode << ".";
+    // B7 — persist on exit via Game::persistOnExit() (the single choke point) so every Escape->menu route keeps this
+    // session's bankroll / shoe record / settings, matching the window-close save that already happened. Runs before the
+    // mode reset so the profile is durable even if the following state changes are later extended.
+    game.persistOnExit();
     game.appMode = AppMode::MainMenu;
     game.menuSelection = MenuOption::PlayGame;
 }

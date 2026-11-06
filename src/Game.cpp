@@ -195,6 +195,29 @@ void Game::run()
     }
 }
 
+// B7 — persist-on-exit choke point. Stamps shoe-record bookkeeping into career stats, the current table settings and the
+// unlocked-achievement ids onto the profile exactly once, then saves. Deliberately identical to what the pause-menu
+// Quit-to-Menu path did before B7; centralising it here means no exit route (Escape from trainer/tournament/rules/etc.,
+// replay history) can silently drop a session's bankroll / record / settings -- the defect observed was that window-close
+// saved while an Escape quit did not. Pure Game state, so headless-testable: no SFML window is required. Guards against an
+// empty seat vector (no game started yet), which QuitToMenu/Event::Closed assumed away and persistOnExit cannot assume.
+void Game::persistOnExit()
+{
+    if (players.empty())
+        return;
+
+    // Stamp the current table settings first: this is the last save on the way out -- the player count / speed / counting
+    // style survive to the next launch.
+    rememberTableSettings();
+
+    PlayerProfile profile = players[0].getProfile();
+    profile.addShoeRecord(currentShoeRecord);
+    // stamp the current unlocked-achievement ids onto the profile too
+    achievementManager_.persistUnlockedTo(profile.unlockedAchievementIds);
+    players[0].updateProfile(profile);
+    players[0].saveProfile();
+}
+
 // /4/9 + table-settings persistence: the session entry points and profile-driven table settings moved into the
 // composed SessionLifecycle helper (Follow-up #8). Game keeps one thin delegator per method below; all mutable state stays in
 // Game, so every entry point behaves byte-for-byte identically to before the split. Test accessors are retained unchanged.

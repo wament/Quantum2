@@ -220,6 +220,12 @@ class Game
 
     void run();
 
+    // B7 — single persist-on-exit choke point. Every route that leaves play back to the main menu funnels through it so a
+    // session's bankroll / shoe record / current table settings / unlocked achievements are stamped and saved exactly once,
+    // instead of only on the window-close path (before B7 an Escape exit dropped everything). Pure Game state: no SFML
+    // window required, which is what makes it headless-testable. Called from InputHandler::returnToMainMenu().
+    void persistOnExit();
+
     // Click the count-style label ("Count (Hi-Lo)") to toggle between counting systems. Both are always
     // counted in the background; this swaps which buffer drives the active count and flips the style.
     void toggleCountingStyle();
