@@ -296,3 +296,62 @@ TEST_CASE("Profiles saved before custom rules existed still load with defaults",
 
     fs::remove(path);
 }
+
+namespace {
+    // A settled, winning human hand (playerIndex 0). computeCareerStatsHistory books exactly one career hand per such
+    // record, so N of these play like N hands -- mirroring .summaries/0.4/hist_proof.cpp's makeRound().
+    RoundRecord makeWinningHumanHand()
+    {
+        RoundRecord r;
+        HandOutcome h;
+        h.wager = 10;
+        h.payout = 20;
+        h.won = true;
+        h.playerIndex = 0;
+        h.playerName = "Ada";
+        r.playerHands.push_back(h);
+        return r;
+    }
+} // namespace
+
+// B13 — quitting mid-shoe silently drops those hands from career stats. Root cause: to_json writes longHistory but not
+// currentHistory, so a save/load round trip leaves the in-progress shoe empty and careerStatsFromHistory() recomputes to
+// only the filed shoes. This mirrors .summaries/0.4/hist_proof.cpp at the PlayerProfile level; it fails before the fix
+// (reload #1 recompute is 5, not 8) and passes once currentHistory is serialised additively on load.
+TEST_CASE("B13: an in-progress shoe's rounds survive a save/load and still book into career stats", "[Schema][Persistence]")
+{
+    const fs::path path = test_support::temp_path("histproof", "b13");
+
+    // Shoe 1 completes with five human hands; addShoeRecord() files them into longHistory and clears currentHistory.
+    PlayerProfile p("Ada Lovelace");
+    for (int i = 0; i < 5; ++i)
+        p.addRoundRecord(makeWinningHumanHand());
+
+    ShoeRecord shoe;
+    shoe.rounds = std::vector<RoundRecord>(5, makeWinningHumanHand());
+    shoe.completed = true;
+    p.addShoeRecord(shoe);
+
+    // A second shoe begins and plays three more hands before the window is closed mid-shoe.
+    for (int i = 0; i < 3; ++i)
+        p.addRoundRecord(makeWinningHumanHand());
+
+    // Sanity: with all eight hands in memory, career stats already reflect them before any I/O happens.
+    CHECK(p.careerStatsFromHistory().handsFinished == 8);
+
+    p.save(path.string());
+
+    // Reload #1: career stats must include the three in-progress hands (8 total), not just the five filed shoes.
+    PlayerProfile a = PlayerProfile::load(path.string());
+    CHECK(a.careerStatsFromHistory().handsFinished == 8);
+
+    // A new session continues that shoe with one more hand, then quits mid-shoe again.
+    a.addRoundRecord(makeWinningHumanHand());
+    a.save(path.string());
+
+    PlayerProfile b = PlayerProfile::load(path.string());
+    CHECK(b.careerStatsFromHistory().handsFinished == 9); // every in-progress hand across both sessions must survive
+
+    fs::remove(path);
+}
+

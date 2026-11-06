@@ -195,6 +195,9 @@ inline void to_json(json& j, const PlayerProfile& p)
         {"bankroll", p.bankroll},
         {"stats", p.stats},
         {"longHistory", p.longHistory},
+        // in-progress shoe rounds; serialised alongside longHistory so quitting mid-shoe still books those hands.
+        // Written unconditionally (like longHistory); read additively on load so legacy saves without it keep loading.
+        {"currentHistory", p.currentHistory},
         {"preferredPlayerCount", p.preferredPlayerCount},
         {"preferredSpeed", p.preferredSpeed},
         {"preferredCountingStyle", p.preferredCountingStyle},
@@ -215,6 +218,8 @@ inline void from_json(const json& j, PlayerProfile& p)
     j.at("bankroll").get_to(p.bankroll);
     j.at("stats").get_to(p.stats);
     j.at("longHistory").get_to(p.longHistory);
+    // additive: absent "currentHistory" keeps its default (empty) so legacy mid-shoe-quit saves before this field still load.
+    p.currentHistory = j.value("currentHistory", std::vector<RoundRecord>{});
     // additive: missing key falls back to default; pre-table-settings profiles still load.
     p.preferredPlayerCount = j.value("preferredPlayerCount", GameConfig::DEFAULT_PLAYER_COUNT);
     p.preferredSpeed = j.value("preferredSpeed", static_cast<int>(GameSpeed::Normal));
