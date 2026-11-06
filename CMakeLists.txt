@@ -185,6 +185,7 @@ add_executable(Blackjack2Tests
     tests/test_game_rules.cpp
     tests/test_menu_navigation.cpp
     tests/test_input_return_to_main_menu.cpp
+    tests/test_rules_panel_editing.cpp
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)

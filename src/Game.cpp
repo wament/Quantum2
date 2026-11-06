@@ -372,6 +372,18 @@ void Game::nextRound()
     deviationsThisRound_ = 0;
 }
 // Events
+void Game::setRulesKeyHeldForTest(bool left, bool right)
+{
+    m_rulesLeftHeld_ = left;
+    m_rulesRightHeld_ = right;
+    m_rulesKeyOverride_ = true;
+}
+
+void Game::resetRulesKeyOverrideForTest()
+{
+    m_rulesKeyOverride_ = false;
+}
+
 void Game::update(float deltaTime)
 {
     // Each AppMode routes through its own case here instead of a wall of `if (appMode == ...)` guards (adding a mode is one new
@@ -403,13 +415,22 @@ void Game::update(float deltaTime)
         {
             if (gameRulesSelectedRow < rowCount - 1) ++gameRulesSelectedRow;
         }
-        const bool rightHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right);
-        const bool leftHeld = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left);
-        if (rightHeld || leftHeld)
+        const bool rightHeld = m_rulesKeyOverride_ ? m_rulesRightHeld_ : sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Right);
+        const bool leftHeld = m_rulesKeyOverride_ ? m_rulesLeftHeld_ : sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Left);
+        // B6: edge-triggered so one tap is exactly one step -- applyGameRuleEdit fires only on a false->true press, never once
+        // per frame while the key is held (the pre-fix `if (rightHeld || leftHeld)` re-edited every frame at uncapped fps).
+        if (rightHeld && !rulesRightPrev_)
         {
             if (gameRulesSelectedRow >= 0 && gameRulesSelectedRow < rowCount)
-                applyGameRuleEdit(gameRules_, gameRuleRows()[gameRulesSelectedRow].id, rightHeld);
+                applyGameRuleEdit(gameRules_, gameRuleRows()[gameRulesSelectedRow].id, true);
         }
+        if (leftHeld && !rulesLeftPrev_)
+        {
+            if (gameRulesSelectedRow >= 0 && gameRulesSelectedRow < rowCount)
+                applyGameRuleEdit(gameRules_, gameRuleRows()[gameRulesSelectedRow].id, false);
+        }
+        rulesRightPrev_ = rightHeld;
+        rulesLeftPrev_ = leftHeld;
         break;   // falls through to the Playing guard below (never reaches RoundEngine).
     }
     case AppMode::Playing:

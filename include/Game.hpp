@@ -173,6 +173,12 @@ class Game
     AppMode getAppModeForTest() const { return appMode; }
     void setAppModeForTest(AppMode mode) { appMode = mode; }
 
+    // B6 headless seam for the rules-panel keyboard edit edge detection: inject held-key state so update() can be driven with a
+    // key logically down (held for N frames) without real SFML hardware keys. When override is off (default) update() reads
+    // isKeyPressed() unchanged, so gameplay behaviour is identical. resetRulesKeyOverrideForTest() restores that default.
+    void setRulesKeyHeldForTest(bool left, bool right);
+    void resetRulesKeyOverrideForTest();
+
     // Tournament hooks (see startTournamentSession): whether the shared play path is running under tournament rules, plus the
     // current stage / completion for tests that drive tournament play headlessly through Game's delegating methods.
     bool tournamentActiveForTest() const { return tournamentActive_; }
@@ -316,6 +322,16 @@ class Game
     // struct directly (see update()); `gameRulesSelectedRow` is the panel's highlighted row while editing it.
     GameRules gameRules_;
     int gameRulesSelectedRow = 0;
+
+    // B6 rules-panel keyboard edit edge detection. rulesRightPrev_ / rulesLeftPrev_ hold the previous frame's held state so
+    // applyGameRuleEdit fires only on a false->true press (one step per tap, no repeat-storm while a key is held). The m_rules*
+    // members are a headless test seam: when override is off (default) update() reads real SFML hardware keys via isKeyPressed();
+    // when on, it reads the injected values instead so held-key frames can be simulated without a window.
+    bool rulesRightPrev_ = false;   // last frame's Right-held state (B6 edge detection)
+    bool rulesLeftPrev_  = false;   // last frame's Left-held state (B6 edge detection)
+    bool m_rulesKeyOverride_ = false;
+    bool m_rulesRightHeld_ = false;
+    bool m_rulesLeftHeld_  = false;
 
     // NPC action timing
     float npcActionTimer = 0.0f;
