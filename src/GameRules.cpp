@@ -19,7 +19,7 @@ const std::vector<GameRuleRow>& gameRuleRows()
         {GameRuleId::DealerStandsOnSoft17, "Dealer on 17"},
         {GameRuleId::DoublesAfterSplit, "Double After Split"},
         {GameRuleId::ResplitAces, "Resplit Aces"},
-        {GameRuleId::ResplitTents, "Resplit Tens"},
+        {GameRuleId::ResplitTens, "Resplit Tens"},
         {GameRuleId::Surrender, "Surrender"}
     };
     return rows;
@@ -38,8 +38,8 @@ std::string gameRuleDescription(const GameRules& rules, GameRuleId id)
         return rules.doublesAfterSplitAllowed ? "Allowed" : "Not allowed";
     case GameRuleId::ResplitAces:
         return rules.resplitAcesAllowed ? "Allowed" : "Not allowed";
-    case GameRuleId::ResplitTents:
-        return rules.resplitTentsAllowed ? "Allowed" : "Not allowed";
+    case GameRuleId::ResplitTens:
+        return rules.resplitTensAllowed ? "Allowed" : "Not allowed";
     case GameRuleId::Surrender:
         switch (rules.surrenderType)
         {
@@ -79,8 +79,8 @@ void applyGameRuleEdit(GameRules& rules, GameRuleId id, bool forward)
     case GameRuleId::ResplitAces:
         rules.resplitAcesAllowed = !rules.resplitAcesAllowed;
         return;
-    case GameRuleId::ResplitTents:
-        rules.resplitTentsAllowed = !rules.resplitTentsAllowed;
+    case GameRuleId::ResplitTens:
+        rules.resplitTensAllowed = !rules.resplitTensAllowed;
         return;
     case GameRuleId::Surrender:
         rules.surrenderType = surrenderCycle(static_cast<int>(rules.surrenderType) + dir);

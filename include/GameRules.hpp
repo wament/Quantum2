@@ -31,7 +31,7 @@ struct GameRules
     bool dealerStandsOnSoft17 = false;                     // false == current default: dealer HITS soft 17 (H17)
     bool doublesAfterSplitAllowed = Constants::DOUBLE_AFTER_SPLIT_ALLOWED;
     bool resplitAcesAllowed = Constants::RESPLIT_ACES_ALLOWED;
-    bool resplitTentsAllowed = Constants::RESPLIT_TENS_ALLOWED;
+    bool resplitTensAllowed = Constants::RESPLIT_TENS_ALLOWED;
     SurrenderType surrenderType = SurrenderType::Late;
     int maxSplitHands = Constants::MAX_SPLIT_HANDS;
 
@@ -51,7 +51,7 @@ inline void to_json(nlohmann::json& j, const GameRules& r)
         {"dealerStandsOnSoft17", r.dealerStandsOnSoft17},
         {"doublesAfterSplitAllowed", r.doublesAfterSplitAllowed},
         {"resplitAcesAllowed", r.resplitAcesAllowed},
-        {"resplitTentsAllowed", r.resplitTentsAllowed},
+        {"resplitTensAllowed", r.resplitTensAllowed},
         {"surrenderType", static_cast<int>(r.surrenderType)}
     };
 }
@@ -63,7 +63,10 @@ inline void from_json(const nlohmann::json& j, GameRules& r)
     r.dealerStandsOnSoft17 = j.value("dealerStandsOnSoft17", r.dealerStandsOnSoft17);
     r.doublesAfterSplitAllowed = j.value("doublesAfterSplitAllowed", r.doublesAfterSplitAllowed);
     r.resplitAcesAllowed = j.value("resplitAcesAllowed", r.resplitAcesAllowed);
-    r.resplitTentsAllowed = j.value("resplitTentsAllowed", r.resplitTentsAllowed);
+    // Additive B12 migration: read the corrected key first, then fall back to the legacy typo'd key ("resplitTentsAllowed")
+    // so saves written before this rename still load; when both are present the corrected key wins.
+    r.resplitTensAllowed = j.value("resplitTensAllowed",
+                                   j.value("resplitTentsAllowed", r.resplitTensAllowed));
     int si = j.value("surrenderType", static_cast<int>(r.surrenderType));
     r.surrenderType = static_cast<SurrenderType>((si % 4 + 4) % 4);
 }
@@ -76,7 +79,7 @@ enum class GameRuleId
     DealerStandsOnSoft17,
     DoublesAfterSplit,
     ResplitAces,
-    ResplitTents,
+    ResplitTens,
     Surrender
 };
 

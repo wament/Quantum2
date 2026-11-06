@@ -786,11 +786,11 @@ bool Game::split()
         return false;
     }
 
-    // gameRules_.resplitTentsAllowed gates re-splitting ten-value pairs only: an ordinary initial split of tens is always
+    // gameRules_.resplitTensAllowed gates re-splitting ten-value pairs only: an ordinary initial split of tens is always
     // permitted. A hand that was itself produced by splitting a previous one (isSplit()) is being re-split here;
     // an untouched deal hand has isSplit() == false and splits freely regardless of the flag.
     if (p.hands[handIndex].isSplit() &&
-        p.hands[handIndex].getCard(0).getBlackjackValue() == 10 && !gameRules_.resplitTentsAllowed)
+        p.hands[handIndex].getCard(0).getBlackjackValue() == 10 && !gameRules_.resplitTensAllowed)
     {
         Logger::warn() << p.getName() << " tried to re-split tens but resplit-ten is off.";
         return false;

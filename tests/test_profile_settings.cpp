@@ -171,3 +171,66 @@ TEST_CASE("B15: exactly one Serialization.hpp exists outside the build tree", "[
 
     CHECK(count == 1);
 }
+
+// Read a file's raw bytes so tests can assert on the exact JSON keys written to disk (not just round-tripped values).
+static std::string read_file(const fs::path& p)
+{
+    std::ifstream in(p, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
+
+// B12 the typo `resplitTents` was baked into every save file. A fresh profile must serialise the corrected key and no
+// longer write the misspelled one. This reads the on-disk JSON directly, so it fails at runtime if to_json still writes
+// "resplitTentsAllowed" even once the field has been renamed -- proving the writer was actually fixed too.
+TEST_CASE("B12: a fresh profile serialises the corrected resplitTensAllowed key", "[Schema][Persistence]")
+{
+    const fs::path path = test_support::temp_path("resplittens", "write");
+
+    {
+        PlayerProfile p("Ada");
+        p.gameRules.resplitTensAllowed = false;   // new (correct) field name -- only exists after the B12 rename
+        p.save(path.string());
+    }
+
+    const std::string content = read_file(path);
+    CHECK(content.find("\"resplitTensAllowed\"") != std::string::npos);   // corrected key is written
+    CHECK(content.find("\"resplitTentsAllowed\"") == std::string::npos);  // typo'd key no longer appears
+
+    fs::remove(path);
+}
+
+// B12 old profiles already contain the typo'd key; the additive read must map it onto the corrected field so nothing is
+// lost. This regression guard only passes once from_json reads BOTH keys (new winning over the legacy one).
+TEST_CASE("B12: a legacy save carrying only resplitTentsAllowed still loads into resplitTensAllowed", "[Schema][Persistence]")
+{
+    const fs::path path = test_support::temp_path("resplittens", "legacy");
+
+    {
+        // Legacy file: ONLY the typo'd key present, nothing else.
+        std::ofstream out(path);
+        out << "{ \"gameRules\": { \"resplitTentsAllowed\": true } }";
+    }
+
+    const PlayerProfile loaded = PlayerProfile::load(path.string());
+    CHECK(loaded.gameRules.resplitTensAllowed == true);   // additive read maps the legacy key onto the corrected field
+
+    fs::remove(path);
+}
+
+// B12 when both keys are present (a file written after the fix that still predates one migration) the corrected key must
+// win, and only fall back to the typo'd key for genuinely old saves. Fails at runtime if from_json still reads the old key.
+TEST_CASE("B12: when both keys are present the corrected key wins over the typo'd one", "[Schema][Persistence]")
+{
+    const fs::path path = test_support::temp_path("resplittens", "precedence");
+
+    {
+        std::ofstream out(path);
+        out << "{ \"gameRules\": { \"resplitTentsAllowed\": true, \"resplitTensAllowed\": false } }";
+    }
+
+    const PlayerProfile loaded = PlayerProfile::load(path.string());
+    CHECK(loaded.gameRules.resplitTensAllowed == false);   // corrected key wins; typo'd key is only the fallback
+
+    fs::remove(path);
+}
+

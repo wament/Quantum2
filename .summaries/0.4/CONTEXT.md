@@ -169,15 +169,18 @@ overwrites good numbers with smaller ones. Two individually-correct decisions co
 Proven in §6.10.
 
 **`gameRules` nested object** — written keys: `numDecks`, `dealerStandsOnSoft17`, `doublesAfterSplitAllowed`,
-`resplitAcesAllowed`, `resplitTentsAllowed`, `surrenderType`. `maxSplitHands` is a real field enforced at
-`src/Game.cpp:777` but is **absent from `to_json`** and has no UI row — dead config (B10). Note the spelling:
-`resplitTentsAllowed`, "Tens" misspelled, baked into every save file (B12).
+`resplitAcesAllowed`, `resplitTensAllowed`, `surrenderType`. The per-field hooks live in `include/GameRules.hpp`
+(ADL'd from the delegation at `Serialization.hpp:212/238`). `maxSplitHands` is a real field enforced at
+`src/Game.cpp:777` but is **absent from `to_json`** and has no UI row — dead config (B10). Spelling: B12 renamed the
+written key to `resplitTensAllowed`; on load the corrected key wins, with the legacy typo'd `resplitTentsAllowed`
+retained only as an additive migration fallback so pre-B12 saves keep loading.
 
 **Decisions to record here as you work** (add a dated bullet per decision):
 - Whether Tournament progress persists at all, and where that gate lives (B1).
 - Whether the main bet escrows at commit or at settlement (B5).
 - Whether `maxSplitHands` is exposed or deleted (B10).
 - The canonical starting bankroll for human and NPC seats (U8).
+- B12 additive-migration strategy (resolved 2026-11-06): `resplitTentsAllowed` was misspelled in every save file, so the rename to `resplitTensAllowed` had to be additive — `to_json` writes only the corrected key, and `from_json` reads it first then falls back to the legacy typo'd key (new wins when both present) so pre-B12 saves keep loading. Honours the 0.3 schema contract: every existing field stays optional with a default; no profile is ever wiped by the rename.
 
 ---
 
@@ -403,7 +406,7 @@ word "reproduced" implied.
 | B15 | 🟠 | Two live copies of `Serialization.hpp` | **Resolved 2026-11-06 (`9a89185`)** | Deleted `src/Serialization.hpp`; exactly one copy remains (include/), enforced by a guard test that fails with two / passes with one. No CMake edit needed; `PlayerProfile.cpp` now resolves to the include copy, unblocking every schema edit (B12/B13/B14) |
 | B10 | 🟡 | `maxSplitHands` dead config | Open | Enforced at `Game.cpp:777` / `RoundEngine.cpp:121`; absent from `to_json` and `gameRuleRows()` |
 | B11 | 🟡 | Control banner mislabels keys | Open | `Game.cpp:162-163` vs real bindings `InputHandler.cpp:591-602` |
-| B12 | 🟡 | `resplitTentsAllowed` typo in save schema | Open | Still the on-disk key: `GameRules.hpp:54`/`:66` |
+| B12 | 🟡 | `resplitTentsAllowed` typo in save schema | **Resolved 2026-11-06** | Renamed field+enum to `resplitTensAllowed`/`ResplitTens`; `to_json` writes the corrected key, `from_json` reads it then falls back to the legacy typo'd key (new wins). On-disk writer verified via `test_profile_settings.cpp:232` using real `PlayerProfile::save()` — shipped binary now writes `resplitTensAllowed`. Suite 272/272 |
 | B16 | 🟡 | `reconstructDeckAtRound()` dead and wrong | Open | Still zero callers; sole occurrence is its own definition at `GameRecord.hpp:307` |
 | U1–U10 | 🟡 | UI/UX set (see NEXT_STEPS Phase 4) | Open | Not re-verified on screen this pass; cited renderer lines all resolve to the claimed functions |
 | T1–T2 | 🟢 | Save amplification; unbounded history | Open | `HandEvaluator.cpp:297` still saves every settled round |
@@ -501,3 +504,26 @@ holds; test counts went 264 → 265 (B15) → 266 (B3), all green after each fix
 Confirmed accurate, no change needed: every `file:line` citation listed in §1; the §3 blind-spot analysis; the §4
 architecture map; the §5 two-tier read contract and `gameRules` key list; §6.1–§6.9 evidence; §7 conventions; §8
 drift items 1–3; §9; §10.
+
+### 2026-11-06 — code fix this round (B12: resplit-tens schema typo)
+
+Resolved one defect from the ledger and closed a build that a partial B12 rename had broken earlier in the session.
+Every location below was re-checked against source; test count went 269 → 272, all green after the fix (serial run —
+the transient `-j8` ctest reported `BAD_COMMAND`, which is a runner artifact right after rebuild, not a failure).
+
+- **B12.** The field name, enum value and JSON key all spelled "Tents" for "Tens". Renamed to `resplitTensAllowed`
+  (field) / `ResplitTens` (enum) throughout: `include/GameRules.hpp` (struct member + `to_json` key), `src/Game.cpp`
+  (re-split gate + comment), `src/GameRules.cpp` (row label, description case, toggle case). Wrote only the corrected
+  key; on load read it first then fall back to the legacy typo'd key so pre-B12 saves keep loading (new wins when both
+  present) — additive, honours the 0.3 schema contract. Three guard tests in `tests/test_profile_settings.cpp` (#232–
+  #234) assert: fresh profile writes the corrected key / legacy-only save loads / both-present corrected-key-wins.
+  #232 drives real `PlayerProfile::save()` and reads the on-disk JSON, proving the fix reached the shipped binary (not
+  just the tested copy). No other TU referenced `.resplitTentsAllowed` or `ResplitTents` directly — they only failed to
+  compile because they include the now-broken header.
+- **Doc drift corrected this pass.** §5's gameRules note still named the *written* key as the misspelled
+  `resplitTentsAllowed`; updated to show the corrected write key with the legacy key retained only as a migration
+  fallback, and noted that GameRules' per-field hooks live in `include/GameRules.hpp` (ADL'd from `Serialization.hpp`).
+  §11 B12 row moved Open → Resolved; the B12 decision added to §5's decision list.
+- Re-checked: §5 two-tier read contract and gameRules key list (§5:171–176) now match the corrected writer; §5
+  consumer table still holds (the one-copy guard test in `test_profile_settings.cpp` is what makes this edit touch both
+  binaries at once); B13/B14/B15 rows unaffected. No other claim changed.
