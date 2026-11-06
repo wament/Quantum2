@@ -209,7 +209,7 @@ game.players[0].setBankroll(config.startingChips); // tournament chips are in-me
 Then make the tournament genuinely non-persisting. **Preferred:** gate the profile writes behind
 `Game::tournamentActive_`.
 
-**There are six `saveProfile()` call sites, not three.** The first draft of this entry named three and got two of
+**There are seven `saveProfile()` call sites, not three.** The first draft of this entry named three and got two of
 their line numbers wrong; gating only those three leaves four unguarded and the profile still gets clobbered. The
 complete set, verified 2026-11-06:
 
@@ -221,6 +221,7 @@ complete set, verified 2026-11-06:
 | `src/InputHandler.cpp:254` | **window close** (`Event::Closed`) | the B1 repro route; draft said `:252` |
 | `src/Game.cpp:1342` | shoe boundary | |
 | `src/Game.cpp:1501` | shoe boundary (second path) | |
+| `src/SessionLifecycle.cpp:287` | shoe/lifecycle boundary | **missing from the original six; added 2026-11-06 — an unguarded saveProfile that B1's tournament-time gate must also cover** |
 
 Note also *when* the damage is done: `startTournamentSession()` calls `game.players.clear()`
 (`src/SessionLifecycle.cpp:34`) **before** pushing the ephemeral seat, so the loaded career profile is destroyed

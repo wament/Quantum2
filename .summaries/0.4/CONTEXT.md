@@ -384,11 +384,14 @@ still open.** Each row below was re-checked against the source rather than trust
 the "Evidence" column now says what the 2026-11-06 check actually was, which for several items is weaker than the
 word "reproduced" implied.
 
+**Resolved since:** `B3` (`c7978f1`) and `B15` (`9a89185`) landed on 2026-11-06; their rows below are updated to
+**Resolved**. Every other row here is still open — see the §13 audit log for what changed.
+
 | ID | Sev | Title | Status | Evidence as of 2026-11-06 |
 |---|---|---|---|---|
 | B1 | 🔴 | Tournament overwrites career profile | **Open** | Mechanism re-confirmed in code: `SessionLifecycle.cpp:34` `players.clear()` + `:35` NPC ctor. Playtest repro not re-run this pass |
 | B2 | 🔴 | Achievement toast never clears | **Open** | Re-confirmed by grep: one write (`AchievementFeeder.cpp:48`), one read (`GameRenderer.cpp:154`), zero clears; no `achievementToastTimer` symbol exists |
-| B3 | 🔴 | Side bet always reports "WON" | **Open** | Re-confirmed in source: `GameRenderer.cpp:1000` still tests the sign after `abs()` |
+| B3 | 🔴 | Side bet always reports "WON" | **Resolved 2026-11-06 (`c7978f1`)** | Fixed in `include/SideBetLabels.hpp`: branch won/lost/push on net with the sign preserved; `GameRenderer.cpp:997` calls the pure fn. Guard test in `test_side_bets.cpp` asserts WON +20 / LOST -20 / PUSH 0 (fails before fix). Suite 266/266 |
 | B4 | 🔴 | Reko seed ignores deck count | **Open** | Re-confirmed: `Game.cpp:254` and `Deck.cpp:71` both use `Constants::NUM_DECKS` (6) |
 | B13 | 🔴 | Mid-shoe quit deletes those hands from career stats | **Open — re-proven** | `hist_proof.cpp` re-run 2026-11-06, output identical (§6.10) |
 | B5 | 🟠 | Main bet not escrowed; bankroll can go negative | Open | `Player.cpp:89` still a bare affordability check; no `getAvailableBankroll` in the tree. Negative balance not re-reproduced on screen |
@@ -397,7 +400,7 @@ word "reproduced" implied.
 | B8 | 🟠 | `Deck::draw()` no empty guard | Known (0.3 §6) | Two unguarded `back()`/`pop_back()` pairs confirmed at `Deck.cpp:121-135` |
 | B9 | 🟠 | Flaky crash + unflushable logger | Open — crash unrepro | `Logger.cpp:34` still writes `std::cout` with no flush/unitbuf |
 | B14 | 🟠 | Non-atomic save; corrupt file → silent wipe | Open | `save()` plain `ofstream`; `load()` catch → `return PlayerProfile()` |
-| B15 | 🟠 | Two live copies of `Serialization.hpp` | **Open — proven, and worse than stated** | `src/PlayerProfile.cpp` → `src/` copy; `test_profile_settings.cpp`, `test_game_rules.cpp`, `test_achievements.cpp` → `include/` copy (§5) |
+| B15 | 🟠 | Two live copies of `Serialization.hpp` | **Resolved 2026-11-06 (`9a89185`)** | Deleted `src/Serialization.hpp`; exactly one copy remains (include/), enforced by a guard test that fails with two / passes with one. No CMake edit needed; `PlayerProfile.cpp` now resolves to the include copy, unblocking every schema edit (B12/B13/B14) |
 | B10 | 🟡 | `maxSplitHands` dead config | Open | Enforced at `Game.cpp:777` / `RoundEngine.cpp:121`; absent from `to_json` and `gameRuleRows()` |
 | B11 | 🟡 | Control banner mislabels keys | Open | `Game.cpp:162-163` vs real bindings `InputHandler.cpp:591-602` |
 | B12 | 🟡 | `resplitTentsAllowed` typo in save schema | Open | Still the on-disk key: `GameRules.hpp:54`/`:66` |
@@ -478,6 +481,22 @@ Corrected:
     had no way to say *which* parts of the docs are now verified. The new version carries the read order (§13
     first), a calibration note so the next window knows what to re-verify versus what to trust, the gotchas as
     working rules, and the §13-update obligation in Step 4. §12 now says to regenerate it whenever §10–§13 change.
+
+### 2026-11-06 — code fixes this round (B15 + B3): the first non-doc-only pass since the audit
+
+Resolved two defects from the ledger. Every `file:line` location below was re-checked against the new HEAD and still
+holds; test counts went 264 → 265 (B15) → 266 (B3), all green after each fix.
+
+- **B15 (`9a89185`).** Deleted `src/Serialization.hpp`; exactly one copy remains in `include/`, enforced by a guard
+  test in `test_profile_settings.cpp` that fails with two copies and passes with one. No CMake edit was needed — the
+  file is referenced nowhere in `CMakeLists.txt`. `PlayerProfile.cpp` now resolves to the include copy, so every schema
+  edit (B12/B13/B14) changes both the tested and shipped binary at once.
+- **B3 (`c7978f1`).** Fixed the side-bet readout at `GameRenderer.cpp:997`: the old code ran `abs()` before testing the
+  sign, so `LOST` was dead code and a lost stake read `WON +20`. Extracted the three-way branch (won/lost/push) into a
+  pure SFML-free function `sidebet::resultLabel(wager, payout)` in `include/SideBetLabels.hpp`; `GameRenderer.cpp` calls
+  it. Guard test in `test_side_bets.cpp` asserts WON +20 / LOST -20 / PUSH 0 and fails before the fix.
+- **Re-checked B1's saveProfile sites.** Source has SEVEN call sites, not the six enumerated in NEXT_STEPS' B1 table —
+  `SessionLifecycle.cpp:287` was missing. Flagging for whoever fixes B1 so every unguarded tournament-time save is gated.
 
 Confirmed accurate, no change needed: every `file:line` citation listed in §1; the §3 blind-spot analysis; the §4
 architecture map; the §5 two-tier read contract and `gameRules` key list; §6.1–§6.9 evidence; §7 conventions; §8
