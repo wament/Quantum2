@@ -7,6 +7,7 @@
 #include <vector>
 #include <functional>
 #include <optional>
+#include <algorithm>
 
 // AppMode drives GameRenderer::draw()'s unified mode-dispatch table (modeTable()/modeEntryForTest())
 // header needs the enum even though it only forward-declares Game for its draw(Game&) methods. Game.hpp defines AppMode
@@ -45,6 +46,26 @@ inline const std::vector<PauseMenuItem> &pauseMenuItems()
         {PauseOption::QuitToMenu,  "Quit to Menu", 0.56f},
     };
     return items;
+}
+
+// One source of truth for how many per-player round summaries can be drawn safely. The summary overlay renders one
+// string per seat but indexes BOTH playerSummaries[i] and game.players[i], and feeds i into getPlayerPosition (which
+// slots it against players.size()). It must therefore not iterate past the smaller of the two counts -- B9 made that a
+// shared helper so the renderer and its test agree on one definition. When the vectors agree (the normal case) this is
+// effectively a no change; when they diverge (e.g. a seat cleared out from under a stale summary list) it keeps every
+// access in bounds and getPlayerPosition's slotMap lookup safe too.
+inline size_t summaryOverlayRowCount(size_t summaryCount, size_t playerCount)
+{
+    return std::min(summaryCount, playerCount);
+}
+
+// Extra fan width a seat's split hands add beyond its single un-split hand (16px per extra hand), computed so an empty
+// or divergent-state seat (zero hands) cannot underflow size_t into a huge width: a lone or missing hand contributes
+// zero extra. Shared with drawSummaryOverlay so the renderer and its test agree on the layout.
+inline float summaryRowFanWidth(size_t handCount)
+{
+    const size_t extraHands = (handCount > 1) ? (handCount - 1) : 0;
+    return static_cast<float>(extraHands) * 16.f;
 }
 
 class Game;

@@ -1019,10 +1019,17 @@ void GameRenderer::drawSummaryOverlay(Game& game)
     float alpha = static_cast<float>(std::min(255.0f, game.hudState.summaryTimer * summaryFadeFactorPerSecond));
     sf::Color textColor(255, 255, 255, static_cast<unsigned char>(alpha));
 
-    for (size_t i = 0; i < game.hudState.playerSummaries.size(); i++)
+    // B9 -- one summary string per seat, but this loop indexes BOTH playerSummaries[i] and game.players[i], and feeds i
+    // into getPlayerPosition which slots it against players.size(). Iterating past the smaller of the two vectors reads
+    // out of bounds on both; when they diverge (e.g. a seat cleared under a stale summary list) that was a real crash.
+    // summaryOverlayRowCount() is the one shared definition of "min of the two"; when they agree it changes nothing.
+    const size_t rows = summaryOverlayRowCount(game.hudState.playerSummaries.size(), game.players.size());
+    for (size_t i = 0; i < rows; i++)
     {
         sf::Vector2f pos = getPlayerPosition(game, i, game.players.size());
-        float handWidth = Constants::CARD_WIDTH + (game.players[i].hands.size() - 1) * 16;
+        // A hand's fan grows 16px per extra split beyond the first. summaryRowFanWidth() guards the subtraction so an
+        // empty/divergent seat (zero hands) cannot underflow size_t into a huge width; lone or missing hand -> zero.
+        const float handWidth = Constants::CARD_WIDTH + summaryRowFanWidth(game.players[i].hands.size());
         float summaryX = Constants::PLAYER_X + pos.x + handWidth / 2.f - 50.f;
         float summaryY = Constants::PLAYER_Y + pos.y + Constants::CARD_HEIGHT + 120.f;
 
