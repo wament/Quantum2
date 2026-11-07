@@ -79,12 +79,18 @@ class Player
     PlayerStats& getStats();
     PlayerProfile updateProfile(PlayerProfile profile);
     void saveProfile();
+    // When false, saveProfile() is a no-op: the seat's in-memory state must never be written to disk. The human session persists
+    // (default true); NPCs and the ephemeral tournament run set it false so their throwaway chips/stats cannot clobber the career file.
+    void setPersistable(bool value) { persistable = value; }
 
   private:
     std::string name;
 
     PlayerProfile profile;
     int bankroll = 1000;
+
+    // Guards saveProfile(): false for ephemeral seats (NPCs, the tournament run) so their in-memory state is never persisted.
+    bool persistable = true;
 
     BettingStrategy bettingStrategy = BettingStrategy::Flat;
     int baseBet = 10;

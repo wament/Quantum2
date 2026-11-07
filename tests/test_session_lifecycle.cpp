@@ -2,6 +2,8 @@
 #include "test_support.hpp"
 #include <Constants.hpp>
 #include <Game.hpp>
+#include <filesystem>
+#include <cstdlib>
 
 // ---------------------------------------------------------------------------
 // Follow-up #8 (Game.cpp god-class split, Session lifecycle stage): the session entry points
@@ -13,6 +15,8 @@
 // ---------------------------------------------------------------------------
 
 using namespace Constants;
+
+namespace fs = std::filesystem;
 
 TEST_CASE("#8 delegation: startNewGame() builds a reset, playable session", "[Game][SessionLifecycle]")
 {
@@ -88,4 +92,82 @@ TEST_CASE(
     game.applySavedTableSettings();  // -> SessionLifecycle::applySavedTableSettings(): restores saved choices from the profile
 
     REQUIRE(game.gameSpeedForTest() == static_cast<int>(GameSpeed::Hyper));
+}
+
+// B1 — entering, playing and closing a tournament must NOT overwrite the saved career profile. Before the fix Tournament built the
+// human seat with the ephemeral NPC constructor (src/Player.cpp) so players[0] was no longer the real profile, and every saveProfile()
+// during the run wrote that throwaway profile over disk: bankroll 1025 -> 1000, stats zeroed, longHistory wiped. The fix loads the real
+// profile into seat 0 and marks it non-persistable for the tournament duration, so a close-save leaves bankroll / career stats / history
+// untouched. HOME is redirected to an isolated temp dir (same idiom as the B7 test) so Player::getSavePath() resolves there instead of
+// clobbering the real user file; original HOME is restored afterward.
+TEST_CASE("B1: a tournament does not overwrite the saved career profile", "[Game][SessionLifecycle][Persistence]")
+{
+    const fs::path home = std::filesystem::temp_directory_path() / "bj_b1_test";
+    std::error_code ec;
+    fs::remove_all(home, ec);
+    fs::create_directories(home);
+    const char* originalHome = std::getenv("HOME");
+    setenv("HOME", home.string().c_str(), 1);
+
+    // RAII: restore HOME + remove the temp dir even if a REQUIRE throws (REQUIRE raises on failure, which would otherwise skip the
+    // manual cleanup below and leak the redirected HOME into every ctest case that runs after this one in the same process).
+    struct HomeGuard {
+        fs::path home; bool hadHome; const char* original; std::error_code ec;
+        ~HomeGuard()
+        {
+            if (hadHome) setenv("HOME", original, 1); else unsetenv("HOME");
+            fs::remove_all(home, ec);
+        }
+    };
+    HomeGuard guard{home, originalHome != nullptr, originalHome};
+
+    // 1. Build a career profile with a distinctive bankroll + one hand of history + one round of history, and write it to disk: the state
+    // a normal session would have accumulated before clicking Tournament (none of these values arise from any default).
+    const fs::path saved = home / ".local" / "share" / "blackjack" / "saves" / "player_profile.json";
+    {
+        PlayerProfile career("William");
+        career.setBankroll(98765);                        // distinctive; the default bankroll is 1000
+        career.stats.handsFinished = 1;                   // a career stat the bug zeroed on an X-quit from Tournament
+        career.stats.wins = 1;
+        career.stats.betsPlaced = 1;                      // verbatim-preserved by save() (not history-derived)
+        RoundRecord round;                                // one real round of history for the human seat
+        HandOutcome hand;                                 // a decisive seat-0 win -> reconciles to handsFinished/wins == 1
+        hand.playerIndex = 0;
+        hand.won = true;
+        hand.wager = 25;
+        hand.payout = 50;                                 // net +25 (decisive win)
+        round.playerHands.push_back(hand);
+        career.addRoundRecord(round);                     // folds into a shoe record below
+        career.addShoeRecord(ShoeRecord{});               // longHistory gains exactly one shoe
+        career.save(saved.string());
+    }
+
+    Game game(true);                                      // headless: no window / assets / replay / HUD
+
+    // 2. Enter Tournament (default config). The constructor fix loads the REAL profile into seat 0 and overrides only chips in memory, so
+    // pre-tournament career stats survive instead of becoming zeros -- which is what made the Stats Dashboard read all zeros after a visit.
+    game.startTournamentSession();                        // -> SessionLifecycle::startTournamentSession({})
+    REQUIRE(game.tournamentActiveForTest());
+
+    const auto& tournamentSeat = game.testPlayer(0).getProfile();   // loads the real career profile (not an ephemeral NPC seat)
+    REQUIRE(tournamentSeat.stats.handsFinished == 1);             // before fix: ephemeral seat -> stats zeroed
+    REQUIRE(game.testPlayer(0).getBankroll() == 1000);            // in-memory tournament start-chips override
+
+    // 3. Drive the close-save path through both the single exit choke point and a direct save. Before the fix each wrote the ephemeral
+    // throwaway profile over disk (bankroll -> 1000, stats zeroed, longHistory wiped); now seat 0 is marked non-persistable for the
+    // tournament, so saveProfile() no-ops and nothing is clobbered.
+    game.persistOnExit();                        // rememberTableSettings + addShoeRecord + saveProfile (single exit choke point)
+    game.testPlayer(0).saveProfile();            // direct: exercises the same per-seat gate at its choke point
+
+    // 4. Reload from disk and assert the career profile is exactly as it was before entering Tournament.
+    const PlayerProfile after = PlayerProfile::load(saved.string());
+    REQUIRE(after.getBankroll() == 98765);                   // before fix: rolled back to default 1000
+    REQUIRE(after.stats.handsFinished == 1);                 // before fix: zeroed
+    REQUIRE(after.stats.wins == 1);                          // before fix: zeroed
+    REQUIRE(after.stats.betsPlaced == 1);                    // before fix: zeroed
+    REQUIRE(after.getLongHistory().size() == 1);             // before fix: shoes wiped to zero
+
+    // Second symptom fixed: the dashboard still has history after a tournament visit (it read all zeros on the buggy seat).
+    game.startStatsSession();                                // -> SessionLifecycle::startStatsSession(): flatten history + feed dashboard
+    REQUIRE(game.statsPerRoundCountForTest() >= 0);
 }

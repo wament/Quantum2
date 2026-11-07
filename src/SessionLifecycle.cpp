@@ -32,7 +32,13 @@ void SessionLifecycle::startTournamentSession(const Tournament::TournamentConfig
     // Build the seats exactly like startNewGame: the human at index 0, then up to playerCount - 1 NPC opponents. Every seat
     // starts with equal chips so a tournament is decided purely by who finishes richest -- not by how many chips you were dealt.
     game.players.clear();
-    game.players.push_back(Player("William", config.startingChips));
+    // Load the REAL career profile into seat 0 (loading constructor), then override only the in-memory chips. This preserves the
+    // player's progress while a tournament is a competition, not career play -- contrast startNewGame(), which also loads the real
+    // profile rather than fabricating an ephemeral one. markPersistable(false) stops every saveProfile() during the run from writing
+    // these throwaway chips/stats over the on-disk career file (the B1 bug).
+    game.players.push_back(Player("William"));
+    game.players[0].setPersistable(false);
+    game.players[0].setBankroll(config.startingChips);
 
     const int opponentCount = std::max(0, game.playerCount - 1);
     for (int i = 0; i < opponentCount && i < GameConfig::NPC_COUNT; ++i)

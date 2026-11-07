@@ -49,6 +49,7 @@ Player::Player(const std::string& playerName)
 Player::Player(const std::string& playerName, int startingBankroll)
     : name(playerName), bankroll(startingBankroll)
 {
+    persistable = false;   // ephemeral seat: no durable profile on disk
     profile = PlayerProfile(playerName);
     profile.setBankroll(startingBankroll);
 }
@@ -65,6 +66,11 @@ PlayerProfile Player::updateProfile(PlayerProfile p)
 
 void Player::saveProfile()
 {
+    // Ephemeral seats (NPCs and the tournament run) carry no durable profile on disk: skip the write so their in-memory chips/stats
+    // never overwrite the real career file. The human session persists by default, so every normal save is unchanged.
+    if (!persistable)
+        return;
+
     // Sync current bankroll into profile before saving
     profile.setBankroll(bankroll);
     std::string savePath = getSavePath();
