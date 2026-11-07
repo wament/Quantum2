@@ -31,7 +31,10 @@ void Logger::log(LogLevel level, const std::string& msg) {
     if (level < currentLevel) return;
 
     std::lock_guard<std::mutex> lock(logMutex);
-    std::cout << "[" << getTimestamp() << "] [" << levelToString(level) << "] " << msg << "\n";
+    // B9: flush per record. Without a flush the line sat in std::cout's buffer and was lost if the process died or a
+    // headless run never reached a natural flush — silently hiding exactly the diagnosability output this logger exists
+    // to emit. std::endl emits one newline (unchanged format) AND forces the flush; leaving "\n" would reintroduce the bug.
+    std::cout << "[" << getTimestamp() << "] [" << levelToString(level) << "] " << msg << std::endl;
 }
 
 std::string Logger::getTimestamp() {
