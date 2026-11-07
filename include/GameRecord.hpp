@@ -302,29 +302,3 @@ inline PlayerStats computeCareerStats(const ShoeRecord& shoe)
     return computeCareerStatsHistory({shoe});
 }
 
-// Reconstructs the deck state at the start of a specific round
-// by removing all cards dealt in rounds [0, roundIndex)
-inline std::deque<Card> reconstructDeckAtRound(
-    const ShoeRecord& shoe, 
-    size_t roundIndex)
-{
-    std::deque<Card> deck(shoe.initialDeck.begin(), shoe.initialDeck.end());
-    for (size_t r = 0; r < roundIndex; ++r)
-    {
-        const auto& round = shoe.rounds[r];
-
-        // Remove dealer cards
-        for (size_t i = 0; i < round.dealerCards.size(); ++i)
-            deck.pop_front();
-
-        // Remove each player hand's cards
-        for (const auto& hand : round.playerHands)
-        {
-            for (size_t i = 0; i < hand.cards.size(); ++i)
-                deck.pop_front();
-        }
-    }
-
-    return deck;
-}
-
