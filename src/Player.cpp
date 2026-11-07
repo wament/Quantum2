@@ -80,6 +80,7 @@ void Player::saveProfile()
 
 void Player::resetRound(int previousBet)
 {
+    clearPendingBets();   // fresh escrow bookkeeping for the new round (B5)
     hands.clear();
     hands.resize(1);
     hands[0].setBet(previousBet);

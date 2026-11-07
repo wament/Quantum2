@@ -83,11 +83,24 @@ class Player
     // (default true); NPCs and the ephemeral tournament run set it false so their throwaway chips/stats cannot clobber the career file.
     void setPersistable(bool value) { persistable = value; }
 
+    // Escrow bookkeeping for the round in progress. getAvailableBankroll() is bankroll minus both committed amounts and is the one
+    // predicate every bet clamp + HUD hint reads, so a main bet + side bet can never be double-counted against one bankroll (B5).
+    // commit* record what is on the table; clearPendingBets() resets them at each round start.
+    int getAvailableBankroll() const { return bankroll - pendingMainBet - pendingSideBet; }
+    void commitMainBet(int amount) { pendingMainBet = amount; }
+    void commitSideBet(int amount) { pendingSideBet = amount; }  // a 0 amount opts the side bet out
+    void clearPendingBets() { pendingMainBet = 0; pendingSideBet = 0; }
+
   private:
     std::string name;
 
     PlayerProfile profile;
     int bankroll = 1000;
+
+    // Amounts committed this round but not yet settled. getAvailableBankroll() subtracts both so no bet clamp can over-commit the
+    // same bankroll against a main + side pair (B5). Cleared at each round start via clearPendingBets().
+    int pendingMainBet = 0;
+    int pendingSideBet = 0;
 
     // Guards saveProfile(): false for ephemeral seats (NPCs, the tournament run) so their in-memory state is never persisted.
     bool persistable = true;

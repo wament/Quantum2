@@ -1,6 +1,7 @@
 // Round settlement & rule resolution tests: naturals, split aces, resplit tens, dealer blackjacks, deal/resolve path.
 
 #include <catch2/catch_all.hpp>
+#include <catch2/catch_all.hpp>
 #include "test_support.hpp"
 #include "Card.hpp"
 #include "Constants.hpp"
@@ -523,3 +524,88 @@ TEST_CASE("#8 delegation: deal offers insurance when the dealer shows an Ace", "
 
     CHECK(game.roundStateForTest() == RoundState::OfferInsurance);
 }
+
+// --- B5: the main bet is escrowed at commit, so a main + side pair can never be over-committed against one bankroll (which let a
+// $1000 main + $1000 side both clear and settle to a negative balance). getAvailableBankroll() is the single predicate every bet
+// clamp + hint reads; placeSideBet()/confirmBet() gate on it. Bankroll itself only moves at settlement, so escrow excludes the
+// committed stakes from available() without changing the (unchanged) winBet/loseBet arithmetic below. -----------------------------------------------------------------------
+
+TEST_CASE("B5: getAvailableBankroll() excludes committed main + side bets", "[Player][Settlement]")
+{
+    Player p("William", 1000);                              // NPC ctor -> bankroll 1000
+    REQUIRE(p.getBankroll() == 1000);
+    REQUIRE(p.getAvailableBankroll() == 1000);              // nothing committed -> available == bankroll
+
+    p.commitMainBet(300);
+    REQUIRE(p.getAvailableBankroll() == 700);               // main bet escrowed
+
+    p.commitSideBet(200);
+    REQUIRE(p.getAvailableBankroll() == 500);               // side bet also excluded from availability
+
+    p.clearPendingBets();                                   // cleared at each round start (resetRound)
+    REQUIRE(p.getAvailableBankroll() == 1000);
+
+    p.commitSideBet(0);                                     // a zero amount opts the side bet out
+    REQUIRE(p.getAvailableBankroll() == 1000);              // nothing committed remains
+}
+
+TEST_CASE("B5: a side bet larger than available balance is refused once the main bet is committed", "[Game][Settlement]")
+{
+    Game game(true);
+    std::vector<Card> deck;                                // filler so the shoe never runs short during these no-deal assertions
+    for (int i = 0; i < 210; ++i)
+    {
+        Card c;
+        c.value = 5;
+        c.suit = Suit::Hearts;
+        deck.push_back(c);
+    }
+    test_support::seed_deck(game, deck);
+    game.startTestRound();
+
+    // Commit the largest single hand bet confirmBet accepts. It is escrowed (available() drops) but bankroll() itself is unchanged
+    // until settlement -- that is exactly what lets a side bet be checked against *remaining* availability instead of the full roll.
+    const int mainWager = Constants::MAXIMUM_BET;          // 1000
+    game.testPlayer(0).hands[0].setBet(mainWager);
+    game.confirmBet();
+
+    const int remaining = game.testPlayer(0).getAvailableBankroll();   // bankroll - mainWager (no side committed yet)
+    REQUIRE(remaining >= Constants::MINIMUM_BET);
+    CHECK(game.testPlayer(0).getBankroll() == STARTING_BANKROLL);   // escrow does not move the recorded bankroll yet
+    CHECK(remaining == STARTING_BANKROLL - mainWager);             // 10000 - 1000 = 9000
+
+    // A side bet larger than what remains is refused and commits nothing (the bug let this clear because it checked full bankroll).
+    game.placeSideBet(SideBetKind::PerfectPairs, remaining + 1);              // available(9000) < 9001 -> refused
+    CHECK(game.testPlayer(0).getAvailableBankroll() == remaining);            // unchanged: still only the main escrow excluded
+
+    // A side bet within the remaining balance is accepted and commits, driving available all the way down.
+    game.placeSideBet(SideBetKind::PerfectPairs, remaining);                  // available(9000) >= 9000 -> accepted
+    CHECK(game.testPlayer(0).getAvailableBankroll() == 0);                    // main + side now escrow the whole bankroll
+}
+
+TEST_CASE("B5: a losing round can never drive bankroll below zero and honors bankroll conservation", "[Game][Settlement]")
+{
+    Game game(true);
+    // Dealer natural (K up + ace hole) beats the player's non-BJ hand; 9 + 7 is not a pair, so PerfectPairs loses too. This exact
+    // first-deal sequence already proves main loss == MINIMUM_BET and dealer.isBlackjack() in its own test, so both wagers are known
+    // losses here. Deal order: player card, dealer up-card, player card, dealer hole. The two 8-clubs filler keep the shoe from
+    // running short; a natural resolves with no further draws, so the six seeded cards hold (no reshuffle) and the outcome is exact.
+    test_support::seed_deck(game,{test_support::make_card(9, Suit::Spades),     // player card 0 -> 9
+                  test_support::make_card(13, Suit::Spades),    // dealer up-card (not an ace)
+                  test_support::make_card(7, Suit::Clubs),      // player card 1 -> 7 (non-pair with the 9)
+                  test_support::make_card(1, Suit::Hearts),     // dealer hole -> Ace: K,A = dealer natural
+                  test_support::make_card(8, Suit::Clubs),      // filler
+                  test_support::make_card(8, Suit::Clubs)});    // filler
+
+    const int sideWager = 60;
+    game.placeSideBet(SideBetKind::PerfectPairs, sideWager);   // intent set before the seat exists; deal() consumes it
+
+    game.startTestRound();             // builds seats at STARTING_BANKROLL, deals; resolveSideBets() loses the non-pair side now
+    test_support::settleRound(game);   // dealer natural settles the main for exactly one wager
+
+    const int after = game.testPlayer(0).getBankroll();
+    CHECK(after >= 0);                                          // no negative balance, ever (the whole point of B5)
+    // Conservation: both wagers lost -> payouts are 0 -> after == STARTING_BANKROLL - MINIMUM_BET - sideWager.
+    CHECK(after == STARTING_BANKROLL - Constants::MINIMUM_BET - sideWager);
+}
+

@@ -1044,13 +1044,22 @@ void Game::confirmBet()
     if (currentBet < floorBet || currentBet > Constants::MAXIMUM_BET)
         return;
 
-    if (!players[0].placeBet(currentBet))
+    // Escrow the main bet at commit: reject a hand bet that exceeds the *available* balance (bankroll minus any side bet already
+    // committed this round). The stake is still settled later through winBet/loseBet, exactly as before -- here we only record what
+    // is on the table so getAvailableBankroll() reads one predicate for every clamp and hint (B5).
+    if (currentBet > players[0].getAvailableBankroll())
     {
-        Logger::warn() << "Not enough bankroll. " << players[0].getBankroll() << " is your max. Or " << players[0].getBankroll() / 2 << " if you want to double.";
+        Logger::warn() << "Not enough bankroll. Available: " << players[0].getAvailableBankroll() << ".";
         return;
     }
 
     initialBet = currentBet;
+
+    // Record the total active-hand stakes as committed this round (covers split hands, each of which carries a stake).
+    int totalMain = 0;
+    for (const auto& h : players[0].hands)
+        totalMain += h.getBet();
+    players[0].commitMainBet(totalMain);
 
     // a placed bet triggers the "bet" effect. Safe in headless mode (just enqueues when buffers are absent).
     // Hyper/Gamer deliver no sound effects at all (GameTiming::animationDisabled)
@@ -1175,9 +1184,11 @@ void Game::placeSideBet(SideBetKind kind, int wager)
 {
     if (wager < 0)
         return;
-    if (!players.empty() && players[0].getBankroll() < wager)
+    // Affordability uses the *available* balance so a main bet already committed this round is not double-counted against the same
+    // bankroll -- that is what previously let a $1000 main + $1000 side both clear and settle to a negative bankroll (B5).
+    if (!players.empty() && players[0].getAvailableBankroll() < wager)
     {
-        Logger::warn() << "Cannot place side bet of " << wager << "; bankroll is " << players[0].getBankroll() << ".";
+        Logger::warn() << "Cannot place side bet of " << wager << "; available bankroll is " << players[0].getAvailableBankroll() << ".";
         return;
     }
     // A side bet is defined by its KIND, not just its amount. Selecting a non-None kind at $0 keeps that kind
@@ -1189,6 +1200,8 @@ void Game::placeSideBet(SideBetKind kind, int wager)
         kind = SideBetKind::PerfectPairs;
     sideBetIntentKind_ = kind;
     sideBetIntentWager_ = wager;
+    if (!players.empty())
+        players[0].commitSideBet(wager);   // committed this round (a 0 amount opts the side bet out); available() excludes it
     // Reflect on the live main hand when it exists
     if (!players.empty() && !players[0].hands.empty())
         players[0].hands[0].setSideBet(kind, wager);
