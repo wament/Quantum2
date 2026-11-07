@@ -161,6 +161,7 @@ add_executable(Blackjack2Tests
     src/SessionLifecycle.cpp
     tests/test_card.cpp
     tests/test_deck.cpp
+    tests/test_deck_empty_draw.cpp
     tests/test_hand.cpp
     tests/test_game.cpp
     tests/test_player.cpp

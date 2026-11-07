@@ -122,12 +122,18 @@ void Deck::setCards(const std::vector<Card>& newCards)
 
 Card Deck::draw()
 {
+    if (cards.empty())
+        return Card{};   // B8 guard: drawing from an empty shoe must not be UB (previously an unguarded cards.back()).
+
     Card card = cards.back();
     cards.pop_back();
 
     if (card.isCutCard())
     {
         cutCardReached = true;
+
+        if (cards.empty())
+            return card;   // B8 guard: only the cut card remained -- nothing left to draw, avoid a second empty back().
 
         card = cards.back();
         cards.pop_back();
