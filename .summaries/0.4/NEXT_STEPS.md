@@ -678,9 +678,9 @@ excellent fuzzer — it plays every seat on basic strategy). Prime suspects for 
 seats + side bets: the reveal/animation clock state in `GameRenderer::advanceRevealClock` (0.3 §6 #22 was a bug
 in exactly this area), and `drawSummaryOverlay()` indexing `game.players[i]` while iterating
 `hudState.playerSummaries.size()` (`src/GameRenderer.cpp:1020-1023`) — if those two ever differ in length that is
-an out-of-bounds read. Add a bounds guard there regardless; it is free.
+an out-of-bounds read. A bounds guard was added (`facea14` / `tests/test_summary_overlay_bounds.cpp`, #296/#297): the loop now iterates to `min(playerSummaries.size(), players.size())` via the shared `summaryOverlayRowCount()` helper and the fan-width uses `summaryRowFanWidth()`, so both halves are provably in-bounds.
 
-**Done when.** A crash leaves a complete log, and the summary-overlay indexing is provably in-bounds.
+**Done when.** A crash leaves a complete log (flush fixed `d6d6436`, #284/#293/#294) **and** the summary-overlay indexing is provably in-bounds (`facea14`, #296/#297). Only the original non-deterministic `R`-time crash remains unaddressed — it has never been reproducibly captured, so no deterministic test can close it; see CONTEXT.md §13.
 
 ---
 
@@ -840,7 +840,7 @@ never cleared" (catches B2 — grep every `hudState.` field for a reset path).
 - [ ] B1–B4 and B13 fixed, each with a named regression test that fails without the fix.
 - [ ] B5–B8, B14 and B15 fixed, or explicitly deferred with a written rationale in CONTEXT.md §5.
       (B15 must land **before** B12/B13 — they edit the header it duplicates.)
-- [ ] B9: logger flushes per record; summary-overlay indexing guarded.
+- [x] B9 overlay indexing guarded (`facea14` / #296/#297) and logger flush fixed (`d6d6436`) — both clauses of the overlay+flush DoD met. The unreproducible `R`-time crash itself remains Open (see PHASE 2 note).
 - [ ] B10–B12 resolved; legacy profiles verified to still load.
 - [ ] U1, U2, U3, U7 addressed — the four a new player hits within five minutes. (U7 done 2026-11-07 `e157052`; U1/U2/U3 still Open.)
 - [ ] Persistence round-trip + renderer-string extraction tests exist.
