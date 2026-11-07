@@ -186,7 +186,7 @@ retained only as an additive migration fallback so pre-B12 saves keep loading.
 
 **Decisions to record here as you work** (add a dated bullet per decision):
 - Whether Tournament progress persists at all, and where that gate lives (B1).
-- Whether the main bet escrows at commit or at settlement (B5).
+- **B5 main-bet escrow point** (resolved 2026-11-07): escrow at COMMIT, not settlement — Model C. A committed main stake is tracked in `Player::pendingMainBet_` and a pending side bet in `pendingSideBet_`; `getAvailableBankroll()` returns bankroll minus both, and `confirmBet()`/`placeSideBet()` clamp + hint against that available balance instead of the full bankroll. This keeps win/lose settlement arithmetic byte-for-byte unchanged (zero regression risk on tests asserting exact post-settlement bankrolls); only over-commit cases change — a $1000 main + $1000 side can no longer both clear and settle negative, because after the main is committed the remaining balance is what any side bet may claim. Bankroll itself only moves at settlement (winBet/loseBet), so escrow excludes committed stakes from availability without touching the recorded bankroll until resolution.
 - Whether `maxSplitHands` is exposed or deleted (B10).
 - The canonical starting bankroll for human and NPC seats (U8).
 - B12 additive-migration strategy (resolved 2026-11-06): `resplitTentsAllowed` was misspelled in every save file, so the rename to `resplitTensAllowed` had to be additive — `to_json` writes only the corrected key, and `from_json` reads it first then falls back to the legacy typo'd key (new wins when both present) so pre-B12 saves keep loading. Honours the 0.3 schema contract: every existing field stays optional with a default; no profile is ever wiped by the rename.
@@ -401,8 +401,9 @@ still open.** Each row below was re-checked against the source rather than trust
 the "Evidence" column now says what the 2026-11-06 check actually was, which for several items is weaker than the
 word "reproduced" implied.
 
-**Resolved since:** `B3` (`c7978f1`) and `B15` (`9a89185`) landed on 2026-11-06; their rows below are updated to
-**Resolved**. Every other row here is still open — see the §13 audit log for what changed.
+**Resolved since:** `B3` (`c7978f1`) and `B15` (`9a89185`) landed on 2026-11-06; `B5` (`4f85d37`) on 2026-11-07;
+those three rows below are updated to **Resolved**. Every other row here is still open — see the §13 audit log for
+what changed.
 
 | ID | Sev | Title | Status | Evidence as of 2026-11-06 |
 |---|---|---|---|---|
@@ -411,7 +412,7 @@ word "reproduced" implied.
 | B3 | 🔴 | Side bet always reports "WON" | **Resolved 2026-11-06 (`c7978f1`)** | Fixed in `include/SideBetLabels.hpp`: branch won/lost/push on net with the sign preserved; `GameRenderer.cpp:997` calls the pure fn. Guard test in `test_side_bets.cpp` asserts WON +20 / LOST -20 / PUSH 0 (fails before fix). Suite 266/266 |
 | B4 | 🔴 | Reko seed ignores deck count | **Resolved 2026-11-06 (`3924b56`)** | Seeds from `gameRules_.numDecks` in `resetShoeAnalytics()` (`Game.cpp:277`); `Deck::create()` remembers shoe size and reshuffle rebuilds from it (`Deck.cpp:73`). Tests assert the roadmap seeds 1/2/4/6/8 → -1/-5/-12/-20/-27 through a headless Game, plus a one-deck reshuffle stays ~53 cards (both fail before fix). Two `test_deck.cpp` reshuffle-size assertions were corrected from the old NUM_DECKS behavior. Suite 274/274 |
 | B13 | 🔴 | Mid-shoe quit deletes those hands from career stats | **Resolved 2026-11-06 (`387a3e0`)** | Persist in-progress shoe rounds (currentHistory) so quitting mid-shoe still books them into career stats; guarded read. Test #273 passes; hist_proof.cpp (§6.10) now exits 0 and confirms the shipped schema. §11 listed it Open after the commit and was corrected here |
-| B5 | 🟠 | Main bet not escrowed; bankroll can go negative | Open | `Player.cpp:89` still a bare affordability check; no `getAvailableBankroll` in the tree. Negative balance not re-reproduced on screen |
+| B5 | 🟠 | Main bet not escrowed; bankroll can go negative | **Resolved 2026-11-07 (`4f85d37`)** | Escrow at commit (Model C): `getAvailableBankroll()` returns bankroll minus committed main − pending side bet; `confirmBet()`/`placeSideBet()` clamp + hint against that balance, not the full bankroll. 3 regression tests in `test_settlement.cpp`: accessor invariant (#111); a same-limit side bet refused once the main is committed so it can't over-commit the roll (#112); and a losing round (dealer natural −MIN plus a lost PerfectPairs side) settling to after == STARTING − MIN − sideWager == 9930, never negative (#113). Win/lose arithmetic unchanged; full suite 281/281 (0 failures) |
 | B6 | 🟠 | Rules panel key repeat | **Resolved 2026-11-06 (`584aa4b`)** | Added false->true edge detection in \`Game::update()\` rules case via \`rulesRightPrev_\`/\`rulesLeftPrev_\`; applyGameRuleEdit fires only on a press (one step per tap). Up/Down highlight repeat left as-is (desirable, called out in commit). Headless test #277 (\`test_rules_panel_editing.cpp\`) holds Right 25 frames and asserts result == one tap; fails before / passes after. Suite 277/277 (+1 over B7) |
 | B7 | 🟠 | Escape-quit skips the save | **Resolved 2026-11-06 (`11b187b`)** | Centralised persist-on-exit into `Game::persistOnExit()` (shoe record + current table settings + unlocked achievements, then save) routed through `InputHandler::returnToMainMenu()`, so every Escape->menu route persists like the window-close path did; guarded against an empty seat vector. Headless test #276 (`test_input_return_to_main_menu.cpp`) fails before / passes after; full suite 276/276 (+1) |
 | B8 | 🟠 | `Deck::draw()` no empty guard | Known (0.3 §6) | Two unguarded `back()`/`pop_back()` pairs confirmed at `Deck.cpp:123-137` |
@@ -450,6 +451,28 @@ next window trusts it.
 These documents are load-bearing, so they get audited like code. Each entry records what was checked, against
 what, and what changed. If you correct something, add a bullet here — a silent edit is how the next window ends up
 trusting a stale claim again.
+
+### 2026-11-07 — B5 main-bet escrow at commit (over-commit → negative bankroll) fixed
+
+What was wrong: `confirmBet()` and `placeSideBet()` affordability checks read the full `bankroll`, so a player could
+commit the MAXIMUM_BET main and an equal side bet against one roll; both cleared and settlement then drove the recorded
+bankroll negative (the two wagers overlapped).
+
+Fix (Model C): track committed stakes as pending bets — `Player::pendingMainBet_` / `pendingSideBet_`, accessors
+`getAvailableBankroll()`/`commitMainBet()`/`commitSideBet()`/`clearPendingBets()`. `resetRound()` clears both; the two
+clamps/hints gate on `getAvailableBankroll()` = bankroll − committed main − pending side instead of the full bankroll.
+The main bet is escrowed at commit (not settlement), so availability shrinks the moment the main is locked and no side
+bet can claim beyond what remains. Bankroll itself only moves at winBet/loseBet, so the win/lose arithmetic that other
+tests pin to exact post-settlement values is byte-for-byte unchanged — zero regression; only over-commit cases change.
+
+Docs: §5 records the escrow-at-commit decision; §11 B5 row → Resolved (`4f85d37`); 3 regression tests added in
+`test_settlement.cpp` (accessor invariant #111, over-commit refusal #112, losing-round non-negative + conservation #113).
+Full suite 281/281 (0 failures), up from the B1 baseline of 278/278.
+
+Note: the very first draft of test #113 asserted an exact delta but never called `seed_deck()`, so it dealt from a
+default shoe and produced a non-deterministic win; seeding + a proven natural sequence made it deterministic (after ==
+9930). The side-bet loss settles at deal via `resolveSideBets()` (RoundDealer.cpp:84), so the intent must be placed before
+`startTestRound()`.
 
 ### 2026-11-06 — full claim audit against `96fd416` (branch `3.1`)
 
