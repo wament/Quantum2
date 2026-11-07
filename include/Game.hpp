@@ -530,6 +530,13 @@ class Game
     // out of range on the first round of every shoe.
     float hiLoTrueCount() const;
 
+    // Startup "PLAYER CONTROLS" banner (the console block printed once at game start). Single source of truth shared by
+    // the production print site and headless tests: B11 corrected its Left/Right labels so they match the InputHandler.cpp
+    // PlaceBets bindings (Left = auto Kelly bet via calculateOptimalBet()/setBet, Right = confirm). Pure -- no SFML or
+    // mutable Game state -- so a Game(true) instance reads it directly. Not suffixed *ForTest() because Game::Game() calls
+    // it in production too; mirrors how calculateOptimalBet()/activeTrueCount() are plain public helpers.
+    std::string startupControlsBanner() const;
+
   private:
     // evaluate + bankroll every seat's side bet once all cards are known (called from deal()),
     // BEFORE any main-hand settlement via evaluateHands(). Side bets pay out / lose independently of the main hand.

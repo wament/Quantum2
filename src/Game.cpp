@@ -148,8 +148,18 @@ Game::Game()
     replay->setStartingBankroll(players[0].getBankroll());
     // restore previously-unlocked achievements from the profile (additive: empty for new/legacy profiles).
     achievementManager_.loadUnlockedFrom(profile.unlockedAchievementIds);
-    Logger::info(R"(
+    Logger::info(startupControlsBanner());
 
+}
+
+// B11 -- startup "PLAYER CONTROLS" banner. Single source of truth shared by the production print site
+// (Game::Game) and headless tests: B11 corrected its Left/Right labels so they match the InputHandler.cpp
+// PlaceBets bindings (Left = auto Kelly bet, Right = confirm). Pure -- no SFML or mutable Game state -- so a
+// Game(true) instance reads it directly. Not suffixed *ForTest() because Game::Game() calls it in production
+// too; mirrors how calculateOptimalBet()/activeTrueCount() are plain public helpers.
+std::string Game::startupControlsBanner() const
+{
+    static const std::string banner = R"(
 =========================================================
                     ♠ BLACKJACK ♣
                      PLAYER CONTROLS
@@ -159,7 +169,7 @@ BETTING PHASE
 -------------
   ↑  Up Arrow      Increase Bet
   ↓  Down Arrow    Decrease Bet
-  <-  Right Arrow   Auto Kelly Bet 
+  <-  Left Arrow   Auto Kelly Bet
   ->            Confirm Bet
 
 PLAYER TURN
@@ -178,8 +188,8 @@ ROUND / GAME
 Close the window at any time to quit.
 
 =========================================================
-
-)");
+)";
+    return banner;
 }
 
 void Game::run()
