@@ -777,8 +777,7 @@ totals are small white text drawn straight onto the felt arc. *Fix:* increase th
 a small filled pill with a dark backing (`drawTotal`, `GameRenderer.cpp:468`).
 
 **U7 — The human seat is hard-coded to "William"** (`SessionLifecycle.cpp:35` and `:182`); there is no name entry
-anywhere and the profile's `name` field ships as `""`. Ship-blocking for anything public. *Fix:* add a menu name
-field backed by the existing profile field.
+anywhere and the profile's `name` field ships as `""`. Ship-blocking for anything public. *Status — RESOLVED 2026-11-07 (`e157052`): added the automatic "enter your name before hitting main menu" screen; auto-prompt fires when profile.name is empty (Game::needsNameEntry gate at run()), editing goes through a clamped Game `nameEntry*` buffer, commitPlayerName persists seat 0's display + profile, and Player Stats reuses Statistics→StatsDashboard. Headless tests #286–#288.*
 
 **U8 — 10× bankroll mismatch.** The human starts at **$1,000** (`PlayerProfile.hpp:66`) while NPCs start at
 **$10,000** (`Constants.hpp:273` `STARTING_BANKROLL`) — visible side by side on the table, and `MAXIMUM_BET` is
@@ -843,7 +842,7 @@ never cleared" (catches B2 — grep every `hudState.` field for a reset path).
       (B15 must land **before** B12/B13 — they edit the header it duplicates.)
 - [ ] B9: logger flushes per record; summary-overlay indexing guarded.
 - [ ] B10–B12 resolved; legacy profiles verified to still load.
-- [ ] U1, U2, U3, U7 addressed — the four a new player hits within five minutes.
+- [ ] U1, U2, U3, U7 addressed — the four a new player hits within five minutes. (U7 done 2026-11-07 `e157052`; U1/U2/U3 still Open.)
 - [ ] Persistence round-trip + renderer-string extraction tests exist.
 - [ ] Full suite green (currently **277/277**) with a test count at or above the current baseline, growing as each fix adds
       its regression test.
