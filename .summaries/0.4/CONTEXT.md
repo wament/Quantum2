@@ -131,7 +131,7 @@ The two-copy divergence this phase once worried about is gone: the "edit one cop
 | `preferredPlayerCount/Speed/CountingStyle` | ✔ | `j.value()` + default | |
 | `preferredSoundVolume/MusicVolume/Muted` | ✔ | `j.value()` + default | |
 | `unlockedAchievementIds` | **only if non-empty** | `j.value()` + `{}` | |
-| `gameRules` | ✔ | guarded `contains()` | nested object, 6 keys |
+| `gameRules` | ✔ | guarded `contains()` | nested object, 7 keys (+maxSplitHands; B10) |
 | `currentHistory` | ✔ (additive) | `j.value()` + `{}` on load | **B13** — now serialised; guarded read keeps legacy mid-shoe-quit saves loading (§6.10, test #273) |
 
 **Two-tier read contract.** Four core fields use `j.at()` and therefore *throw*; every additive field uses
@@ -155,16 +155,23 @@ rounds survive a save/load round trip. If you touch this recompute again, that t
 moment the in-progress shoe stops surviving a reload.
 
 **`gameRules` nested object** — written keys: `numDecks`, `dealerStandsOnSoft17`, `doublesAfterSplitAllowed`,
-`resplitAcesAllowed`, `resplitTensAllowed`, `surrenderType`. The per-field hooks live in `include/GameRules.hpp`
+`resplitAcesAllowed`, `resplitTensAllowed`, `surrenderType`, `maxSplitHands`. The per-field hooks live in `include/GameRules.hpp`
 (ADL'd from the delegation at `Serialization.hpp:212/238`). `maxSplitHands` is a real field enforced at
-`src/Game.cpp:821` but is **absent from `to_json`** and has no UI row — dead config (B10). Spelling: B12 renamed the
+`src/Game.cpp:821`; it is now a full schema field. `to_json` writes it, and `from_json` clamps any stored
+value into {2,3,4,-1} — -1 == unlimited, falling back to the struct default for absent/invalid values. It has a UI row
+(`GameRuleId::MaxSplitHands`) cycling only {2, 3, 4, Unlimited}; the -1 sentinel is guarded explicitly at both enforcement
+sites (Game.cpp:821 / RoundEngine.cpp:124) so it never reads as a large finite cap. Spelling: B12 renamed the
 written key to `resplitTensAllowed`; on load the corrected key wins, with the legacy typo'd `resplitTentsAllowed`
 retained only as an additive migration fallback so pre-B12 saves keep loading.
 
 **Decisions to record here as you work** (add a dated bullet per decision):
 - Whether Tournament progress persists at all, and where that gate lives (B1).
 - **B5 main-bet escrow point** (resolved 2026-11-07): escrow at COMMIT, not settlement — Model C. A committed main stake is tracked in `Player::pendingMainBet_` and a pending side bet in `pendingSideBet_`; `getAvailableBankroll()` returns bankroll minus both, and `confirmBet()`/`placeSideBet()` clamp + hint against that available balance instead of the full bankroll. This keeps win/lose settlement arithmetic byte-for-byte unchanged (zero regression risk on tests asserting exact post-settlement bankrolls); only over-commit cases change — a $1000 main + $1000 side can no longer both clear and settle negative, because after the main is committed the remaining balance is what any side bet may claim. Bankroll itself only moves at settlement (winBet/loseBet), so escrow excludes committed stakes from availability without touching the recorded bankroll until resolution.
-- Whether `maxSplitHands` is exposed or deleted (B10).
+- **B10 split-hand cap exposed** (resolved 2026-11-07): the value now persists and is user-editable via the rules panel,
+restricted to exactly `{2, 3, 4, Unlimited}` — cycled by `applyGameRuleEdit()` through
+`SPLIT_HAND_LIMITS[] = {2, 3, 4, MAX_SPLIT_HANDS_UNLIMITED(-1)}`; the -1 sentinel is handled at every enforcement site.
+Serialisation round-trips it and clamps out-of-range stored values back into the set. Regression tests #278–#282
+(test_max_split_hand_rules.cpp) cover the schema key, cycling bounds and unlimited-vs-finite-cap enforcement.
 - The canonical starting bankroll for human and NPC seats (U8).
 - B12 additive-migration strategy (resolved 2026-11-06): `resplitTentsAllowed` was misspelled in every save file, so the rename to `resplitTensAllowed` had to be additive — `to_json` writes only the corrected key, and `from_json` reads it first then falls back to the legacy typo'd key (new wins when both present) so pre-B12 saves keep loading. Honours the 0.3 schema contract: every existing field stays optional with a default; no profile is ever wiped by the rename.
 - B2 achievement-toast lifetime (resolved 2026-11-06; default chosen from §10 #7): toast stays on screen for `GameTiming::ACHIEVEMENT_TOAST_SECONDS` (=4.0s), armed in `AchievementFeeder.cpp:48` on each unlock and cleared at zero by `RoundEngine::tick` alongside the other HUD timers (the renderer already draws only while a name is set, so clearing ends the draw). No new persisted field; purely in-memory HUD state.
@@ -392,16 +399,16 @@ what changed.
 | B5 | 🟠 | Main bet not escrowed; bankroll can go negative | **Resolved 2026-11-07 (`4f85d37`)** | Escrow at commit (Model C): `getAvailableBankroll()` returns bankroll minus committed main − pending side bet; `confirmBet()`/`placeSideBet()` clamp + hint against that balance, not the full bankroll. 3 regression tests in `test_settlement.cpp`: accessor invariant (#111); a same-limit side bet refused once the main is committed so it can't over-commit the roll (#112); and a losing round (dealer natural −MIN plus a lost PerfectPairs side) settling to after == STARTING − MIN − sideWager == 9930, never negative (#113). Win/lose arithmetic unchanged; full suite 281/281 (0 failures) |
 | B6 | 🟠 | Rules panel key repeat | **Resolved 2026-11-06 (`584aa4b`)** | Added false->true edge detection in \`Game::update()\` rules case via \`rulesRightPrev_\`/\`rulesLeftPrev_\`; applyGameRuleEdit fires only on a press (one step per tap). Up/Down highlight repeat left as-is (desirable, called out in commit). Headless test #277 (\`test_rules_panel_editing.cpp\`) holds Right 25 frames and asserts result == one tap; fails before / passes after. Suite 277/277 (+1 over B7) |
 | B7 | 🟠 | Escape-quit skips the save | **Resolved 2026-11-06 (`11b187b`)** | Centralised persist-on-exit into `Game::persistOnExit()` (shoe record + current table settings + unlocked achievements, then save) routed through `InputHandler::returnToMainMenu()`, so every Escape->menu route persists like the window-close path did; guarded against an empty seat vector. Headless test #276 (`test_input_return_to_main_menu.cpp`) fails before / passes after; full suite 276/276 (+1) |
-| B8 | 🟠 | `Deck::draw()` no empty guard | Known (0.3 §6) | Two unguarded `back()`/`pop_back()` pairs confirmed at `Deck.cpp:123-137` |
-| B9 | 🟠 | Flaky crash + unflushable logger | Open — crash unrepro | `Logger.cpp:34` still writes `std::cout` with no flush/unitbuf |
+| B8 | 🟠 | `Deck::draw()` no empty guard | Known (0.3 §6) | Two unguarded `back()`/`pop_back()` pairs confirmed at `Deck.cpp:123-137`. Headless-testability: COVERABLE — `Deck::setCards({})` deals an empty shoe; a defensive draw() reaches both paths (not hard headlessly) |
+| B9 | 🟠 | Flaky crash + unflushable logger | Open — crash unrepro | `Logger.cpp:34` still writes `std::cout` with no flush/unitbuf. Headless-testability: the reproducible half (logger flush) is EASY and already covered by test #284; the unreproducible flaky-crash half is inherently hard headlessly — needs the exact timing/Xvfb conditions that reproduce it before a guard test can be written |
 | B14 | 🟠 | Non-atomic save; corrupt file → silent wipe | **Resolved 2026-11-06 (`9d1d125`)** | Atomic write + corrupt-save rescue under a `.corrupt.<ts>` suffix, and partial-JSON field retention in `PlayerProfile.cpp`. Tests #232/#233 pass. §11 listed it Open after the commit and was corrected here |
 | B15 | 🟠 | Two live copies of `Serialization.hpp` | **Resolved 2026-11-06 (`9a89185`)** | Deleted `src/Serialization.hpp`; exactly one copy remains (include/), enforced by a guard test that fails with two / passes with one. No CMake edit needed; `PlayerProfile.cpp` now resolves to the include copy, unblocking every schema edit (B12/B13/B14) |
-| B10 | 🟡 | `maxSplitHands` dead config | Open | Enforced at `Game.cpp:821` / `RoundEngine.cpp:121`; absent from `to_json` and `gameRuleRows()` |
+| B10 | 🟡 | `maxSplitHands` dead config | **Resolved 2026-11-07 (`69cd9e8`)** | Serialised (`to_json`/`from_json`, clamps to {2,3,4,-1}; -1==unlimited) and exposed via a gameRuleRow cycling only {2,3,4,Unlimited}; the -1 sentinel is guarded at both enforcement sites. Regression tests #278–#282 (test_max_split_hand_rules.cpp): schema round-trip + clamp fail before fix; restricted-value cycling and unlimited-vs-finite-cap enforcement verified. Suite 289/289 |
 | B11 | 🟡 | Control banner mislabels keys | Open | `Game.cpp:162-163` vs real bindings `InputHandler.cpp:595-606` |
 | B12 | 🟡 | `resplitTentsAllowed` typo in save schema | **Resolved 2026-11-06** | Renamed field+enum to `resplitTensAllowed`/`ResplitTens`; `to_json` writes the corrected key, `from_json` reads it then falls back to the legacy typo'd key (new wins). On-disk writer verified via `test_profile_settings.cpp:232` using real `PlayerProfile::save()` — shipped binary now writes `resplitTensAllowed`. Suite 272/272 |
-| B16 | 🟡 | `reconstructDeckAtRound()` dead and wrong | Open | Still zero callers; sole occurrence is its own definition at `GameRecord.hpp:307` |
-| U1–U10 | 🟡 | UI/UX set (see NEXT_STEPS Phase 4) | Open | Not re-verified on screen this pass; cited renderer lines all resolve to the claimed functions |
-| T1–T2 | 🟢 | Save amplification; unbounded history | Open | `HandEvaluator.cpp:297` still saves every settled round |
+| B16 | 🟡 | `reconstructDeckAtRound()` dead and wrong | **Resolved 2026-11-07 (`5f81d48`)** | Removed — static analysis confirmed zero callers (sole occurrence was its own definition at `GameRecord.hpp:307`), so deletion is behaviour-preserving; it also recomputed deck state with the wrong card-drop order, which no code relied on. Full suite unchanged at 289/289 |
+| U1–U10 | 🟡 | UI/UX set (see NEXT_STEPS Phase 4) | Open | Not re-verified on screen this pass; cited renderer lines all resolve to the claimed functions. Headless-testability: HARDEST — needs an SDL window context + screenshots/Xvfb for visual assertions; no pure headless unit test can lock rendering.
+| T1–T2 | 🟢 | Save amplification; unbounded history | Open | `HandEvaluator.cpp:297` still saves every settled round. Headless-testability: MEDIUM — needs byte-counting output interception (T1) and a chosen history cap before it is assertable (T2).
 | — | ✅ | `handActions` indexing | **Cleared — not a bug** | Do not "fix" without also changing turn order (§6.9) |
 | — | ✅ | Settlement math | **Cleared — correct** | |
 
@@ -670,3 +677,47 @@ source (B10 `maxSplitHands` enforced at `Game.cpp:821`, Banner mislabels keys at
 - **B1 → Resolved.** The `5107aa7` fix (load real profile into seat 0, mark non-persistable for the tournament run) is now reflected in §11: B1 row → Resolved with hash + test #228. Test #228 verified passing — a Tournament visit/close no longer overwrites the career profile.
 - **§5 drift corrected.** §5's opening said "two copies of Serialization.hpp, both live"; that is pre-B15 text. `src/Serialization.hpp` was deleted by B15 (`9a89185`) and only `include/Serialization.hpp` remains — verified with `g++ -I include -M src/PlayerProfile.cpp | grep Serialization.hpp` → the include copy. Replaced the stale table + verification snippet and stated the "edit the wrong copy" trap is closed.
 - **#256 (known flake).** "StrategyTrainer: auto-dealt questions never include a natural blackjack" fails nondeterministically (≈1 in ~15 full `-j8` runs; passes reliably isolated). Neither `src/StrategyTrainer.cpp` nor its test changed since audit (`356fc31`) → not a B9 regression. Cause: expected natural-hand rejections deplete the 6-deck shoe mid-loop in `nextQuestion()`, which can leave a lingering natural while `sessionActive` stays true (also a rare production edge case). Left unfixed this round; read the suite as 284/284 with #256 the one known flake.
+
+### 2026-11-07 — headless-testability classification of the open §11 items
+
+Classified each remaining §11 item by how hard it is to verify without an SDL window, so the next window knows which
+need escrow-at-commit (§4 rule 2) vs code-first tests. Grounded against source, not assumed:
+
+- **U1–U10 (UI/UX rendering) — HARDEST / not truly headless.** Every item needs an SDL window context and a
+  screenshot/Xvfb image diff to assert anything visual; no pure unit test can assert pixel-level rendering and diffs are
+  flaky. These are the only items genuinely difficult headlessly. Verify with Xvfb + screenshots, or escrow-at-commit.
+- **B8 (`Deck::draw()` empty-guard) — actually COVERABLE.** Two unguarded `back()`/`pop_back()` pairs at Deck.cpp:125-133,
+  reached only when `cards` is empty. `Deck::setCards(std::vector<Card>)` (a public test harness in Deck.hpp) deals an
+  arbitrary shoe, so `setCards({})` + draw() reaches the path directly; a defensive unit test asserting no UB/crash covers it.
+- **T1 (save amplification) — MEDIUM.** Feasible but needs byte-counting output interception (custom streambuf/ofstream sink)
+  to prove serialized size is stable across repeated saves — more involved than a pure unit test.
+- **T2 (unbounded history, HandEvaluator.cpp:297) — MEDIUM.** Feasible headlessly but first requires choosing + implementing
+  a cap on career-stats/history growth before there is anything to assert; the test then verifies the cap holds after many rounds.
+- **B16 (`reconstructDeckAtRound`, GameRecord.hpp:307) — EASY.** Zero callers (sole occurrence is its definition); confirm via
+  grep/static-analysis, remove, re-run full suite. Trivial, low-risk, fully CI-verifiable.
+- **B10 (`maxSplitHands`) — EASY.** Pure data-model change: round-trip through to_json/from_json, assert the value + schema key
+  survive, then assert the restricted gameRules UI values. Cleanly unit-testable.
+
+### 2026-11-07 — B16 (dead reconstructDeckAtRound removal) fixed
+
+Removed `reconstructDeckAtRound()` from GameRecord.hpp:307 after confirming via static analysis that its sole occurrence was
+its own definition — zero callers anywhere in include/src/tests. Deletion is behaviour-preserving, and it also removes a
+function whose card-drop order (removing dealer cards then player hands per round) was wrong for no caller. Full suite
+unchanged at 289/289; the only way to break this would be an external TU calling the inline function, which grep rules out.
+
+### 2026-11-07 — B10 (serialise + expose maxSplitHands) fixed
+
+`maxSplitHands` was a dead config: enforced at Game.cpp:821 / RoundEngine.cpp:124 but absent from `to_json` and with no UI
+row. Made it a full schema field and exposed it restricted to exactly {2, 3, 4, Unlimited}:
+
+- Serialization: added `maxSplitHands` to `to_json`; `from_json` reads it then clamps any stored value into the allowed set
+  {2,3,4,-1} (-1 == unlimited), falling back to the struct default for absent or invalid values (additive on load).
+- UI: new `GameRuleId::MaxSplitHands`, a `gameRuleRows()` entry and a `gameRuleDescription()`. `applyGameRuleEdit` cycles
+  `SPLIT_HAND_LIMITS[] = {2, 3, 4, MAX_SPLIT_HANDS_UNLIMITED}` (-1 == unlimited) with no out-of-range value reachable.
+- Enforcement: the -1 sentinel is guarded explicitly at both sites (`maxSplitHands > 0 && ...` at Game.cpp:821; a
+  `resplitCapOpen` guard at RoundEngine.cpp:124) so an unsigned size_t-vs-int comparison can never read unlimited as a large
+  finite cap.
+
+New tests/test_max_split_hand_rules.cpp (#278–#282): schema round-trip + load-time clamp fail before the fix; restricted-value
+cycling (visits only {2,3,4,-1}) and unlimited-vs-finite-cap enforcement verified headlessly. CMakeLists registers the new TU.
+Full suite 289/289.
