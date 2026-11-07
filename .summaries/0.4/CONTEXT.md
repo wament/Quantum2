@@ -165,18 +165,19 @@ written key to `resplitTensAllowed`; on load the corrected key wins, with the le
 retained only as an additive migration fallback so pre-B12 saves keep loading.
 
 **Decisions to record here as you work** (add a dated bullet per decision):
-- Whether Tournament progress persists at all, and where that gate lives (B1).
+- **Whether Tournament progress persists at all, and where that gate lives (B1) — resolved 2026-11-07 to option (b):** record a SEPARATE tournament history rather than touching the career profile. Note on implementation: B1 (`5107aa7`) currently delivers the *career-profile-preserved* guarantee via option (a) — `markPersistable(false)` gates every `saveProfile()` for the run and tournaments leave no separate log. Both choices keep the career file untouched, but (b) additionally wants a tournament trace; materialising that as a dedicated tournament-history store is a small follow-up feature task with its own test seam (new persisted data + UI), i.e. outside this QA-hardening round's defect scope. Left open to implement on request — do not conflate "career profile preserved" (already true) with "tournament history recorded" (still option-b-pending).
 - **B5 main-bet escrow point** (resolved 2026-11-07): escrow at COMMIT, not settlement — Model C. A committed main stake is tracked in `Player::pendingMainBet_` and a pending side bet in `pendingSideBet_`; `getAvailableBankroll()` returns bankroll minus both, and `confirmBet()`/`placeSideBet()` clamp + hint against that available balance instead of the full bankroll. This keeps win/lose settlement arithmetic byte-for-byte unchanged (zero regression risk on tests asserting exact post-settlement bankrolls); only over-commit cases change — a $1000 main + $1000 side can no longer both clear and settle negative, because after the main is committed the remaining balance is what any side bet may claim. Bankroll itself only moves at settlement (winBet/loseBet), so escrow excludes committed stakes from availability without touching the recorded bankroll until resolution.
 - **B10 split-hand cap exposed** (resolved 2026-11-07): the value now persists and is user-editable via the rules panel,
 restricted to exactly `{2, 3, 4, Unlimited}` — cycled by `applyGameRuleEdit()` through
 `SPLIT_HAND_LIMITS[] = {2, 3, 4, MAX_SPLIT_HANDS_UNLIMITED(-1)}`; the -1 sentinel is handled at every enforcement site.
 Serialisation round-trips it and clamps out-of-range stored values back into the set. Regression tests #278–#282
 (test_max_split_hand_rules.cpp) cover the schema key, cycling bounds and unlimited-vs-finite-cap enforcement.
-- The canonical starting bankroll for human and NPC seats (U8).
+- **The canonical starting bankroll for human and NPC seats (U8) — resolved 2026-11-07 to $10,000 everywhere.** Human and NPC seats share a single `STARTING_BANKROLL = 10000`; the prior $1,000 assumption is reconciled. No new persisted field; the value lives in `Constants.hpp` and both seat types read it on profile load (`PlayerProfile.hpp:66`).
 - B12 additive-migration strategy (resolved 2026-11-06): `resplitTentsAllowed` was misspelled in every save file, so the rename to `resplitTensAllowed` had to be additive — `to_json` writes only the corrected key, and `from_json` reads it first then falls back to the legacy typo'd key (new wins when both present) so pre-B12 saves keep loading. Honours the 0.3 schema contract: every existing field stays optional with a default; no profile is ever wiped by the rename.
 - B2 achievement-toast lifetime (resolved 2026-11-06; default chosen from §10 #7): toast stays on screen for `GameTiming::ACHIEVEMENT_TOAST_SECONDS` (=4.0s), armed in `AchievementFeeder.cpp:48` on each unlock and cleared at zero by `RoundEngine::tick` alongside the other HUD timers (the renderer already draws only while a name is set, so clearing ends the draw). No new persisted field; purely in-memory HUD state.
 - **B7 persist-on-exit choke point** (resolved 2026-11-06): exit-persist is centralised into `Game::persistOnExit()`, called from `InputHandler::returnToMainMenu()` so every Escape→main-menu route persists like the window-close path did. It stamps shoe record + current table settings + unlocked achievements then saveProfile through the existing profile plumbing — no new persisted field, purely re-routing an already-existing save. Guarded against an empty seat vector (headless tests build a bare Game). The single-choke-point placement is what keeps the fix one small method instead of sprinkling another `saveProfile()` onto each exit route.
 - **B6 rules-panel keyboard edit edge-triggered** (resolved 2026-11-06): Left/Right rule edits fire only on a false→true key transition (`&& !rulesRightPrev_` / `&& !rulesLeftPrev_`) so one tap = one step at any framerate. Deliberate decision — Up/Down highlight navigation keeps its held-key repeat (moving the highlight fast is the point, so it's desirable) and stays plain held-key polling; only the rule-edit axis was throttled. That split call-out lives in the B6 commit message.
+- **§10 open decisions — all resolved 2026-11-07 (recorded here for traceability):** #1 tournament persistence → option (b) record a SEPARATE tournament history; career-profile preservation itself is already delivered by B1 via gating (#see inline bullet). #2 main-bet escrow → at commit (Model C), implemented in B5 (`4f85d37`). #3 starting bankroll → $10,000 everywhere (inline bullet). #4 `maxSplitHands` → expose restricted to {2,3,4,Unlimited}, implemented in B10 (`69cd9e8`). #5 console control banner → keep trimmed along the bottom middle (a UI/presentation decision; unblocks B11 — the banner's Auto-Kelly row is mislabelled "Right Arrow" when the binding is Left — but repositioning it to bottom-middle needs a visual/Xvfb check, so the label fix and placement are queued as follow-ups rather than done this round). #6 name-entry screen → in scope for 0.4: entered automatically before hitting main menu, then reachable from main menu to view player stats (a lifecycle/UI task affecting U7; new data model + state machine, recorded for sequencing, not implemented this round). #7 achievement-toast lifetime → 4s (`ACHIEVEMENT_TOAST_SECONDS`), implemented in B2 (`f3aeb1f`).
 
 ---
 
@@ -385,9 +386,9 @@ still open.** Each row below was re-checked against the source rather than trust
 the "Evidence" column now says what the 2026-11-06 check actually was, which for several items is weaker than the
 word "reproduced" implied.
 
-**Resolved since:** `B3` (`c7978f1`) and `B15` (`9a89185`) landed on 2026-11-06; `B5` (`4f85d37`) on 2026-11-07;
-those three rows below are updated to **Resolved**. Every other row here is still open — see the §13 audit log for
-what changed.
+**Resolved since:** `B3` (`c7978f1`) and `B15` (`9a89185`) landed on 2026-11-06; `B5` (`4f85d37`) on 2026-11-07, `B8` (`11f6f50`) on 2026-11-07;
+the rows below for those are updated to **Resolved**. Every other row here is still open — see the §13 audit log.
+Suite at 291/291 (0 failures; #256 known flaky, see §13).
 
 | ID | Sev | Title | Status | Evidence as of 2026-11-06 |
 |---|---|---|---|---|
@@ -399,7 +400,7 @@ what changed.
 | B5 | 🟠 | Main bet not escrowed; bankroll can go negative | **Resolved 2026-11-07 (`4f85d37`)** | Escrow at commit (Model C): `getAvailableBankroll()` returns bankroll minus committed main − pending side bet; `confirmBet()`/`placeSideBet()` clamp + hint against that balance, not the full bankroll. 3 regression tests in `test_settlement.cpp`: accessor invariant (#111); a same-limit side bet refused once the main is committed so it can't over-commit the roll (#112); and a losing round (dealer natural −MIN plus a lost PerfectPairs side) settling to after == STARTING − MIN − sideWager == 9930, never negative (#113). Win/lose arithmetic unchanged; full suite 281/281 (0 failures) |
 | B6 | 🟠 | Rules panel key repeat | **Resolved 2026-11-06 (`584aa4b`)** | Added false->true edge detection in \`Game::update()\` rules case via \`rulesRightPrev_\`/\`rulesLeftPrev_\`; applyGameRuleEdit fires only on a press (one step per tap). Up/Down highlight repeat left as-is (desirable, called out in commit). Headless test #277 (\`test_rules_panel_editing.cpp\`) holds Right 25 frames and asserts result == one tap; fails before / passes after. Suite 277/277 (+1 over B7) |
 | B7 | 🟠 | Escape-quit skips the save | **Resolved 2026-11-06 (`11b187b`)** | Centralised persist-on-exit into `Game::persistOnExit()` (shoe record + current table settings + unlocked achievements, then save) routed through `InputHandler::returnToMainMenu()`, so every Escape->menu route persists like the window-close path did; guarded against an empty seat vector. Headless test #276 (`test_input_return_to_main_menu.cpp`) fails before / passes after; full suite 276/276 (+1) |
-| B8 | 🟠 | `Deck::draw()` no empty guard | Known (0.3 §6) | Two unguarded `back()`/`pop_back()` pairs confirmed at `Deck.cpp:123-137`. Headless-testability: COVERABLE — `Deck::setCards({})` deals an empty shoe; a defensive draw() reaches both paths (not hard headlessly) |
+| B8 | 🟠 | `Deck::draw()` no empty guard | **Resolved 2026-11-07 (`11f6f50`)** | Two unguarded `back()`/`pop_back()` pairs in `Deck::draw()` — the first when the shoe is already empty, the second after only the cut card was drawn (a single-card shoe whose one card is the cut card), both UB on an empty std::vector. Guarded: entry returns `Card{}` for a truly empty shoe; before the second `back()` it now checks `cards.empty()` and returns the cut card when nothing remains. Purely defensive — every production caller already guards `deck.empty()`, so real gameplay is byte-for-byte unchanged and all 5 callers keep the `Card` return type. Headless-testable via `Deck::setCards({})`: `tests/test_deck_empty_draw.cpp` (#13/#14) drove both sites, SEGFAULT / returned garbage (value 33 != CUT_CARD_VALUE) before the fix, PASS after. Suite 291/291 |
 | B9 | 🟠 | Flaky crash + unflushable logger | Open — crash unrepro | `Logger.cpp:34` still writes `std::cout` with no flush/unitbuf. Headless-testability: the reproducible half (logger flush) is EASY and already covered by test #284; the unreproducible flaky-crash half is inherently hard headlessly — needs the exact timing/Xvfb conditions that reproduce it before a guard test can be written |
 | B14 | 🟠 | Non-atomic save; corrupt file → silent wipe | **Resolved 2026-11-06 (`9d1d125`)** | Atomic write + corrupt-save rescue under a `.corrupt.<ts>` suffix, and partial-JSON field retention in `PlayerProfile.cpp`. Tests #232/#233 pass. §11 listed it Open after the commit and was corrected here |
 | B15 | 🟠 | Two live copies of `Serialization.hpp` | **Resolved 2026-11-06 (`9a89185`)** | Deleted `src/Serialization.hpp`; exactly one copy remains (include/), enforced by a guard test that fails with two / passes with one. No CMake edit needed; `PlayerProfile.cpp` now resolves to the include copy, unblocking every schema edit (B12/B13/B14) |
@@ -721,3 +722,29 @@ row. Made it a full schema field and exposed it restricted to exactly {2, 3, 4, 
 New tests/test_max_split_hand_rules.cpp (#278–#282): schema round-trip + load-time clamp fail before the fix; restricted-value
 cycling (visits only {2,3,4,-1}) and unlimited-vs-finite-cap enforcement verified headlessly. CMakeLists registers the new TU.
 Full suite 289/289.
+
+### 2026-11-07 — B8 (Deck::draw() empty-shoe guard) fixed + all §10 decisions resolved
+
+What was wrong: `Deck::draw()` had two unguarded `cards.back()`/`pop_back()` pairs — one when the shoe is already
+empty, and a second after only the cut card was drawn (a single-card shoe whose one card is the cut card). Both are
+undefined behavior on an empty std::vector. Reachable headlessly via `Deck::setCards({})`; every production caller guards
+`deck.empty()` before calling draw(), so real gameplay never hit it (hence "pre-existing, known" since 0.3 §6).
+
+Fix: guarded `draw()` — entry returns `Card{}` for a truly empty shoe; before the second `back()` it now checks
+`cards.empty()` and returns the cut card when nothing remains. The `Card` return type is unchanged and all 5 callers
+(`Game.cpp:1421`,`1437`; three in `StrategyTrainer.cpp`) keep working unchanged; only degenerate empty-draw cases change
+from UB to a benign default (purely defensive, no gameplay regression).
+
+Docs: §11 B8 row → Resolved (`11f6f50`); 2 headless tests added in `tests/test_deck_empty_draw.cpp` (#13/#14) registered
+via CMakeLists.txt — they SEGFAULT (empty deck) / returned garbage value 33 != CUT_CARD_VALUE(14) before the fix and PASS
+after. Suite 289 → 291/291 (0 failures).
+
+Also this round: resolved all seven §10 open decisions in CONTEXT.md §5's decision list — #1 tournament persistence →
+option (b) record a SEPARATE tournament history (B1 currently preserves the career profile via gating, i.e. option (a);
+the separate store is a follow-up feature), #2 escrow at commit (done in B5, `4f85d37`), #3 starting bankroll $10,000
+everywhere, #4 maxSplitHands exposed to {2,3,4,Unlimited} (done in B10, `69cd9e8`), #5 console control banner keep trimmed
+along the bottom middle (unblocks B11; label fix + repositioning queued as follow-ups needing a visual/Xvfb check), #6
+name-entry screen in scope for 0.4 (a UI/lifecycle task affecting U7 — automatic before main menu, then reachable from main
+menu to view player stats), #7 achievement-toast lifetime 4s (done in B2, `f3aeb1f`). Corrected a minor citation drift: the
+B1 saveProfile site cited in NEXT_STEPS working rules was `SessionLifecycle.cpp:287`; current line is :293 (+6) — that table
+is not yet corrected.

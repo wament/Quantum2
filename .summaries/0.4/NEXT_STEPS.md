@@ -76,7 +76,7 @@ Wait for my go-ahead.
   `src/`'s copy via `src/PlayerProfile.cpp`, while `test_profile_settings.cpp` / `test_game_rules.cpp` /
   `test_achievements.cpp` compile `include/`'s. A schema fix in the wrong copy goes green with an unchanged binary.
 - **B1 has SEVEN `saveProfile()` call sites**, not three — the table is in the B1 entry (the seventh,
-  `SessionLifecycle.cpp:287`, was added after the six were enumerated). Gating three leaves the bug.
+  `SessionLifecycle.cpp:293`, was added after the six were enumerated). Gating three leaves the bug.
 - `.summaries/0.4/hist_proof.cpp` is the checked-in B13 proof; it exits **0** once B13 is fixed (it exited **1** while
   open) and is the fastest way to confirm a B13 fix reached the *shipped* schema rather than just the tested one.
 - Never append `-M` to a command copied from `compile_commands.json` — it overwrites the `.o` with the dependency
@@ -225,7 +225,7 @@ complete set, verified 2026-11-06:
 | `src/InputHandler.cpp:258` | **window close** (`Event::Closed`) | the B1 repro route; draft said `:252` |
 | `src/Game.cpp:1386` | shoe boundary | |
 | `src/Game.cpp:1545` | shoe boundary (second path) | |
-| `src/SessionLifecycle.cpp:287` | shoe/lifecycle boundary | **missing from the original six; added 2026-11-06 — an unguarded saveProfile that B1's tournament-time gate must also cover** |
+| `src/SessionLifecycle.cpp:293` | shoe/lifecycle boundary | **missing from the original six; added 2026-11-06 — an unguarded saveProfile that B1's tournament-time gate must also cover** |
 
 Note also *when* the damage is done: `startTournamentSession()` calls `game.players.clear()`
 (`src/SessionLifecycle.cpp:34`) **before** pushing the ephemeral seat, so the loaded career profile is destroyed
