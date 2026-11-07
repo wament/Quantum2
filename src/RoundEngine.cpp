@@ -121,9 +121,12 @@ void RoundEngine::tick(float deltaTime, Game& game)
                 // Re-split only when permitted and another split slot is open. the resplit-aces
                 // flag and max-hand cap come from the live ruleset (RoundEngine is a friend of Game)
                 // affect re-split eligibility immediately; defaults preserve current behaviour.
+                // Unlimited cap (< 0) always leaves another split slot open for re-splitting aces.
+                bool resplitCapOpen = game.gameRules_.maxSplitHands < 0 ||
+                                      p.hands.size() < game.gameRules_.maxSplitHands;
                 bool canResplit = game.gameRules_.resplitAcesAllowed &&
                                   p.hands[p.currentHand].canSplit() &&
-                                  p.hands.size() < game.gameRules_.maxSplitHands;
+                                  resplitCapOpen;
                 if (!canResplit)
                 {
                     p.hands[p.currentHand].setFinished(true);

@@ -183,6 +183,7 @@ add_executable(Blackjack2Tests
     tests/test_strategy_trainer.cpp
     tests/test_tournament_mode.cpp
     tests/test_game_rules.cpp
+    tests/test_max_split_hand_rules.cpp
     tests/test_menu_navigation.cpp
     tests/test_input_return_to_main_menu.cpp
     tests/test_rules_panel_editing.cpp

@@ -818,7 +818,7 @@ bool Game::split()
         return false;
     }
 
-    if (p.hands.size() >= gameRules_.maxSplitHands)
+    if (gameRules_.maxSplitHands > 0 && p.hands.size() >= gameRules_.maxSplitHands)
     {
         Logger::warn() << p.getName() << " tried to split but has reached max split hands (" << gameRules_.maxSplitHands << ").";
         return false;

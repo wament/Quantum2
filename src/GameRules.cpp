@@ -20,6 +20,7 @@ const std::vector<GameRuleRow>& gameRuleRows()
         {GameRuleId::DoublesAfterSplit, "Double After Split"},
         {GameRuleId::ResplitAces, "Resplit Aces"},
         {GameRuleId::ResplitTens, "Resplit Tens"},
+        {GameRuleId::MaxSplitHands, "Max Split Hands"},
         {GameRuleId::Surrender, "Surrender"}
     };
     return rows;
@@ -40,6 +41,9 @@ std::string gameRuleDescription(const GameRules& rules, GameRuleId id)
         return rules.resplitAcesAllowed ? "Allowed" : "Not allowed";
     case GameRuleId::ResplitTens:
         return rules.resplitTensAllowed ? "Allowed" : "Not allowed";
+    case GameRuleId::MaxSplitHands:
+        // -1 is the unlimited sentinel; otherwise a plain count of simultaneous hands.
+        return rules.maxSplitHands < 0 ? "Unlimited" : std::to_string(rules.maxSplitHands) + " hands";
     case GameRuleId::Surrender:
         switch (rules.surrenderType)
         {
@@ -82,6 +86,22 @@ void applyGameRuleEdit(GameRules& rules, GameRuleId id, bool forward)
     case GameRuleId::ResplitTens:
         rules.resplitTensAllowed = !rules.resplitTensAllowed;
         return;
+    case GameRuleId::MaxSplitHands:
+    {
+        // Step through the split-hand brackets (2, 3, 4, then Unlimited), wrapping around. -1 == unlimited; a
+        // negative cap is guarded explicitly at every enforcement site so it never reads as a large finite cap.
+        constexpr int SPLIT_HAND_LIMITS[] = {2, 3, 4, Constants::MAX_SPLIT_HANDS_UNLIMITED};
+        const int n = sizeof(SPLIT_HAND_LIMITS) / sizeof(SPLIT_HAND_LIMITS[0]);
+        for (size_t i = 0; i < n; ++i)
+        {
+            if (rules.maxSplitHands == SPLIT_HAND_LIMITS[i])
+            {
+                rules.maxSplitHands = SPLIT_HAND_LIMITS[(i + dir + n) % n];
+                return;
+            }
+        }
+        break;
+    }
     case GameRuleId::Surrender:
         rules.surrenderType = surrenderCycle(static_cast<int>(rules.surrenderType) + dir);
         return;

@@ -52,7 +52,8 @@ inline void to_json(nlohmann::json& j, const GameRules& r)
         {"doublesAfterSplitAllowed", r.doublesAfterSplitAllowed},
         {"resplitAcesAllowed", r.resplitAcesAllowed},
         {"resplitTensAllowed", r.resplitTensAllowed},
-        {"surrenderType", static_cast<int>(r.surrenderType)}
+        {"surrenderType", static_cast<int>(r.surrenderType)},
+        {"maxSplitHands", r.maxSplitHands}
     };
 }
 
@@ -69,6 +70,16 @@ inline void from_json(const nlohmann::json& j, GameRules& r)
                                    j.value("resplitTentsAllowed", r.resplitTensAllowed));
     int si = j.value("surrenderType", static_cast<int>(r.surrenderType));
     r.surrenderType = static_cast<SurrenderType>((si % 4 + 4) % 4);
+
+    // maxSplitHands is additive; clamp any stored value into the allowed set {2,3,4,-1}. Invalid or absent values
+    // fall back to the struct default (Constants::MAX_SPLIT_HANDS). -1 == unlimited.
+    int msh = j.value("maxSplitHands", r.maxSplitHands);
+    if (msh == 2 || msh == 3 || msh == 4)
+        r.maxSplitHands = msh;
+    else if (msh < 0)
+        r.maxSplitHands = Constants::MAX_SPLIT_HANDS_UNLIMITED;
+    else
+        r.maxSplitHands = Constants::MAX_SPLIT_HANDS;
 }
 
 // The rules-config UI is driven over this ordered list of rows, each with a stable id + label. Kept here (not in the
@@ -80,6 +91,7 @@ enum class GameRuleId
     DoublesAfterSplit,
     ResplitAces,
     ResplitTens,
+    MaxSplitHands,
     Surrender
 };
 
