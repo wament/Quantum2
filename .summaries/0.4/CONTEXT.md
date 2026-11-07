@@ -116,32 +116,9 @@ falls back to `Constants::PLAYER_FILE_FALLBACK` = `saves/player_profile.json` wh
 `include/Constants.hpp:242`). Written by `PlayerProfile::save()` (`src/PlayerProfile.cpp:50-95`), read by
 `PlayerProfile::load()` (`:28-48`), shaped by `to_json`/`from_json` (`include/Serialization.hpp:191-231`).
 
-**⚠ There are two copies of this header, and both are live.** `src/Serialization.hpp` (236 lines) and
-`include/Serialization.hpp` (231 lines) are code-identical today — strip whole-line `//` comments
-(`grep -v '^\s*//'`) and the two files diff **empty** at 211 lines each. So nothing is broken, which is precisely
-why this is dangerous: the divergence is invisible until someone edits one copy.
+**Copy unified by B15 (Resolved `9a89185`).** Exactly one copy of the header remains — `include/Serialization.hpp`; `src/Serialization.hpp` was deleted. Verified this pass with the shipped TU: `g++ -I include -M src/PlayerProfile.cpp | tr ' ' '\n' | grep Serialization.hpp` resolves to **`include/Serialization.hpp`**. That is the only TU that puts the schema into the shipped binary, and it is also what every save-schema-reading TU reads — the locking tests `test_profile_settings.cpp` / `test_game_rules.cpp` / `test_achievements.cpp` (via `#include <Serialization.hpp>` falling through to `-I include`) and `.summaries/0.4/hist_proof.cpp` (§6.10, compiles `src/PlayerProfile.cpp` directly).
 
-The split is **worse than the first draft of this document said.** It is not "the game vs. one achievement test" —
-the two tests that actually lock the save schema both read the `include/` copy:
-
-| TU | Resolves to | Why |
-|---|---|---|
-| `src/PlayerProfile.cpp` — the only TU that puts the schema into the **shipped binary** | **`src/Serialization.hpp`** | quoted includes check the includer's own directory first |
-| `tests/test_profile_settings.cpp` | **`include/Serialization.hpp`** | `#include <Serialization.hpp>`; no copy in `tests/`, so it falls through to `-I include` |
-| `tests/test_game_rules.cpp` | **`include/Serialization.hpp`** | same |
-| `tests/test_achievements.cpp` | **`include/Serialization.hpp`** | same |
-| `.summaries/0.4/hist_proof.cpp` (§6.10) | **`src/Serialization.hpp`** | it compiles `src/PlayerProfile.cpp` directly |
-
-The practical consequence for this phase: **a B13 or B12 fix written into `include/Serialization.hpp` turns the
-suite green while the shipped binary stays byte-for-byte unchanged.** The proof program in §6.10 reads the *other*
-copy, so it would keep reporting the bug after a "successful" fix. Verify with:
-
-```bash
-g++ -std=c++17 -I include -M src/PlayerProfile.cpp | tr ' ' '\n' | grep Serialization.hpp
-# -> src/Serialization.hpp
-```
-
-**Resolve B15 before touching this schema.** See NEXT_STEPS B15.
+The two-copy divergence this phase once worried about is gone: the "edit one copy while the other stays stale" trap — which is why B15 landed before any schema work — is **closed**. Any schema edit (B12/B13/B14) now targets `include/Serialization.hpp` alone; no `-M` sweep is needed before touching it.
 
 **Top-level keys actually written today** (verified against a live file):
 
@@ -407,7 +384,7 @@ what changed.
 
 | ID | Sev | Title | Status | Evidence as of 2026-11-06 |
 |---|---|---|---|---|
-| B1 | 🔴 | Tournament overwrites career profile | **Open** | Mechanism re-confirmed in code: `SessionLifecycle.cpp:34` `players.clear()` + `:35` NPC ctor. Playtest repro not re-run this pass |
+| B1 | 🔴 | Tournament overwrites career profile | **Resolved 2026-11-07 (`5107aa7`)** | Loads the real career profile into seat 0 via `Player("William")`, sets persistable=false for the run so every saveProfile() no-ops, overrides only in-memory chips — a close-save (persistOnExit choke point or direct) leaves the file untouched. Regression test #228 redirects HOME to a temp dir, writes a distinctive career profile, enters Tournament, drives both exit paths, reloads and asserts bankroll 98765 / handsFinished 1 / wins 1 / betsPlaced 1 / longHistory size 1 all preserved. Suite 284/284 (0 failures; #256 flaky pre-existing, see §13) |
 | B2 | 🔴 | Achievement toast never clears | **Resolved 2026-11-06 (`f3aeb1f`)** | Added `achievementToastTimer` to `HUDState.hpp`; armed in `AchievementFeeder.cpp:48` on each unlock, ticked in `RoundEngine.cpp` alongside the other HUD timers and cleared at 0 (renderer draws only while a name is set). Test #210 arms/advances past lifetime/re-arms (fails before fix). Suite 275/275 |
 | B3 | 🔴 | Side bet always reports "WON" | **Resolved 2026-11-06 (`c7978f1`)** | Fixed in `include/SideBetLabels.hpp`: branch won/lost/push on net with the sign preserved; `GameRenderer.cpp:997` calls the pure fn. Guard test in `test_side_bets.cpp` asserts WON +20 / LOST -20 / PUSH 0 (fails before fix). Suite 266/266 |
 | B4 | 🔴 | Reko seed ignores deck count | **Resolved 2026-11-06 (`3924b56`)** | Seeds from `gameRules_.numDecks` in `resetShoeAnalytics()` (`Game.cpp:277`); `Deck::create()` remembers shoe size and reshuffle rebuilds from it (`Deck.cpp:73`). Tests assert the roadmap seeds 1/2/4/6/8 → -1/-5/-12/-20/-27 through a headless Game, plus a one-deck reshuffle stays ~53 cards (both fail before fix). Two `test_deck.cpp` reshuffle-size assertions were corrected from the old NUM_DECKS behavior. Suite 274/274 |
@@ -687,3 +664,9 @@ source (B10 `maxSplitHands` enforced at `Game.cpp:821`, Banner mislabels keys at
   **106/108**; QuitToMenu `115/119` → **119/123**.
 - B16 `deck.getCards()`: `Game.cpp:276`/**1349** → **299**/**1393**.
 
+### 2026-11-07 — B9 flush fix + mark B1 Resolved; corrected stale §5 Serialization.hpp copy text; noted #256 flake
+
+- **B9 (`d6d6436`).** `Logger::log()` now flushes per record: the bare `"\n"` became `std::endl` (one newline, unchanged format) so each line is pushed to std::cout immediately. Fixes the unflushable-logger diagnosability defect (§6.7/§6.8): under Xvfb a line otherwise sat in the stream buffer and was lost if the process died or never hit a natural flush. New regression test `tests/test_logger.cpp` (registered in CMakeLists §8 rule 3) swaps cout's rdbuf for a sink that releases characters only on sync(), proving the flush is synchronous (fails before, passes after); a below-threshold guard locks the level gate (`level < currentLevel`). Full suite 284/284.
+- **B1 → Resolved.** The `5107aa7` fix (load real profile into seat 0, mark non-persistable for the tournament run) is now reflected in §11: B1 row → Resolved with hash + test #228. Test #228 verified passing — a Tournament visit/close no longer overwrites the career profile.
+- **§5 drift corrected.** §5's opening said "two copies of Serialization.hpp, both live"; that is pre-B15 text. `src/Serialization.hpp` was deleted by B15 (`9a89185`) and only `include/Serialization.hpp` remains — verified with `g++ -I include -M src/PlayerProfile.cpp | grep Serialization.hpp` → the include copy. Replaced the stale table + verification snippet and stated the "edit the wrong copy" trap is closed.
+- **#256 (known flake).** "StrategyTrainer: auto-dealt questions never include a natural blackjack" fails nondeterministically (≈1 in ~15 full `-j8` runs; passes reliably isolated). Neither `src/StrategyTrainer.cpp` nor its test changed since audit (`356fc31`) → not a B9 regression. Cause: expected natural-hand rejections deplete the 6-deck shoe mid-loop in `nextQuestion()`, which can leave a lingering natural while `sessionActive` stays true (also a rare production edge case). Left unfixed this round; read the suite as 284/284 with #256 the one known flake.
