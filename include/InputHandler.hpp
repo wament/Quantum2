@@ -21,6 +21,7 @@ public:
     void processTrainerEvents(const sf::Event& event);
     void processTournamentEvents(const sf::Event& event);
     void processStatsDashboardEvents(const sf::Event& event);
+    void processNameEntryEvents(const sf::Event& event);
     void processAchievementEvents(const sf::Event& event);
     void processRulesEvents(const sf::Event& event);
 

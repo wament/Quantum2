@@ -186,6 +186,7 @@ add_executable(Blackjack2Tests
     tests/test_game_rules.cpp
     tests/test_max_split_hand_rules.cpp
     tests/test_menu_navigation.cpp
+    tests/test_name_entry.cpp
     tests/test_input_return_to_main_menu.cpp
     tests/test_rules_panel_editing.cpp
     tests/test_logger.cpp

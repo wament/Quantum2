@@ -35,6 +35,9 @@ const std::map<AppMode, ModeEntry>& GameRenderer::modeTable()
     // its render fn on the same line so they can't drift apart either.
     table[AppMode::MainMenu] = {std::nullopt, [=](Game& g)
                                 { drawMainMenu(g); }};
+    // U7 name-entry screen: plain backdrop so the editor stands apart from the menu; rendered by drawNameEntry().
+    table[AppMode::NameEntry] = {std::nullopt, [=](Game& g)
+                                 { drawNameEntry(g); }};
     // Shared felt table + HUD + betting/side-bet/summary/achievement readouts, shared by Playing and Tournament (so a tournament
     // renders exactly like an ordinary game with no duplicate rendering). Drawn once per frame by whichever mode is active.
     table[AppMode::Playing] = {std::nullopt, [=](Game& g)
@@ -1141,6 +1144,36 @@ int GameRenderer::getHoveredPauseMenuItemIndex(Game& game) const
         }
     }
     return hoveredIndex;
+}
+
+void GameRenderer::drawNameEntry(Game& game)
+{
+    // U7 name-entry screen: clear the window, then render the prompt, the in-progress name (with a trailing cursor underscore),
+    // and a hint line showing Enter/Esc plus how many characters remain before MAX_PLAYER_NAME_LENGTH. Reads game.nameEntryText()
+    // so it always reflects what InputHandler has edited this frame.
+    game.window.clear(sf::Color(20, 20, 30));
+    const float cx = static_cast<float>(game.window.getSize().x) / 2.0f;
+
+    sf::Text prompt(FontManager::get(), "Enter your name", 36);
+    prompt.setFillColor(sf::Color(255, 215, 0));
+    sf::FloatRect pb = prompt.getLocalBounds();
+    prompt.setOrigin(sf::Vector2f(pb.size.x / 2.0f, 0));
+    prompt.setPosition(sf::Vector2f(cx, 180.0f));
+    game.window.draw(prompt);
+
+    const std::string current = game.nameEntryText();
+    sf::Text nameFont(FontManager::get(), current.empty() ? "_" : current + "_", 30);
+    nameFont.setFillColor(sf::Color(240, 240, 240));
+    nameFont.setPosition(sf::Vector2f(cx, 260.0f));
+    game.window.draw(nameFont);
+
+    const unsigned remaining = Constants::MAX_PLAYER_NAME_LENGTH - static_cast<unsigned>(current.size());
+    sf::Text hint(FontManager::get(), "Enter = confirm   •   Esc = skip   •   " + std::to_string(remaining) + " left", 20);
+    hint.setFillColor(sf::Color(180, 180, 180));
+    sf::FloatRect hb = hint.getLocalBounds();
+    hint.setOrigin(sf::Vector2f(hb.size.x / 2.0f, 0));
+    hint.setPosition(sf::Vector2f(cx, 340.0f));
+    game.window.draw(hint);
 }
 
 void GameRenderer::drawMainMenu(Game& game)

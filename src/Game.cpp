@@ -186,6 +186,12 @@ void Game::run()
 {
     sf::Clock clock;
 
+    // U7 — if no name has ever been persisted, prompt for it before ever showing the main menu. One-time startup gate: a
+    // committed name makes needsNameEntry()==false and we fall straight through to MainMenu. Real mode only; headless tests
+    // set the AppMode directly.
+    if (needsNameEntry())
+        appMode = AppMode::NameEntry;
+
     while (window.isOpen())
     {
         deltaTime = clock.restart().asSeconds();
@@ -247,6 +253,45 @@ void Game::startStatsSession()
 void Game::startNewGame()
 {
     sessionLifecycle_.startNewGame();
+}
+
+void Game::nameEntryAppendChar(char c)
+{
+    // Hard clamp: ignore characters past the max so m_nameBuffer_ can never exceed Constants::MAX_PLAYER_NAME_LENGTH.
+    if (m_nameBuffer_.size() < Constants::MAX_PLAYER_NAME_LENGTH)
+        m_nameBuffer_.push_back(c);
+}
+
+void Game::nameEntryBackspace()
+{
+    if (!m_nameBuffer_.empty())
+        m_nameBuffer_.pop_back();
+}
+
+const std::string& Game::nameEntryText() const
+{
+    return m_nameBuffer_;
+}
+
+bool Game::needsNameEntry()
+{
+    // A name has never been persisted (fresh/legacy profile) -> prompt before the main menu. Guard against an empty seat
+    // vector so a bare headless Game can't crash; real startup always has at least seat 0.
+    return !players.empty() && players[0].getProfile().getName().empty();
+}
+
+void Game::commitPlayerName(const std::string& name)
+{
+    if (players.empty())
+        return;
+    // Update the live display and the persisted profile, then write to disk so it round-trips across sessions. The human
+    // seat persists by default, so this is a real save; an ephemeral seat would no-op via saveProfile(). Fixes U7: nothing
+    // previously ever set profile.name.
+    players[0].setName(name);
+    PlayerProfile profile = players[0].getProfile();
+    profile.setName(name);
+    players[0].updateProfile(profile);
+    players[0].saveProfile();
 }
 
 void Game::applySavedTableSettings()
@@ -392,6 +437,8 @@ void Game::update(float deltaTime)
     {
     case AppMode::MainMenu:
         return;
+    case AppMode::NameEntry:
+        return;   // static screen: no per-frame state advance. InputHandler edits m_nameBuffer_, GameRenderer draws it.
     case AppMode::ReplayPlaying:
     case AppMode::ReplayHistory:
         replay->update(deltaTime);

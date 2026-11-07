@@ -11,6 +11,7 @@ namespace fs = std::filesystem;
 PlayerProfile::PlayerProfile(const std::string& playerName) : name(playerName) {}
 
 const std::string& PlayerProfile::getName() const { return name; }
+void PlayerProfile::setName(const std::string& name) { this->name = name; }
 
 int PlayerProfile::getBankroll() const { return bankroll; }
 

@@ -131,6 +131,7 @@ private:
     void drawSideBet(Game &game);
     void drawMenuItem(Game &game, const std::string &label, bool selected, float y, bool hovered = false);
     void drawMainMenu(Game &game);
+    void drawNameEntry(Game &game);
     void drawPauseMenu(Game &game);
     void drawSummaryOverlay(Game &game);
     // browse-only list of every achievement with its unlocked/locked state, and a brief

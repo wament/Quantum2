@@ -92,6 +92,7 @@ int Player::getBankroll() const { return bankroll; }
 void Player::setBankroll(int amount) { bankroll = amount; }
 
 const std::string& Player::getName() const { return name; }
+void Player::setName(const std::string& name) { this->name = name; }
 
 bool Player::placeBet(int amount) { return amount <= bankroll; }
 

@@ -125,6 +125,9 @@ namespace Constants
 // Window
 constexpr unsigned WINDOW_WIDTH = 1600;
 constexpr unsigned WINDOW_HEIGHT = 900;
+// Max characters a player may enter on the name-entry screen (U7). Kept as a named constant so InputHandler's clamp and the
+// renderer's "n chars" hint read from one value instead of two magic numbers.
+constexpr unsigned MAX_PLAYER_NAME_LENGTH = 24;
 constexpr const char* WINDOW_TITLE = "Blackjack";
 
 // Panel layout

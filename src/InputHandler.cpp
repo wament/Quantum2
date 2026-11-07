@@ -292,6 +292,9 @@ void InputHandler::processEvents()
         case AppMode::GameRules:
             processRulesEvents(event.value());
             break;
+        case AppMode::NameEntry:
+            processNameEntryEvents(event.value());
+            break;
         case AppMode::ReplayHistory:
         case AppMode::ReplayPlaying:
         {
@@ -398,6 +401,43 @@ void InputHandler::processStatsDashboardEvents(const sf::Event& event)
             break;
         case sf::Keyboard::Key::Escape:
             returnToMainMenu(game, "statistics dashboard");
+            break;
+        }
+    }
+}
+
+// U7 name-entry screen input: character capture via TextEntered (enabled on the window), plus Enter/Space to commit + save,
+// Escape to cancel and clear, and Backspace to edit. Editing goes through Game::nameEntryAppendChar/backspace so the same
+// clamped buffer both draws (GameRenderer) and commits; committing calls Game::commitPlayerName which persists the name before
+// returning to the main menu.
+void InputHandler::processNameEntryEvents(const sf::Event& event)
+{
+    if (auto text = event.getIf<sf::Event::TextEntered>())
+    {
+        // Only printable ASCII advances the buffer; control characters are ignored and nameEntryAppendChar also clamps length.
+        if (text->unicode >= 32 && text->unicode < 127)
+            game.nameEntryAppendChar(static_cast<char>(text->unicode));
+        return;
+    }
+
+    if (auto pressed = event.getIf<sf::Event::KeyPressed>())
+    {
+        switch (pressed->code)
+        {
+        case sf::Keyboard::Key::Enter:
+        case sf::Keyboard::Key::Space:
+            game.commitPlayerName(game.nameEntryText());
+            returnToMainMenu(game, "name entry");
+            break;
+        case sf::Keyboard::Key::Escape:
+            while (!game.nameEntryText().empty())   // cancel: drop any in-progress text (no save) before leaving
+                game.nameEntryBackspace();
+            returnToMainMenu(game, "name entry");
+            break;
+        case sf::Keyboard::Key::Backspace:
+            game.nameEntryBackspace();
+            break;
+        default:
             break;
         }
     }

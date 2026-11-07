@@ -15,7 +15,8 @@ enum class AppMode
     Tournament,
     Achievements,
     GameRules,
-    StatsDashboard
+    StatsDashboard,
+    NameEntry
 };
 enum class MenuOption
 {
@@ -245,6 +246,15 @@ class Game
     // headless construction (which never builds the dashboard) can't crash when the menu calls this; on first entry it seeds
     // the dashboard from the player's career stats + flattened round history.
     void startStatsSession();
+    // Name-entry screen (U7): editing state + commit/gate. m_nameBuffer_ holds the text currently being typed; append/backspace
+    // mutate it with a hard max-length clamp so both headless tests and InputHandler share one source of truth, and GameRenderer
+    // reads nameEntryText() to draw it. needsNameEntry() gates the automatic "enter your name before the main menu" prompt on
+    // whether the profile has ever stored a name; commitPlayerName() writes that name into seat 0's display + persisted profile.
+    void nameEntryAppendChar(char c);
+    void nameEntryBackspace();
+    const std::string& nameEntryText() const;
+    bool needsNameEntry();
+    void commitPlayerName(const std::string& name);
     // headless count of rounds fed to the dashboard through the real startStatsSession ->
     // feed path (mirrors the *ForTest() convention). Exposed as a plain int
     // exactly once without needing the incomplete StatsDashboard type in Game.hpp. nullptr-guarded for headless builds.
@@ -262,6 +272,9 @@ class Game
 
   private:
     AppMode appMode = AppMode::MainMenu;
+    // Text currently being typed on the NameEntry screen (U7). Appended/backspaced by InputHandler via nameEntryAppendChar/
+    // nameEntryBackspace and read by GameRenderer via nameEntryText(); clamped to Constants::MAX_PLAYER_NAME_LENGTH.
+    std::string m_nameBuffer_;
     std::unique_ptr<Replay> replay;
     // its own AppMode state machine. Constructed in the full mode only; headless
     // tests drive the trainer directly. unique_ptr with an incomplete type is fine here (like Replay) because ~Game

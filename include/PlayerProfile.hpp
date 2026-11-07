@@ -46,6 +46,7 @@ class PlayerProfile
     GameRules gameRules;
 
     const std::string& getName() const;
+    void setName(const std::string& name);
     int getBankroll() const;
     void setBankroll(int amount);
 

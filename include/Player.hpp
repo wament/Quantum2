@@ -74,6 +74,7 @@ class Player
 
     // Getters
     const std::string& getName() const;
+    void setName(const std::string& name);
     int getBankroll() const;
     PlayerProfile getProfile();
     PlayerStats& getStats();
