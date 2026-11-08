@@ -8,13 +8,17 @@ architecture and guardrails.
 **Posture change from 0.3:** feature work stays frozen. This phase is defect removal + the missing test seam.
 The suite is **303/303 green**. Every defect (B1–B16) has a dedicated fix commit + passing regression test — see the
 Status column below for each commit hash and test ID. The only genuinely still-OPEN work now is B9's unreproducible
-`R`-time crash (never reproducibly captured, so no deterministic test can close it) plus the 10 UI/UX defects
-(U1–U10). That gap — everything remaining lives in the presentation/lifecycle seam the headless-first contract
+`R`-time crash (never reproducibly captured, so no deterministic test can close it) plus the UI/UX backlog (U1–U10), of
+which U7 (#286–#288), U8 (#70) and U10 (#281/#282) are Resolved; U1–U6 and U9 remain open. That gap — everything
+remaining lives in the presentation/lifecycle seam the headless-first contract
 deliberately leaves untested — is still the theme of this phase; see §11 for the full open list.
 
 > **Ledger synced 2026-11-08.** The triage table below previously listed B1, B2, B3, B4, B7, B13, B14, B15 (and B5,
 > B8) as Open; all now carry dedicated fix commits and passing tests. U1–U10 remain the true open list. Keep §11 in
 > CONTEXT.md in sync with this table.
+>
+> **Ledger synced 2026-11-09.** U7, U8 and U10 now Resolved — bankroll parity (#70), deck pluralisation + menu-branding
+> consolidation + NPC illegal-action-warning suppression (#281/#282). Remaining open UI are U1–U6 and U9.
 
 **Handoff prompt — paste into a fresh window** (regenerated 2026-11-06 to match the audited docs; keep it in sync
 with CONTEXT.md §13 whenever the ledger changes):
@@ -149,7 +153,7 @@ Baseline: **277/277 pass in ~8s** (`-j8`), HEAD `356fc31`. Configure and build a
 | B10 | 🟡 Medium | `maxSplitHands` is dead config (no UI row, not serialized) | `src/GameRules.cpp:15-27` / `include/GameRules.hpp` `to_json` | 3 | ✅ Resolved `69cd9e8` (#280/#282) |
 | B11 | 🟡 Medium | Startup control banner mislabels Left/Right | `src/Game.cpp:162-163` | 3 | ✅ Resolved `140e9b5` (#295) |
 | B12 | 🟡 Medium | Save-schema typo `resplitTentsAllowed` ("Tens") | `include/GameRules.hpp` | 3 | ✅ Resolved `31a3703` (#241–243) |
-| U1–U10 | 🟡 Medium | UI/UX defects (see Phase 4) | various | 4 | 🔵 Open — the remaining backlog (Phase 4) |
+| U1–U10 | 🟡 Medium | UI/UX defects (see Phase 4) | various | 4 | ✅ Partially resolved this phase: U7 (#286–#288), U8 (#70), U10 (#281/#282); U1–U6, U9 remain open |
 | T1–T2 | 🟢 Low | Save-write amplification; unbounded history | `src/HandEvaluator.cpp:297` | 5 | ✅ Resolved `1abda8f`,`fbaea91` (#302/#303 / #298) |
 | B16 | 🟡 Medium | `reconstructDeckAtRound()` is dead code and reconstructs from the wrong end | `include/GameRecord.hpp:307-329` | 5 | ✅ Resolved `5f81d48` (dead-code deletion; no dedicated regression test) |
 
@@ -783,17 +787,25 @@ a small filled pill with a dark backing (`drawTotal`, `GameRenderer.cpp:468`).
 **U7 — The human seat is hard-coded to "William"** (`SessionLifecycle.cpp:35` and `:182`); there is no name entry
 anywhere and the profile's `name` field ships as `""`. Ship-blocking for anything public. *Status — RESOLVED 2026-11-07 (`e157052`): added the automatic "enter your name before hitting main menu" screen; auto-prompt fires when profile.name is empty (Game::needsNameEntry gate at run()), editing goes through a clamped Game `nameEntry*` buffer, commitPlayerName persists seat 0's display + profile, and Player Stats reuses Statistics→StatsDashboard. Headless tests #286–#288.*
 
-**U8 — 10× bankroll mismatch.** The human starts at **$1,000** (`PlayerProfile.hpp:66`) while NPCs start at
-**$10,000** (`Constants.hpp:273` `STARTING_BANKROLL`) — visible side by side on the table, and `MAXIMUM_BET` is
+**U8 — 10× bankroll mismatch.** The human starts at **$1,000** (`PlayerProfile.hpp:72`) while NPCs start at
+**$10,000** (`Constants.hpp:285` `STARTING_BANKROLL`) — visible side by side on the table, and `MAXIMUM_BET` is
 1000, i.e. the human's entire stack. *Fix:* reconcile to one number; if $1,000 is intended, drop the NPC stacks.
+**Status — RESOLVED 2026-11-09 (`63c0ee9`):** the Player load ctor now reseeds a brand-new / recovered profile's
+in-memory bankroll to `GameConfig::STARTING_BANKROLL` (only the bankroll; `profile.name` stays empty so U7's
+`needsNameEntry()` prompt is preserved). Headless regression #70 in tests/test_player.cpp.
 
 **U9 — No side-bet paytable anywhere.** Perfect Pairs (10/25/30:1) and 21+3 (2/5/9/30/40:1) are offered with no
 odds shown. *Fix:* render the active bet's paytable in the right panel during PlaceBets.
 
-**U10 — Minor.** "1 decks" pluralisation (`GameRules.cpp:33`); branding drift (window "Blackjack" / menu
+**U10 — Minor.** "1 decks" pluralisation (`GameRules.cpp:34`); branding drift (window "Blackjack" / menu
 "BLACKJACK" / felt "QUANTUM BLACKJACK" / project "Blackjack2"); NPC illegal-action WARNs such as
 `Alice tried to double down but hand cannot double` — NPC logic should pre-check preconditions so the log stays
 clean.
+**Status — RESOLVED 2026-11-09 (`63c0ee9`):** (a) pluralisation corrected in `gameRuleDescription`, regression #281;
+(b) the menu banner now renders from the single canonical `Constants::WINDOW_TITLE`, so it can't drift from the OS window
+title — felt "QUANTUM BLACKJACK" and the repo name "Blackjack2" are distinct contexts (table art vs project name) and
+were left as-is; (c) action-validation warns routed through a new `Game::logInvalidAction()` that logs only for the human
+seat, so NPC mis-attempts during auto-play no longer clutter the console. Regression #282 in tests/test_game_rules.cpp.
 
 ---
 
@@ -823,7 +835,7 @@ from the back, account for the cut card, and cover it with a test that reconstru
 
 # Testing strategy — close the seam that let all this through
 
-The suite is **277/277 green**. Nine of the 15 logic/data defects are already Resolved (B2,B3,B4,B6,B7,B12,B13,B14,
+The suite is **303/303 green**. Nine of the 15 logic/data defects are already Resolved (B2,B3,B4,B6,B7,B12,B13,B14,
 B15); the six open ones — B1,B5,B8,B9,B10,B11 — each sit in the presentation/lifecycle seam that the headless-first
 contract deliberately leaves untested. Two cheap additions would have
 caught the top three:
@@ -831,7 +843,7 @@ caught the top three:
 1. **Persistence round-trip integration test.** Play → save → enter mode → save → reload → assert invariants.
    Catches B1 and B7. Belongs in `tests/test_session_lifecycle.cpp`.
 2. **Renderer-string extraction.** Move display strings out of `draw*()` into pure helpers and assert on the
-   strings. Catches B3, and makes U4/U5/U9/U10 testable. This is the pattern the project already uses for
+   strings. Catches B3, and now covers U8 (#70) and U10 (#281/#282) headlessly; U4/U5/U9 remain to be extracted this way (U3 a layout-overlap assertion).
    `gameRuleRows()` / `mainMenuItems()` — one source of truth shared by draw and test.
 
 Also worth adding: a per-screen layout-overlap assertion (catches U3), and a sweep for "state field written but
