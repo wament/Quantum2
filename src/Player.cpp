@@ -75,6 +75,7 @@ void Player::saveProfile()
     profile.setBankroll(bankroll);
     std::string savePath = getSavePath();
     profile.save(savePath);
+    ++saveWriteCount;   // T1: instrumented write counter (persistable path only) for byte-counting autosave tests
     Logger::debug("Profile saved to " + savePath + ".");
 }
 

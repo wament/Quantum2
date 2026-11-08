@@ -294,7 +294,15 @@ void HandEvaluator::evaluateHands()
     game.achievementManager_.persistUnlockedTo(profile.unlockedAchievementIds);
     profile.addRoundRecord(game.currentRoundRecord);
     game.players[0].updateProfile(profile);
-    game.players[0].saveProfile();
+    // T1 (auto-save cadence): gate the round-end autosave to AUTO_SAVE_EVERY_HANDS human hands instead of firing every settled round,
+    // reducing save amplification. Feed the human-seat hand count this round (splits/doubles are several hands), then save + reset when
+    // the cadence is reached. Forced writes at shoe boundary, pause-quit and exit are unchanged (the other saveProfile sites).
+    game.players[0].addAutosaveHand(static_cast<int>(game.players[0].hands.size()));
+    if (game.players[0].shouldAutosave())
+    {
+        game.players[0].saveProfile();
+        game.players[0].resetAutosaveCounter();
+    }
 
     game.currentShoeRecord.rounds.push_back(game.currentRoundRecord);
 

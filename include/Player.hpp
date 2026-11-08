@@ -3,6 +3,7 @@
 #include "Hand.hpp"
 #include "Deck.hpp"
 #include "PlayerProfile.hpp"
+#include "Constants.hpp"
 #include "BasicStrategy.hpp"
 
 #include <cstddef>
@@ -37,6 +38,18 @@ class Player
 
     int currentHand = 0;
     std::vector<Hand> hands;
+
+    // T1 (auto-save cadence): human hands settled since the last auto-save, evaluated at every round end so the profile is rewritten
+    // to disk about once per AUTO_SAVE_EVERY_HANDS hands instead of every round (reducing save amplification). Forced writes at shoe
+    // boundary, pause-quit and exit are unaffected. Test-visible like currentHand/hands.
+    unsigned long long autosaveHandCount = 0;
+    void addAutosaveHand(int n = 1) { if (n > 0) autosaveHandCount += static_cast<unsigned long long>(n); }
+    bool shouldAutosave() const { return autosaveHandCount >= Constants::AUTO_SAVE_EVERY_HANDS; }
+    void resetAutosaveCounter() { autosaveHandCount = 0; }
+
+    // T1: times this seat actually wrote its profile to disk (persistable path only). Test-visible so a byte-counting test can prove the
+    // round-end autosave is now gated instead of firing once per settled round.
+    int saveWriteCount = 0;
 
     // Betting
     bool placeBet(int amount);

@@ -179,6 +179,9 @@ constexpr int MAX_SPLIT_HANDS_UNLIMITED = -1;
 // T2: cap completed-shoe history (PlayerProfile::longHistory) at this many shoes; older shoes roll into an aggregate carry so
 // career totals survive exactly. Bounded, additive, and a no-op for profiles with fewer completed shoes than the cap.
 constexpr std::size_t MAX_LONG_HISTORY_SHOES = 100;
+// T1: rewrite the profile to disk at most once per this many human hands played (auto-save cadence) instead of every round, reducing
+// save amplification. Forced writes at shoe boundary / pause-quit / exit are unaffected by this cadence.
+constexpr unsigned AUTO_SAVE_EVERY_HANDS = 5;
 constexpr float BLACKJACK_PAYOUT = 1.5; // 1.5 = 3:2, 1.2 = 6:5
 constexpr bool DOUBLE_AFTER_SPLIT_ALLOWED = true;
 constexpr bool RESPLIT_ACES_ALLOWED = true;
