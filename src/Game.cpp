@@ -192,6 +192,30 @@ Close the window at any time to quit.
     return banner;
 }
 
+std::string Game::trueCountStatusLabel() const
+{
+    // Under Hi-Lo the box shows a real true count (running count normalized by decks remaining); under Reko it shows the
+    // running count, which is the betting count ("the true count is the running count" per the roadmap), so calling that "True
+    // Count" reads as a broken negative on a fresh shoe. Label accordingly. Pure -- mirror of activeTrueCount(); HUD.cpp applies
+    // it to the true-count box title via StatBox::setTitle().
+    return (countingStyle == BasicStrategy::CountingStyle::REKO) ? std::string("Betting Count (Reko)") : std::string("True Count");
+}
+
+std::string Game::bettingControlsHint() const
+{
+    // Betting-phase control hint, the single source of truth for the line drawn in the play band during PlaceBets. One
+    // consistent "<key> <action>" format (no "Left: optimal" vagueness) so it can't drift against startupControlsBanner(); every
+    // key is a real PlaceBets binding (InputHandler.cpp). Pure -- shared with headless tests, no SFML or mutable state.
+    return "↑ Increase Bet   ↓ Decrease Bet   ← Auto Kelly → Confirm";
+}
+
+std::string Game::sideBetControlsHint() const
+{
+    // Side-bet control hint, shown only when the human seat can place bets interactively (Game::canPlaceBets). Same single source
+    // of truth + format as bettingControlsHint(); Z cycles the kind, X/V adjust the wager (InputHandler.cpp PlaceBets bindings).
+    return "Z Switch Side-Bet Type   X Raise Wager   V Lower Wager";
+}
+
 void Game::run()
 {
     sf::Clock clock;
@@ -585,6 +609,8 @@ void Game::syncCounting()
     else
         hudState.trueCount = BasicStrategy::computeTrueCount(runningCount, static_cast<int>(deck.size()));
     hudState.trueCountHighlighted = (countingStyle == BasicStrategy::CountingStyle::REKO);
+    // Keep the true-count box title in sync so it reflects the active system live (U5): Hi-Lo -> "True Count", Reko -> "Betting Count (Reko)".
+    hudState.countingBoxLabel = trueCountStatusLabel();
 
     hudState.cardsRemaining = deck.size();
 }
@@ -1285,6 +1311,15 @@ void Game::placeSideBet(SideBetKind kind, int wager)
 bool Game::canPlaceBets() const
 {
     return roundState == RoundState::PlaceBets && activePlayerIndex == 0 && !GameTiming::isAutoPlaying(gameSpeed);
+}
+
+SideBetKind Game::activeSideBetKind() const
+{
+    // Live main-hand kind when a hand exists; otherwise the pending intent set by placeSideBet()/Z-cycling during PlaceBets so a
+    // selection shows its paytable before the deal. Thin accessor mirroring canPlaceBets(); pure for headless tests (U9).
+    if (!players.empty() && !players[0].hands.empty())
+        return players[0].hands[players[0].currentHand].getSideBetKind();
+    return sideBetIntentKind_;
 }
 
 // delegate to RoundDealer (Follow-up #8): evaluates + bankrolls every seat's side bet once all cards

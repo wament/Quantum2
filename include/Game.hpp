@@ -162,6 +162,7 @@ class Game
     float refreshRateForTest() const { return refreshRateHz; }
     void setRefreshRateForTest(float hz) { refreshRateHz = hz; }
     int countingStyleForTest() const { return static_cast<int>(countingStyle); }
+    void setCountingStyleForTest(BasicStrategy::CountingStyle style) { countingStyle = style; }
     // read the live ruleset, and in tests override it before startTestRound() so logic can
     // be driven headlessly with any rule set (soft-17, DAS, resplit, deck count, surrender) without touching disk.
     const GameRules& getGameRulesForTest() const { return gameRules_; }
@@ -220,6 +221,11 @@ class Game
     // (index 0) and betting isn't auto-advanced by AutoPlay/Hyper/Gamer. Mirrors InputHandler's input gate
     // hints use one shared predicate; returns false outside PlaceBets. Used to decide whether to draw the side-bet control line.
     bool canPlaceBets() const;
+
+    // The human seat's active side-bet kind, read off the live main hand when it exists and otherwise off the pending intent so
+    // a selection made during PlaceBets (before the deal) still surfaces. Drives SideBetEvaluator::paytableText() for U9. Pure --
+    // set in headless tests via placeSideBet(); mirrors canPlaceBets()/activeMinBet() as a thin state accessor.
+    SideBetKind activeSideBetKind() const;
 
     // Minimum bet the human seat must reach before confirming: a tournament's escalating stage minimum when the shared play
     // path is running under tournament rules, otherwise the ordinary table MINIMUM_BET. Consulted by betting so both the UI
@@ -523,6 +529,18 @@ class Game
     // count ("the true count is the running count"), Hi-Lo normalizes by decks remaining. Drives the human's
     // auto-bet paths (manual Left-arrow bet and AutoPlay)
     float activeTrueCount() const;
+
+    // Label for the true-count box on the right panel, reflecting which system is displayed. Under Hi-Lo it is genuinely a
+    // "True Count"; under Reko the number shown IS the running/betting count ("the true count is the running count" per the
+    // roadmap), so calling that "True Count" reads as a broken negative on a fresh shoe and is labelled "Betting Count (Reko)".
+    // Pure -- read from a headless Game(true) exactly like activeTrueCount(); HUD.cpp applies it via StatBox::setTitle().
+    std::string trueCountStatusLabel() const;
+
+    // Betting-phase control hints, the single source of truth for the two lines drawn in the play band during PlaceBets. One
+    // consistent "<key> <action>" format so they can't drift against startupControlsBanner() or other screens (U4); each key is
+    // one of the real PlaceBets bindings (Left=auto Kelly, Right=confirm). Pure -- shared with headless tests, no SFML.
+    std::string bettingControlsHint() const;
+    std::string sideBetControlsHint() const;
 
     // The Hi-Lo true count regardless of which style is on screen: `runningCount` holds the active system's count
     // and `backgroundRunningCount` the other one (see afterDraw). The edge estimate is calibrated against Hi-Lo

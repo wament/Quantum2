@@ -162,6 +162,8 @@ void HUD::update(const HUDState& hudState)
 
     if (m_trueCountBox)
     {
+        // Title reflects the active counting system so Reko's displayed running count isn't mislabelled "True Count" (U5).
+        m_trueCountBox->setTitle(hudState.countingBoxLabel);
         std::ostringstream oss;
         oss << std::fixed << std::setprecision(1) << hudState.trueCount;
         m_trueCountBox->setValue(oss.str());

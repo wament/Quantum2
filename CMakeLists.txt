@@ -194,6 +194,9 @@ add_executable(Blackjack2Tests
     tests/test_summary_overlay_bounds.cpp
     tests/test_history_rollup.cpp
     tests/test_autosave_every_5_hands.cpp
+    tests/test_betting_controls_hint.cpp
+    tests/test_counting_box_label.cpp
+    tests/test_side_bet_paytable.cpp
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)

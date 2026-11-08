@@ -1,6 +1,7 @@
 #include "SideBet.hpp"
 
 #include <algorithm>
+#include <string>
 
 namespace
 {
@@ -48,4 +49,21 @@ SideBetResult SideBetEvaluator::twentyOneThree(const Card& a, const Card& b, con
     if (hasPair)
         return {SideBetKind::TwentyOneThree, 2};  // Pair 2:1
     return {SideBetKind::TwentyOneThree, 0};      // nothing qualified
+}
+
+std::string SideBetEvaluator::paytableText(SideBetKind kind)
+{
+    // Paytable tiers for a side bet as a display string (highest tier first), so the odds offered are visible in-game and can be
+    // asserted headlessly without an SDL window (U9). Tier wording matches the documented paytables in include/SideBet.hpp.
+    switch (kind)
+    {
+    case SideBetKind::PerfectPairs:
+        return "Perfect Pairs\n"
+               "Mixed Pair 10:1   Colored Pair 25:1   Perfect Pair 30:1";
+    case SideBetKind::TwentyOneThree:
+        return "21+3\n"
+               "Trips 30:1   Straight Flush 40:1   Flush 9:1   Straight 5:1   Pair 2:1";
+    default:
+        return {};
+    }
 }

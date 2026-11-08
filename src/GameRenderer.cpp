@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <functional>
 #include <optional>
+#include <string>
+#include "SideBet.hpp"
 
 // Single source of truth for draw()'s AppMode->{backdrop, render} dispatch: one table replaces the old backdrop
 // if/else-if chain + separate dispatch switch
@@ -897,18 +899,28 @@ void GameRenderer::drawPlaySession(Game& g)
         constexpr float controlsY = static_cast<float>(Constants::WINDOW_HEIGHT) - Constants::Hud::BOTTOM_HEIGHT - 24.f; // row of the main controls strip
         const float hintX = Constants::HANDS_LEFT_MARGIN;                                                              // just inside the play band, past the left-panel charts
 
-        sf::Text hint(FontManager::get(),
-                      "Up/Down: set bet   Left: optimal   Right: confirm", 11.f);
+        sf::Text hint(FontManager::get(), g.bettingControlsHint(), 13.f);
         hint.setFillColor(sf::Color(180, 180, 180));
         hint.setPosition(sf::Vector2f(hintX, controlsY - 30.f));
         g.window.draw(hint);
 
         if (g.canPlaceBets())
         {
-            sf::Text sideHint(FontManager::get(), "Z: side bet type   X/V: adjust side-bet wager", 11.f);
+            sf::Text sideHint(FontManager::get(), g.sideBetControlsHint(), 13.f);
             sideHint.setFillColor(sf::Color(255, 215, 0));
             sideHint.setPosition(sf::Vector2f(hintX, controlsY - 14.f));
             g.window.draw(sideHint);
+
+            // Show the active side bet's paytable so a player can read the odds before confirming (U9). Single source of truth:
+            // SideBetEvaluator::paytableText(); rendered only when a non-None kind has been selected.
+            std::string paytable = SideBetEvaluator::paytableText(g.activeSideBetKind());
+            if (!paytable.empty())
+            {
+                sf::Text pay(FontManager::get(), paytable, 12.f);
+                pay.setFillColor(sf::Color(230, 230, 230));
+                pay.setPosition(sf::Vector2f(hintX, controlsY - 46.f));
+                g.window.draw(pay);
+            }
         }
     }
 }

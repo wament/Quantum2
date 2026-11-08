@@ -57,6 +57,9 @@ struct HUDState
 
     // Human-readable name of the active counting style (e.g. "Hi-Lo"/"Reko"), used to title the Count box.
     std::string countingStyleName;
+    // Title for the true-count box, recomputed each frame from Game::trueCountStatusLabel() so it stays correct as the active
+    // system flips (Hi-Lo -> "True Count", Reko -> "Betting Count (Reko)"). HUD.cpp applies it via StatBox::setTitle().
+    std::string countingBoxLabel;
 
     // True while it's the dealer's turn. The book advisor hides its action during this window.
     bool isDealerTurn = false;

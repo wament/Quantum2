@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <vector>
 
 #include "Card.hpp"
@@ -37,6 +38,10 @@ class SideBetEvaluator
 
     // 21+3 uses the player's two cards plus the dealer's up-card (exactly three cards total).
     static SideBetResult twentyOneThree(const Card& a, const Card& b, const Card& c);
+
+    // Paytable tiers for a side bet as a display string (one line per tier, highest first). Pure -- shared by GameRenderer and
+    // headless tests so the odds offered are asserted without an SDL window; mirrors perfectPairs()/twentyOneThree().
+    static std::string paytableText(SideBetKind kind);
 };
 
 // Rank of a card is its raw `Card::value` (Ace=1 .. King=13). Color: Hearts/Diamonds are red, Spades/Clubs black.
