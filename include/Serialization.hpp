@@ -187,6 +187,45 @@ inline void from_json(const json& j, ShoeRecord& s)
     s.bankrollAtShoeEnd = j.value("bankrollAtShoeEnd", 0);
 }
 
+// Rolled-out-shoe carry (T2): additive schema, all fields optional with zero defaults so legacy saves without "rollup" load fine.
+inline void to_json(json& j, const RollupCarry& r)
+{
+    j = {
+        {"wins", r.wins}, {"losses", r.losses}, {"pushes", r.pushes}, {"handsFinished", r.handsFinished},
+        {"blackjacks", r.blackjacks}, {"greatestHand", r.greatestHand}, {"greatestHandLoss", r.greatestHandLoss},
+        {"handProfitCount", r.handProfitCount}, {"handProfitSum", r.handProfitSum}, {"handProfitSumSq", r.handProfitSumSq},
+        {"greatestWin", r.greatestWin}, {"greatestLoss", r.greatestLoss},
+        {"greatestSessionWin", r.carriedGreatestSessionWin}, {"greatestSessionLoss", r.carriedGreatestSessionLoss},
+        {"longestWinningStreak", r.longestWinningStreak}, {"longestLosingStreak", r.longestLosingStreak},
+        {"sideBetWins", r.sideBetWins}, {"sideBetLosses", r.sideBetLosses}, {"sideBetProfitSum", r.sideBetProfitSum},
+        {"carriedSessionTotal", r.carriedSessionTotal}
+    };
+}
+
+inline void from_json(const json& j, RollupCarry& r)
+{
+    r.wins = j.value("wins", 0);
+    r.losses = j.value("losses", 0);
+    r.pushes = j.value("pushes", 0);
+    r.handsFinished = j.value("handsFinished", 0);
+    r.blackjacks = j.value("blackjacks", 0);
+    r.greatestHand = j.value("greatestHand", 0);
+    r.greatestHandLoss = j.value("greatestHandLoss", 0);
+    r.handProfitCount = j.value("handProfitCount", 0LL);
+    r.handProfitSum = j.value("handProfitSum", 0LL);
+    r.handProfitSumSq = j.value("handProfitSumSq", 0LL);
+    r.greatestWin = j.value("greatestWin", 0);
+    r.greatestLoss = j.value("greatestLoss", 0);
+    r.carriedGreatestSessionWin = j.value("greatestSessionWin", 0);
+    r.carriedGreatestSessionLoss = j.value("greatestSessionLoss", 0);
+    r.longestWinningStreak = j.value("longestWinningStreak", 0);
+    r.longestLosingStreak = j.value("longestLosingStreak", 0);
+    r.sideBetWins = j.value("sideBetWins", 0);
+    r.sideBetLosses = j.value("sideBetLosses", 0);
+    r.sideBetProfitSum = j.value("sideBetProfitSum", 0LL);
+    r.carriedSessionTotal = j.value("carriedSessionTotal", 0LL);
+}
+
 // PlayerProfile serialization
 inline void to_json(json& j, const PlayerProfile& p)
 {
@@ -198,6 +237,8 @@ inline void to_json(json& j, const PlayerProfile& p)
         // in-progress shoe rounds; serialised alongside longHistory so quitting mid-shoe still books those hands.
         // Written unconditionally (like longHistory); read additively on load so legacy saves without it keep loading.
         {"currentHistory", p.currentHistory},
+        // additive: rolled-out-shoe carry (T2); absent key loads a zero RollupCarry, the merge identity, so legacy saves load unchanged.
+        {"rollup", p.rollup},
         {"preferredPlayerCount", p.preferredPlayerCount},
         {"preferredSpeed", p.preferredSpeed},
         {"preferredCountingStyle", p.preferredCountingStyle},
@@ -223,6 +264,8 @@ inline void from_json(const json& j, PlayerProfile& p)
     p.longHistory = j.value("longHistory", std::vector<ShoeRecord>{});
     // additive: absent "currentHistory" keeps its default (empty) so legacy mid-shoe-quit saves before this field still load.
     p.currentHistory = j.value("currentHistory", std::vector<RoundRecord>{});
+    // additive: missing "rollup" loads a zero RollupCarry (the applyRollup merge identity) so pre-T2 saves keep their stats verbatim.
+    p.rollup = j.value("rollup", RollupCarry{});
     // additive: missing key falls back to default; pre-table-settings profiles still load.
     p.preferredPlayerCount = j.value("preferredPlayerCount", GameConfig::DEFAULT_PLAYER_COUNT);
     p.preferredSpeed = j.value("preferredSpeed", static_cast<int>(GameSpeed::Normal));

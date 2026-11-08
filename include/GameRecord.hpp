@@ -166,6 +166,29 @@ struct ShoeRecord
     unsigned long long shuffleSeed = 0; // MT19937 seed used when shoe was created
 };
 
+// Aggregate of the record-derivable career counters for every shoe that has rolled OFF the longHistory cap (T2). Stored so a
+// capped profile's totals survive exactly: save() merges this carry into the recent-history recompute via PlayerProfile::applyRollup,
+// using the same per-field rules live play uses (record sums add; per-shoe peaks combine as career extrema; greatestSession* offset by
+// the carried session running-total). All fields default to zero, and a fully-zero carry is the merge identity, so with <=
+// MAX_LONG_HISTORY_SHOES completed shoes nothing is written differently and every existing profile/save behaves byte-identically.
+struct RollupCarry
+{
+    int wins = 0, losses = 0, pushes = 0, handsFinished = 0, blackjacks = 0;
+    int greatestHand = 0, greatestHandLoss = 0;
+    long long handProfitCount = 0, handProfitSum = 0, handProfitSumSq = 0;
+    int greatestWin = 0, greatestLoss = 0;
+    int longestWinningStreak = 0, longestLosingStreak = 0;
+    int sideBetWins = 0, sideBetLosses = 0;
+    long long sideBetProfitSum = 0;
+
+    // Session-running-total continuity across rolled shoes (processed oldest-first, so this is exact from the true start):
+    // carriedSessionTotal is the absolute running net at the end of the rolled region; the two peak fields are that region's
+    // session max/min captured with that same absolute base (floored/ceilinged at 0 like the live PlayerStats fields).
+    long long carriedSessionTotal = 0;
+    int carriedGreatestSessionWin = 0;
+    int carriedGreatestSessionLoss = 0;
+};
+
 // Inline implementations for RoundRecord computed methods
 inline int RoundRecord::totalWager() const
 {

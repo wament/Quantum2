@@ -5,6 +5,7 @@
 #include <fstream>
 #include <filesystem>
 #include <chrono>
+#include <algorithm>
 
 namespace fs = std::filesystem;
 
@@ -19,12 +20,87 @@ void PlayerProfile::setBankroll(int amount) { bankroll = amount; }
 
 void PlayerProfile::addRoundRecord(const RoundRecord& record) { currentHistory.push_back(record); }
 
+namespace {
+
+// Per-shoe recompute of exactly the record-derivable career counters save() writes from history, as a RollupCarry. computeCareerStats
+// applies the same human-seat-only, per-shoe boundary rules live play uses (HandEvaluator/Game), so this equals what the shoe
+// contributed before it rolled off longHistory. See PHASE 5 / T2.
+RollupCarry rollupForShoe(const ShoeRecord& shoe)
+{
+    const PlayerStats st = computeCareerStats(shoe);
+    RollupCarry r;
+    r.wins = st.wins;
+    r.losses = st.losses;
+    r.pushes = st.pushes;
+    r.handsFinished = st.handsFinished;
+    r.blackjacks = st.blackjacks;
+    r.greatestHand = st.greatestHand;
+    r.greatestHandLoss = st.greatestHandLoss;
+    r.handProfitCount = st.handProfitCount;
+    r.handProfitSum = st.handProfitSum;     // also the shoe's net delta, used for session-running-total continuity below
+    r.handProfitSumSq = st.handProfitSumSq;
+    r.greatestWin = st.greatestWin;
+    r.greatestLoss = st.greatestLoss;
+    r.longestWinningStreak = st.longestWinningStreak;
+    r.longestLosingStreak = st.longestLosingStreak;
+    r.sideBetWins = st.sideBetWins;
+    r.sideBetLosses = st.sideBetLosses;
+    r.sideBetProfitSum = st.sideBetProfitSum;
+    // session peak within this shoe, relative to its own start (floored/ceilinged at 0 like the live field)
+    r.carriedGreatestSessionWin = st.greatestSessionWin;
+    r.carriedGreatestSessionLoss = st.greatestSessionLoss;
+    return r;
+}
+
+// Merge one rolled shoe into the running carry, preserving absolute session continuity. Shoes roll off oldest-first and are accumulated
+// in that order, so carriedSessionTotal stays the true net from the very first shoe and the peak fields stay the exact career session
+// extrema over the rolled region (see PlayerProfile::applyRollup).
+void accumulateIntoRollup(RollupCarry& carry, const RollupCarry& shoe)
+{
+    // record-derivable sums add across shoes
+    carry.wins += shoe.wins;
+    carry.losses += shoe.losses;
+    carry.pushes += shoe.pushes;
+    carry.handsFinished += shoe.handsFinished;
+    carry.blackjacks += shoe.blackjacks;
+    carry.handProfitCount += shoe.handProfitCount;
+    carry.handProfitSum += shoe.handProfitSum;
+    carry.handProfitSumSq += shoe.handProfitSumSq;
+    carry.sideBetWins += shoe.sideBetWins;
+    carry.sideBetLosses += shoe.sideBetLosses;
+    carry.sideBetProfitSum += shoe.sideBetProfitSum;
+
+    // per-shoe peaks combine as career extrema
+    carry.greatestHand = std::max(carry.greatestHand, shoe.greatestHand);
+    carry.greatestHandLoss = std::min(carry.greatestHandLoss, shoe.greatestHandLoss);
+    carry.longestWinningStreak = std::max(carry.longestWinningStreak, shoe.longestWinningStreak);
+    carry.longestLosingStreak = std::max(carry.longestLosingStreak, shoe.longestLosingStreak);
+    carry.greatestWin = std::max(carry.greatestWin, shoe.greatestWin);
+    carry.greatestLoss = std::min(carry.greatestLoss, shoe.greatestLoss);
+
+    // session-running-total continuity: absolute peak up to and including this shoe (compare in long long, the field width is int)
+    const long long enteringTotal = carry.carriedSessionTotal;
+    carry.carriedGreatestSessionWin = static_cast<int>(std::max(static_cast<long long>(carry.carriedGreatestSessionWin), enteringTotal + shoe.carriedGreatestSessionWin));
+    carry.carriedGreatestSessionLoss = static_cast<int>(std::min(static_cast<long long>(carry.carriedGreatestSessionLoss), enteringTotal + shoe.carriedGreatestSessionLoss));
+    carry.carriedSessionTotal += shoe.handProfitSum;   // net delta of this shoe -> absolute running total at its end
+}
+
+}  // namespace
+
 void PlayerProfile::addShoeRecord(const ShoeRecord& record)
 {
     ShoeRecord shoe = record;
     shoe.rounds = currentHistory;
     longHistory.push_back(shoe);
     currentHistory.clear();
+    // T2: bound completed-shoe history to MAX_LONG_HISTORY_SHOES. When the window would grow, roll the oldest shoe off into an aggregate
+    // carry (accumulateIntoRollup) so its career contribution survives exactly in applyRollup(). Erasing from the front keeps longHistory
+    // chronological, which computeCareerStatsHistory relies on for session-running-total continuity.
+    while (longHistory.size() > Constants::MAX_LONG_HISTORY_SHOES)
+    {
+        accumulateIntoRollup(rollup, rollupForShoe(longHistory.front()));
+        longHistory.erase(longHistory.begin());
+    }
 }
 
 PlayerProfile PlayerProfile::load(const std::string& filename)
@@ -77,7 +153,7 @@ void PlayerProfile::save(const std::string& filename) const
     PlayerProfile reconciled = *this;
     if (!longHistory.empty())
     {
-        const PlayerStats authoritative = careerStatsFromHistory();
+        const PlayerStats authoritative = applyRollup();
         reconciled.stats.wins = authoritative.wins;
         reconciled.stats.losses = authoritative.losses;
         reconciled.stats.pushes = authoritative.pushes;
@@ -135,4 +211,38 @@ PlayerStats PlayerProfile::careerStatsFromHistory() const
         history.push_back(std::move(inProgress));
     }
     return computeCareerStatsHistory(history);
+}
+
+PlayerStats PlayerProfile::applyRollup() const
+{
+    // Recent (capped) history recomputed via the same rules live play uses, then merged with the rolled-out-shoe carry using the identical
+    // per-field semantics as accumulateIntoRollup. A zero carry is the merge identity (sums += 0; extrema max/min with 0 are unchanged
+    // because those fields are already floored/ceilinged at 0), so with <= MAX_LONG_HISTORY_SHOES completed shoes this returns exactly
+    // careerStatsFromHistory() and save()'s output is byte-identical to before — T2 is purely additive.
+    PlayerStats out = careerStatsFromHistory();
+
+    out.wins += rollup.wins;
+    out.losses += rollup.losses;
+    out.pushes += rollup.pushes;
+    out.handsFinished += rollup.handsFinished;
+    out.blackjacks += rollup.blackjacks;
+    out.handProfitCount += rollup.handProfitCount;
+    out.handProfitSum += rollup.handProfitSum;
+    out.handProfitSumSq += rollup.handProfitSumSq;
+    out.sideBetWins += rollup.sideBetWins;
+    out.sideBetLosses += rollup.sideBetLosses;
+    out.sideBetProfitSum += rollup.sideBetProfitSum;
+
+    out.greatestHand = std::max(out.greatestHand, rollup.greatestHand);
+    out.greatestHandLoss = std::min(out.greatestHandLoss, rollup.greatestHandLoss);
+    out.longestWinningStreak = std::max(out.longestWinningStreak, rollup.longestWinningStreak);
+    out.longestLosingStreak = std::max(out.longestLosingStreak, rollup.longestLosingStreak);
+    out.greatestWin = std::max(out.greatestWin, rollup.greatestWin);
+    out.greatestLoss = std::min(out.greatestLoss, rollup.greatestLoss);
+
+    // greatestSession* offset by the carried session running-total so a capped window still yields the exact career peak (compare in long long, field width is int).
+    const long long base = rollup.carriedSessionTotal;
+    out.greatestSessionWin = static_cast<int>(std::max(static_cast<long long>(rollup.carriedGreatestSessionWin), base + out.greatestSessionWin));
+    out.greatestSessionLoss = static_cast<int>(std::min(static_cast<long long>(rollup.carriedGreatestSessionLoss), base + out.greatestSessionLoss));
+    return out;
 }

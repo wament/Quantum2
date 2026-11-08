@@ -192,6 +192,7 @@ add_executable(Blackjack2Tests
     tests/test_logger.cpp
     tests/test_banner_b11.cpp
     tests/test_summary_overlay_bounds.cpp
+    tests/test_history_rollup.cpp
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)

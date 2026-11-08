@@ -62,12 +62,20 @@ class PlayerProfile
     // and are preserved verbatim by save().
     PlayerStats careerStatsFromHistory() const;
 
+    // Career stats written by save(): the recent (capped) shoe history recomputed via careerStatsFromHistory, merged with the
+    // aggregate carry of shoes that have rolled off the longHistory cap. Lossless — a zero carry is the merge identity, so with
+    // <= MAX_LONG_HISTORY_SHOES completed shoes this returns exactly careerStatsFromHistory() and save()'s output is unchanged.
+    PlayerStats applyRollup() const;
+
   private:
     std::string name;
     int bankroll = 1000;
 
     std::vector<RoundRecord> currentHistory;
     std::vector<ShoeRecord> longHistory;
+
+    // T2 (100-shoe history cap): record-derivable career counters of shoes past the cap, aggregated so totals survive exactly.
+    RollupCarry rollup;
 
     // Allow JSON serialization/deserialization
     friend void to_json(json& j, const PlayerProfile& p);

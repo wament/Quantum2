@@ -176,6 +176,9 @@ constexpr int MAX_SPLIT_HANDS = 4;
 // Sentinel for an unlimited split-hand cap (the rules UI exposes "Unlimited" as this value). Guarded explicitly at
 // every enforcement site so a size_t-vs-int comparison can't accidentally read it as a large finite cap.
 constexpr int MAX_SPLIT_HANDS_UNLIMITED = -1;
+// T2: cap completed-shoe history (PlayerProfile::longHistory) at this many shoes; older shoes roll into an aggregate carry so
+// career totals survive exactly. Bounded, additive, and a no-op for profiles with fewer completed shoes than the cap.
+constexpr std::size_t MAX_LONG_HISTORY_SHOES = 100;
 constexpr float BLACKJACK_PAYOUT = 1.5; // 1.5 = 3:2, 1.2 = 6:5
 constexpr bool DOUBLE_AFTER_SPLIT_ALLOWED = true;
 constexpr bool RESPLIT_ACES_ALLOWED = true;
