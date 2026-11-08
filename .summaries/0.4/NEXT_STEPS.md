@@ -8,8 +8,8 @@ architecture and guardrails.
 **Posture change from 0.3:** feature work stays frozen. This phase is defect removal + the missing test seam.
 The suite is **303/303 green**. Every defect (B1–B16) has a dedicated fix commit + passing regression test — see the
 Status column below for each commit hash and test ID. The only genuinely still-OPEN work now is B9's unreproducible
-`R`-time crash (never reproducibly captured, so no deterministic test can close it) plus the UI/UX backlog (U1–U10), of
-which U7 (#286–#288), U8 (#70) and U10 (#281/#282) are Resolved; U1–U6 and U9 remain open. That gap — everything
+`R`-time crash (never reproducibly captured, so no deterministic test can close it) plus the UI/UX backlog (U1–U12), of
+which U4, U5, U7, U8, U9 and U10 are Resolved; the remaining open items are U1, U2, U3, U6 plus two new vision-critical backlog entries added 2026-11-09 (U11 window-resize menu drift, U12 side-panel graph toggles + session-view/bet-axis). That gap — everything
 remaining lives in the presentation/lifecycle seam the headless-first contract
 deliberately leaves untested — is still the theme of this phase; see §11 for the full open list.
 
@@ -18,7 +18,13 @@ deliberately leaves untested — is still the theme of this phase; see §11 for 
 > CONTEXT.md in sync with this table.
 >
 > **Ledger synced 2026-11-09.** U7, U8 and U10 now Resolved — bankroll parity (#70), deck pluralisation + menu-branding
-> consolidation + NPC illegal-action-warning suppression (#281/#282). Remaining open UI are U1–U6 and U9.
+> consolidation + NPC illegal-action-warning suppression (#281/#282). Open UI were then U1–U6 and U9; U4/U5/U9 now also
+> Resolved (f8f15cc), plus two new vision-critical items U11, U12 — the current open set is in the note below.
+>
+> **Ledger synced 2026-11-09.** U4/U5/U9 also Resolved (`f8f15cc`; betting-hint consolidation #307–#308, count-box label
+> #309–#311, side-bet paytable #312–#315) — fixed+committed but not yet marked here. Two new vision-critical backlog items
+> added this pass: U11 (window-resize menu hover/click drift on main + pause menus), U12 (side-panel graph toggles +
+> per-shoe/session view switch + Bets Placed axis 10–100 capped at MAXIMUM_BET). Open UI now: U1, U2, U3, U6, U11, U12.
 
 **Handoff prompt — paste into a fresh window** (regenerated 2026-11-06 to match the audited docs; keep it in sync
 with CONTEXT.md §13 whenever the ledger changes):
@@ -153,7 +159,7 @@ Baseline: **277/277 pass in ~8s** (`-j8`), HEAD `356fc31`. Configure and build a
 | B10 | 🟡 Medium | `maxSplitHands` is dead config (no UI row, not serialized) | `src/GameRules.cpp:15-27` / `include/GameRules.hpp` `to_json` | 3 | ✅ Resolved `69cd9e8` (#280/#282) |
 | B11 | 🟡 Medium | Startup control banner mislabels Left/Right | `src/Game.cpp:162-163` | 3 | ✅ Resolved `140e9b5` (#295) |
 | B12 | 🟡 Medium | Save-schema typo `resplitTentsAllowed` ("Tens") | `include/GameRules.hpp` | 3 | ✅ Resolved `31a3703` (#241–243) |
-| U1–U10 | 🟡 Medium | UI/UX defects (see Phase 4) | various | 4 | ✅ Partially resolved this phase: U7 (#286–#288), U8 (#70), U10 (#281/#282); U1–U6, U9 remain open |
+| U1–U12 | 🟡 Medium | UI/UX defects (see Phase 4) | various | 4 | ✅ Resolved this phase: U4 (#307–#308), U5 (#309–#311), U7 (#286–#288), U8 (#70), U9 (#312–#315), U10 (#281/#282); open: U1, U2, U3, U6 (vision-critical) + U11, U12 (new 2026-11-09) |
 | T1–T2 | 🟢 Low | Save-write amplification; unbounded history | `src/HandEvaluator.cpp:297` | 5 | ✅ Resolved `1abda8f`,`fbaea91` (#302/#303 / #298) |
 | B16 | 🟡 Medium | `reconstructDeckAtRound()` is dead code and reconstructs from the wrong end | `include/GameRecord.hpp:307-329` | 5 | ✅ Resolved `5f81d48` (dead-code deletion; no dedicated regression test) |
 
@@ -775,10 +781,12 @@ assert no rect overlap at both 1600×900 and 900×560.
 (`Up/Down: set bet` vs `[Up/Down | Adjust Bet]`), and every action is shown even when irrelevant — H/S/D/P/Y are
 displayed during PlaceBets. *Fix:* show only the current `RoundState`'s controls, one format, legible size; move
 the rest to the Controls screen from B11.
+**Status — RESOLVED 2026-11-09 (`f8f15cc`):** betting-phase hints consolidated into single-source `Game::bettingControlsHint()`/`sideBetControlsHint()`, rendered in one consistent format (13.f) and never showing irrelevant actions during PlaceBets. Regression #307–#308.
 
 **U5 — "True Count" shows the running count under Reko** (`Game.cpp:1012`). Deliberate, but a fresh 6-deck shoe
 displaying `True Count -20.0` reads as broken, and a learner has no way to know it is intended. *Fix:* relabel the
 box to "Betting Count (Reko)", or show RC and TC side by side.
+**Status — RESOLVED 2026-11-09 (`f8f15cc`):** `Game::trueCountStatusLabel()` returns "True Count" (Hi-Lo) or "Betting Count (Reko)" (Reko); HUDState.countingBoxLabel syncs each frame and HUD.cpp applies it via StatBox::setTitle. Regression #309–#311.
 
 **U6 — Card overlap and total legibility.** With 3+ cards the lower cards are almost fully covered, and hand
 totals are small white text drawn straight onto the felt arc. *Fix:* increase the per-card offset; draw totals in
@@ -796,6 +804,7 @@ in-memory bankroll to `GameConfig::STARTING_BANKROLL` (only the bankroll; `profi
 
 **U9 — No side-bet paytable anywhere.** Perfect Pairs (10/25/30:1) and 21+3 (2/5/9/30/40:1) are offered with no
 odds shown. *Fix:* render the active bet's paytable in the right panel during PlaceBets.
+**Status — RESOLVED 2026-11-09 (`f8f15cc`):** `Side BetEvaluator::paytableText()` is the single source for the odds; drawPlaySession renders it during PlaceBets when a non-None kind is active via `Game::activeSideBetKind()`. Regression #312–#315.
 
 **U10 — Minor.** "1 decks" pluralisation (`GameRules.cpp:34`); branding drift (window "Blackjack" / menu
 "BLACKJACK" / felt "QUANTUM BLACKJACK" / project "Blackjack2"); NPC illegal-action WARNs such as
@@ -806,6 +815,36 @@ clean.
 title — felt "QUANTUM BLACKJACK" and the repo name "Blackjack2" are distinct contexts (table art vs project name) and
 were left as-is; (c) action-validation warns routed through a new `Game::logInvalidAction()` that logs only for the human
 seat, so NPC mis-attempts during auto-play no longer clutter the console. Regression #282 in tests/test_game_rules.cpp.
+
+---
+
+**U11 — Menu hover/click target drifts from the drawn row on window resize (main menu + pause screen).** 🟡 Vision-critical.
+Resizing makes where you move the mouse no longer correspond to where an item is actually drawn. Drawing is in absolute-pixel
+space: `drawMenuItem` centres at `(window.width/2, y)` (`GameRenderer.cpp:1071`); pause rows sit at `pauseRowY(game,i) = height *
+yFrac` (line 1134). The three hover hit-tests use **different coordinate bases**: `getHoveredMenuItemIndex` converts with
+`mapPixelToCoords(sf::Mouse::getPosition(...))` (line 1078) yet compares against absolute-pixel `item.y` (1086);
+`getHoveredPauseMenuItemIndex` uses raw `sf::Mouse::getPosition(game.window)` as a Vector2i (1144) vs `pauseRowY`;
+`getHoveredGameRulesRowIndex` again uses mapPixelToCoords (1104) against an absolute-pixel layout (1108–1115). Draw and
+hit-test diverging in coordinate basis makes the cursor→item mapping break at window sizes where resolved space differs from
+logical size — exactly what changes while resizing. *Fix:* unify so every menu hover/click path resolves the cursor in the
+same space its row positions are computed in, and confirm resize reflows consistently. Vision-critical: only manifests across
+a range of window sizes with live mouse input; no headless unit test asserts "cursor X → drawn row Y" without an SDL view + a
+real mouse position — needs on-screen verification while resizing.
+
+**U12 — Side-panel graphs: no per-graph visibility toggle, only a per-shoe view (no session view), and Bets Placed X-axis is
+the full [0, MAXIMUM_BET] instead of the intended 10–100 scaling range.** 🟡 Vision-critical. Three parts, all on the side panel
+(`StatsDashboard` drawn at `GameRenderer.cpp:74`; HUDState series in `HUDState.hpp:55-56`, Bets Placed histogram per-shoe):
+(1) **Toggle each graph** — `bankrollSeries`/`edgeSeries` + the histogram are always drawn; add per-series visibility flags to
+StatsDashboard/HUDState and gate drawing. (2) **Per-shoe ↔ per-session view** — the data model is binary: per-shoe accumulators
+reset at the shoe boundary via the graph-recalibration signal (`HUDState.hpp:36-37`) vs career `longHistory`/RollupCarry
+(`Constants.hpp:179`, `GameRecord.hpp:169`). Neither is session-scoped; a session view needs a NEW accumulator accumulating
+across shoes within one session and resetting at session end — distinct from longhistory (the user flagged this explicitly).
+(3) **Bets Placed axis bounds** should be 10–100, scaling up as larger bets are placed, capped at table max `MAXIMUM_BET` (=1000;
+`MINIMUM_BET`=10, `Constants.hpp:194-200`). Currently the chart folds wagers into BET_BUCKET_COUNT ranges spanning [0,
+MAXIMUM_BET] — a fixed 0–1000 axis. *Fix:* (1) per-series visibility + draw gating; (2) introduce the session-scoped dataset +
+UI mode switch with correct labeling; (3) reconfigure the axis to the 10–100 base growing up to MAXIMUM_BET. Vision-critical:
+correctness of session-vs-shoe data, toggle visuals, and axis labels/ticks must be verified by eye across real gameplay and
+window sizes — not headless-testable in isolation.
 
 ---
 

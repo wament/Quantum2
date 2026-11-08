@@ -50,7 +50,7 @@ Phases 0.0–0.3 were feature delivery then refactor. 0.4 is **defect removal**.
 The defining fact of this phase — **the test suite is fully green while the game carries user-visible defects the
 headless contract never exercises** — still holds, but the composition has changed: 9 of the original defects are now
 **Resolved** (B2, B3, B4, B6, B7, B12, B13, B14, B15) each with a dedicated regression test. The open ones left are
-B1, B5, B8, B9, B10, B11 — plus the UI/UX set U1–U10 and the tech-debt items T1, T2, B16 (all in §11). Of those,
+B1, B5, B8, B9, B10, B11 — plus the UI/UX set U1–U12 and the tech-debt items T1, T2, B16 (all in §11). Of those,
 **B1 is the last red defect a player meets in a normal session**; it is the natural next target once this phase's
 lower-severity items are triaged. See §3 for where the remaining defects live.
 
@@ -409,7 +409,7 @@ Suite at **297/297** (0 failures; #256 known flaky, see §13).
 | B11 | 🟡 | startup control banner mislabels the betting-phase keys | **Resolved 2026-11-07** | Extracted the startup "PLAYER CONTROLS" banner from the inline `Logger::info` in `Game::Game()` into a pure helper `Game::startupControlsBanner() const`; corrected its labels to match the real `InputHandler.cpp:635-645` PlaceBets bindings (Left = auto Kelly via `calculateOptimalBet()`/`setBet()`, Right = confirm). Regression test #295 (`tests/test_banner_b11.cpp`) reads it from a headless `Game(true)` and asserts Left-present / Right-absent on the auto-kelly row — fails before, passes after. Suite 294 → 295/295. §10 #5 (banner-survival: keep trimmed vs permanent in-game Controls screen) stays open; this was the minimal fix |
 | B12 | 🟡 | `resplitTentsAllowed` typo in save schema | **Resolved 2026-11-06** | Renamed field+enum to `resplitTensAllowed`/`ResplitTens`; `to_json` writes the corrected key, `from_json` reads it then falls back to the legacy typo'd key (new wins). On-disk writer verified via `test_profile_settings.cpp:232` using real `PlayerProfile::save()` — shipped binary now writes `resplitTensAllowed`. Suite 272/272 |
 | B16 | 🟡 | `reconstructDeckAtRound()` dead and wrong | **Resolved 2026-11-07 (`5f81d48`)** | Removed — static analysis confirmed zero callers (sole occurrence was its own definition at `GameRecord.hpp:307`), so deletion is behaviour-preserving; it also recomputed deck state with the wrong card-drop order, which no code relied on. Full suite unchanged at 289/289 |
-| U1–U10 | 🟡 | UI/UX set (see NEXT_STEPS Phase 4) | Partial — U7 Resolved | Not re-verified on screen this pass; cited renderer lines all resolve to the claimed functions. **U7 Resolved 2026-11-07 (`e157052`): name-entry screen + player-name persistence — headless tests #286–#288 (buffer clamp, gating predicate, commit round-trip); remaining U-items still Open, unverified on screen.** Headless-testability: HARDEST — needs an SDL window context + screenshots/Xvfb for visual assertions; no pure headless unit test can lock rendering.
+| U1–U12 | 🟡 | UI/UX set (see NEXT_STEPS Phase 4) | Partial — this phase Resolved: U4 (#307–#308), U5 (#309–#311), U7 (#286–#288), U8 (#70), U9 (#312–#315), U10 (#281/#282). Open: U1, U2, U3, U6 (vision-critical) + U11, U12 (new 2026-11-09). Not re-verified on screen this pass; cited renderer lines all resolve to the claimed functions. Headless-testability: HARDEST — needs an SDL window context + screenshots/Xvfb for visual assertions; no pure headless unit test can lock rendering.
 | T1–T2 | 🟢 | Save amplification; unbounded history | Open | `HandEvaluator.cpp:297` still saves every settled round. Headless-testability: MEDIUM — needs byte-counting output interception (T1) and a chosen history cap before it is assertable (T2).
 | — | ✅ | `handActions` indexing | **Cleared — not a bug** | Do not "fix" without also changing turn order (§6.9) |
 | — | ✅ | Settlement math | **Cleared — correct** | |
@@ -685,9 +685,11 @@ source (B10 `maxSplitHands` enforced at `Game.cpp:821`, Banner mislabels keys at
 Classified each remaining §11 item by how hard it is to verify without an SDL window, so the next window knows which
 need escrow-at-commit (§4 rule 2) vs code-first tests. Grounded against source, not assumed:
 
-- **U1–U10 (UI/UX rendering) — HARDEST / not truly headless.** Every item needs an SDL window context and a
+- **U1–U12 (UI/UX rendering) — HARDEST / not truly headless.** Every item needs an SDL window context and a
   screenshot/Xvfb image diff to assert anything visual; no pure unit test can assert pixel-level rendering and diffs are
-  flaky. These are the only items genuinely difficult headlessly. Verify with Xvfb + screenshots, or escrow-at-commit.
+  flaky. These are the only items genuinely difficult headlessly, including U11 (cursor↔draw drift across window sizes with
+  live mouse input) and U12 (side-panel graph toggles, per-shoe/session view switch, Bets Placed axis bounds). Verify with
+  Xvfb + screenshots, or escrow-at-commit.
 - **B8 (`Deck::draw()` empty-guard) — actually COVERABLE.** Two unguarded `back()`/`pop_back()` pairs at Deck.cpp:125-133,
   reached only when `cards` is empty. `Deck::setCards(std::vector<Card>)` (a public test harness in Deck.hpp) deals an
   arbitrary shoe, so `setCards({})` + draw() reaches the path directly; a defensive unit test asserting no UB/crash covers it.
