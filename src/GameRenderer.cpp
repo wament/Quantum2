@@ -1188,7 +1188,9 @@ void GameRenderer::drawMainMenu(Game& game)
     game.window.clear(sf::Color(20, 20, 30));
     float cx = static_cast<float>(game.window.getSize().x) / 2.0f;
 
-    sf::Text title(FontManager::get(), "BLACKJACK", 36);
+    // U10b: render from the single canonical window-title brand string instead of a hardcoded uppercase literal, so the in-app
+    // banner and the OS window title can never drift apart (both read Constants::WINDOW_TITLE).
+    sf::Text title(FontManager::get(), Constants::WINDOW_TITLE, 36);
     title.setFillColor(sf::Color(255, 215, 0));
     sf::FloatRect tb = title.getLocalBounds();
     title.setOrigin(sf::Vector2f(tb.size.x / 2.0f, 0));

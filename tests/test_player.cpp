@@ -4,6 +4,9 @@
 #include <Hand.hpp>
 #include <BasicStrategy.hpp>
 
+#include <filesystem>   // U8 test: hermetic HOME redirect so load() returns a fresh profile
+#include <cstdlib>      // setenv/unsetenv/getenv for the HOME redirect
+
 using namespace Constants;
 
 static Hand makeHand(std::initializer_list<int> values, int bet = 0)
@@ -228,4 +231,31 @@ TEST_CASE("determineRoundBet sizes progressive strategies off internal state", "
     Player flat("Flat");
     flat.setBettingStrategy(BettingStrategy::Flat, 25);
     CHECK(flat.determineRoundBet(9.9f) == 25);
+}
+
+// U8 parity: a brand-new / recovered human profile seeds the standard starting bankroll (GameConfig::STARTING_BANKROLL) so it
+// matches an NPC seat -- not the stale $1000 default that had humans starting with 1/10th of every opponent's stack. HOME is
+// redirected to an isolated temp dir so load() returns a fresh profile, exactly like the B7 test; original HOME is restored.
+TEST_CASE("U8: a brand-new human player starts at the same bankroll as an NPC seat", "[Player][Bankroll]")
+{
+    const std::filesystem::path home = std::filesystem::temp_directory_path() / "bj_u8_test";
+    std::error_code ec;
+    std::filesystem::remove_all(home, ec);
+    std::filesystem::create_directories(home);
+
+    const char* originalHome = std::getenv("HOME");
+    setenv("HOME", home.string().c_str(), 1);
+    try {
+        Player human("William");                              // fresh profile (empty name) -> seeded to STARTING_BANKROLL
+        Player npc("Alice", GameConfig::STARTING_BANKROLL);   // NPC seat at the standard stack
+        CHECK(human.getBankroll() == GameConfig::STARTING_BANKROLL);
+        CHECK(npc.getBankroll() == GameConfig::STARTING_BANKROLL);
+        CHECK(human.getBankroll() == npc.getBankroll());      // no more 10x human-vs-NPC gap
+    } catch (...) {
+        if (originalHome) setenv("HOME", originalHome, 1); else unsetenv("HOME");
+        std::filesystem::remove_all(home, ec);
+        throw;
+    }
+    if (originalHome) setenv("HOME", originalHome, 1); else unsetenv("HOME");
+    std::filesystem::remove_all(home, ec);
 }

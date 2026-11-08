@@ -125,6 +125,7 @@ class Game
     void setRoundStateForTest(RoundState rs) { roundState = rs; }
     GameState gameStateForTest() const { return gameState; }
     size_t activePlayerIndexForTest() const { return activePlayerIndex; }
+    void setActivePlayerIndexForTest(int idx) { activePlayerIndex = idx; }
     // expose the advisor verdict set by logStrategyDeviation (the source of the Book box color).
     AdvisorFeedback advisorFeedbackForTest() const { return advisorFeedback; }
     char advisorActionForTest() const { return advisorAction; }
@@ -562,6 +563,10 @@ class Game
 
     char giveBasicStrategyAdvice(Hand& playerHand, Hand& dealerHand);
     void logStrategyDeviation(char actionTaken);
+    // U10c: action-validation feedback ("tried to double down but ...") surfaced via Logger::warn() for every active seat used to
+    // spam the console during auto-play, since NPCs hit these dead branches too. It logs only for the human seat (activePlayerIndex
+    // == 0); an NPC mis-attempt still returns false but writes nothing, keeping the log readable. Message text is unchanged.
+    void logInvalidAction(const std::string& player, const std::string& reason);
 
     // NPC decision making
     void npcTakeTurn();

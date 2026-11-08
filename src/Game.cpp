@@ -812,7 +812,7 @@ bool Game::doubleDown()
 
     if (hand.isFinished())
     {
-        Logger::warn() << p.getName() << " tried to double down but hand is finished.";
+        logInvalidAction(p.getName(), "double down but hand is finished");
         return false;
     }
 
@@ -820,7 +820,7 @@ bool Game::doubleDown()
     // double-down consistent with the forced-stand behavior of hit()/stand() on split aces.
     if (hand.isSplitAce())
     {
-        Logger::warn() << p.getName() << " tried to double down but cannot double a split ace.";
+        logInvalidAction(p.getName(), "double down but cannot double a split ace");
         return false;
     }
 
@@ -828,13 +828,13 @@ bool Game::doubleDown()
     // disallows it. Default rules keep DAS on
     if (hand.isSplit() && !gameRules_.doublesAfterSplitAllowed)
     {
-        Logger::warn() << p.getName() << " tried to double down but double-after-split is off.";
+        logInvalidAction(p.getName(), "double down but double-after-split is off");
         return false;
     }
 
     if (!hand.canDouble())
     {
-        Logger::warn() << p.getName() << " tried to double down but hand cannot double (not 2 cards).";
+        logInvalidAction(p.getName(), "double down but hand cannot double (not 2 cards)");
         return false;
     }
 
@@ -842,7 +842,7 @@ bool Game::doubleDown()
     hand.setDoubledDown(true);
     if (!p.placeBet(initialBet))
     {
-        Logger::warn() << p.getName() << " tried to double down but cannot afford the bet.";
+        logInvalidAction(p.getName(), "double down but cannot afford the bet");
         return false;
     }
 
@@ -871,19 +871,19 @@ bool Game::split()
 
     if (p.hands[handIndex].isFinished())
     {
-        Logger::warn() << p.getName() << " tried to split but hand is finished.";
+        logInvalidAction(p.getName(), "split but hand is finished");
         return false;
     }
 
     if (gameRules_.maxSplitHands > 0 && p.hands.size() >= gameRules_.maxSplitHands)
     {
-        Logger::warn() << p.getName() << " tried to split but has reached max split hands (" << gameRules_.maxSplitHands << ").";
+        logInvalidAction(p.getName(), "split but has reached max split hands (" + std::to_string(gameRules_.maxSplitHands) + ").");
         return false;
     }
 
     if (!p.hands[handIndex].canSplit())
     {
-        Logger::warn() << p.getName() << " tried to split but hand cannot split (not a pair or already hit).";
+        logInvalidAction(p.getName(), "split but hand cannot split (not a pair or already hit)");
         return false;
     }
 
@@ -893,7 +893,7 @@ bool Game::split()
     if (p.hands[handIndex].isSplit() &&
         p.hands[handIndex].getCard(0).getBlackjackValue() == 10 && !gameRules_.resplitTensAllowed)
     {
-        Logger::warn() << p.getName() << " tried to re-split tens but resplit-ten is off.";
+        logInvalidAction(p.getName(), "re-split tens but resplit-ten is off");
         return false;
     }
 
@@ -939,14 +939,14 @@ bool Game::surrender()
     // Cannot surrender a finished hand
     if (hand.isFinished())
     {
-        Logger::warn() << p.getName() << " tried to surrender but hand is finished.";
+        logInvalidAction(p.getName(), "surrender but hand is finished");
         return false;
     }
 
     // Only allowed on the first two cards
     if (!hand.canDouble())
     {
-        Logger::warn() << p.getName() << " tried to surrender but hand cannot surrender (already hit or not 2 cards).";
+        logInvalidAction(p.getName(), "surrender but hand cannot surrender (already hit or not 2 cards)");
         return false;
     }
 
@@ -955,14 +955,14 @@ bool Game::surrender()
     // Late / Hit-or-Stand keep the historical "first two cards" behaviour. Reads the live rule
     if (!gameRules_.surrenderEnabled())
     {
-        Logger::warn() << p.getName() << " tried to surrender but surrender is off.";
+        logInvalidAction(p.getName(), "surrender but surrender is off");
         return false;
     }
     int dealerUpValue = dealer.getDealerUpCard().getBlackjackValue();
     bool dealerUpIsAceOrTen = (dealerUpValue == 1 || dealerUpValue >= 10);
     if (gameRules_.surrenderType == SurrenderType::Early && !dealerUpIsAceOrTen)
     {
-        Logger::warn() << p.getName() << " tried to surrender but early surrender is only offered vs an Ace or ten.";
+        logInvalidAction(p.getName(), "surrender but early surrender is only offered vs an Ace or ten");
         return false;
     }
 
@@ -975,6 +975,15 @@ bool Game::surrender()
     handActions[getGlobalHandIndexForPlayer(activePlayerIndex, p.currentHand)].push_back("R");
     hudState.basicStrategyHint.clear();
     return true;
+}
+
+void Game::logInvalidAction(const std::string& player, const std::string& reason)
+{
+    // U10c: action-validation feedback ("tried to double down but ...") used to warn for every active seat. During auto-play the
+    // AI re-hits these dead branches constantly, spamming the console. Log only for the human seat (activePlayerIndex == 0); an
+    // NPC mis-attempt still returns false and never writes, so the log stays readable. The emitted text is byte-identical to before.
+    if (activePlayerIndex == 0)
+        Logger::warn() << player << " tried to " << reason;
 }
 
 void Game::logStrategyDeviation(char actionTaken)

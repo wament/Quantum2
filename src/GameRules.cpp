@@ -31,7 +31,8 @@ std::string gameRuleDescription(const GameRules& rules, GameRuleId id)
     switch (id)
     {
     case GameRuleId::NumDecks:
-        return std::to_string(rules.numDecks) + " decks";
+        // U10a: correct pluralization ("1 deck", not "1 decks"); every other realistic shoe count stays plural.
+        return std::to_string(rules.numDecks) + (rules.numDecks == 1 ? " deck" : " decks");
     case GameRuleId::DealerStandsOnSoft17:
         // Default is H17 (dealer hits soft 17); flipping the rule makes it stand on all 17s.
         return rules.dealerStandsOnSoft17 ? "Dealer stands on soft 17" : "Dealer hits soft 17 (H17)";

@@ -32,16 +32,20 @@ Player::Player(const std::string& playerName)
 
     // Try to load existing profile; otherwise create new
     profile = PlayerProfile::load(savePath);
-    if (profile.getBankroll() == 0)
+    // U8 parity: a brand-new / recovered profile (empty name == never played, or bankroll explicitly zero) starts at the standard
+    // starting bankroll so it matches an NPC seat -- not the stale $1000 default that had humans starting with 1/10th of every
+    // opponent's stack. Only the in-memory bankroll is reseeded; profile.name stays empty so needsNameEntry() still prompts on a
+    // first run (U7), exactly as before. A real returning profile has a non-empty name and keeps its accrued money untouched.
+    if (profile.getName().empty() || profile.getBankroll() == 0)
     {
-        profile = PlayerProfile(playerName);
+        bankroll = GameConfig::STARTING_BANKROLL;   // STARTING_BANKROLL == every NPC seat's starting stack
         Logger::info("New player profile created for " + playerName + ".");
     }
     else
     {
+        bankroll = profile.getBankroll();
         Logger::info() << "Loaded profile for " << playerName << " with bankroll " << bankroll << ".";
     }
-    bankroll = profile.getBankroll();
 }
 
 // NPC seat: fresh in-memory profile only. NPCs are ephemeral: they keep no profile on disk.

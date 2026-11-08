@@ -9,6 +9,9 @@
 
 #include <filesystem>
 #include <fstream>
+#include <streambuf>    // U10c: flush-only cout sink to assert on what the logger actually flushed
+#include <vector>      // U10c: capture buffer type
+#include "Logger.hpp"   // U10c: set level + read flushed output from action-validation warnings
 
 using namespace Constants;
 namespace fs = std::filesystem;
@@ -353,5 +356,86 @@ TEST_CASE("B13: an in-progress shoe's rounds survive a save/load and still book 
     CHECK(b.careerStatsFromHistory().handsFinished == 9); // every in-progress hand across both sessions must survive
 
     fs::remove(path);
+}
+
+// U10a: the deck-count readout must pluralize correctly ("1 deck", not "1 decks"); every other realistic shoe count stays plural.
+TEST_CASE("U10a: the deck-count description uses correct pluralization", "[GameRules][Pluralization]")
+{
+    GameRules rules;
+
+    rules.numDecks = 1;
+    CHECK(gameRuleDescription(rules, GameRuleId::NumDecks) == "1 deck");
+
+    rules.numDecks = 2;
+    CHECK(gameRuleDescription(rules, GameRuleId::NumDecks) == "2 decks");
+
+    rules.numDecks = 6;
+    CHECK(gameRuleDescription(rules, GameRuleId::NumDecks) == "6 decks");
+}
+
+namespace {
+    // Flush-only cout sink (mirrors test_logger.cpp): characters land in `sink` only on sync(), so we assert on exactly what the
+    // logger flushed rather than whatever sat unflushed in the buffer. A NAMED object is required -- it must outlive every flush.
+    class U10cCaptureBuf : public std::streambuf {
+      public:
+        explicit U10cCaptureBuf(std::vector<char>& sink) : sink_(sink) {}
+
+      protected:
+        int overflow(int c) override { if (c != traits_type::eof()) buffer_.push_back(static_cast<char>(c)); return 0; }
+        int sync() override { if (!buffer_.empty()) { sink_.insert(sink_.end(), buffer_.begin(), buffer_.end()); buffer_.clear(); } return 0; }
+
+      private:
+        std::vector<char>& sink_;
+        std::vector<char> buffer_;
+    };
+
+    // RAII: restore cout's rdbuf AND the logger level on scope exit, including if a CHECK throws.
+    struct U10cScope {
+        std::streambuf* coutOrig = nullptr;
+        LogLevel levelOrig = LogLevel::DEBUG;
+        U10cScope() : coutOrig(std::cout.rdbuf()), levelOrig(Logger::getLevel()) {}
+        ~U10cScope() { std::cout.rdbuf(coutOrig); Logger::setLevel(levelOrig); }
+    };
+} // namespace
+
+// U10c: action-validation warnings ("tried to double down but ...") used to warn for every active seat, spamming the console
+// during auto-play since NPCs hit these dead branches too. Only the human seat (activePlayerIndex == 0) logs them; an NPC
+// mis-attempt still returns false and writes nothing. This drives both seats with the SAME invalid hand to prove the split.
+TEST_CASE("U10c: an NPC's illegal action does not warn, but the human seat still does", "[GameRules][ActionValidation]")
+{
+    U10cScope scope;                     // restores cout rdbuf + logger level on exit (even if a CHECK throws)
+    Logger::setLevel(LogLevel::DEBUG);   // project default: DEBUG must be visible so a human warning WOULD appear if emitted
+
+    Game game(true);                              // headless
+    auto& seats = game.playersForTest();          // [0] William (human), [1] Alice (NPC)
+    seats.emplace_back(Player("William", GameConfig::STARTING_BANKROLL));
+    seats.emplace_back(Player("Alice", GameConfig::STARTING_BANKROLL));
+
+    // Give each seat a single non-ace card: it is unfinished, not split, and cannot double/surrender -> the canonical warn branch.
+    auto makeSingleCardHand = [](Hand& h) { Card c; c.value = 7; c.suit = Suit::Spades; h.addCard(c); };
+    for (auto& seat : seats) { seat.hands.clear(); seat.hands.resize(1); seat.currentHand = 0; }
+    makeSingleCardHand(seats[0].hands[0]);
+    makeSingleCardHand(seats[1].hands[0]);
+
+    std::vector<char> sink;
+    U10cCaptureBuf capture(sink);                    // named: must outlive every flush below
+    scope.coutOrig = std::cout.rdbuf(&capture);
+
+    // NPC seat active (Alice, index 1): an invalid double returns false and emits NOTHING to the log.
+    game.setActivePlayerIndexForTest(1);
+    CHECK(!game.doubleDown());
+    {
+        std::string written(sink.begin(), sink.end());
+        CHECK(written.find("tried to") == std::string::npos);
+    }
+
+    // Human seat active (William, index 0): the identical invalid double still warns.
+    game.setActivePlayerIndexForTest(0);
+    sink.clear();
+    CHECK(!game.doubleDown());
+    {
+        std::string written(sink.begin(), sink.end());
+        CHECK(written.find("tried to") != std::string::npos);
+    }
 }
 
