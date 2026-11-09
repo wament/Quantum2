@@ -132,6 +132,7 @@ TEST_CASE("Tournament: leaderboard ranks by bankroll descending with stable ties
 
 TEST_CASE("Tournament game: builds an equal-chip table under active tournament rules", "[Tournament][Game]")
 {
+    test_support::IsolatedHome home("tournament");   // B17: hermetic HOME (see test_support.hpp)
     Game game(true);  // headless: no window/assets/replay/HUD, pure game state only
     Tournament::TournamentConfig cfg;
     cfg.stages = 6;

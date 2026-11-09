@@ -20,6 +20,7 @@ namespace fs = std::filesystem;
 
 TEST_CASE("#8 delegation: startNewGame() builds a reset, playable session", "[Game][SessionLifecycle]")
 {
+    test_support::IsolatedHome home("lifecycle");   // B17: startNewGame() seats a persistable human; keep its writes off the real profile
     Game game(true); // headless: no window/assets/replay/HUD
     const int beforeShoe = game.shoeGenerationForTest();
 
@@ -51,6 +52,7 @@ TEST_CASE("#8 delegation: startTrainerSession() builds the trainer headlessly an
 
 TEST_CASE("#8 delegation: startTournamentSession() builds the tournament headlessly and routes", "[Game][SessionLifecycle]")
 {
+    test_support::IsolatedHome home("lifecycle");   // B17: hermetic HOME (see test_support.hpp)
     Game game(true);
     game.startTournamentSession(); // -> SessionLifecycle::startTournamentSession({}) default config
 
@@ -62,6 +64,7 @@ TEST_CASE("#8 delegation: startTournamentSession() builds the tournament headles
 
 TEST_CASE("#8 delegation: startStatsSession() seeds the dashboard headlessly and routes", "[Game][SessionLifecycle]")
 {
+    test_support::IsolatedHome home("lifecycle");   // B17: hermetic HOME (see test_support.hpp)
     Game game(true);
     // startStatsSession() reads players[0] (the human) for profile + career stats, so establish a real seat first — exactly
     // how the live flow reaches it after starting a new game. This mirrors test_game_mode_dispatch.cpp seeding before opening stats.
@@ -79,6 +82,7 @@ TEST_CASE(
     "#8 delegation: table settings persist via rememberTableSettings() and restore via applySavedTableSettings()",
     "[Game][SessionLifecycle]")
 {
+    test_support::IsolatedHome home("lifecycle");   // B17: rememberTableSettings() writes the profile; keep it off the real file
     Game game(true);
     game.startNewGame(); // creates the human seat + a default profile, so persistence has a target to write/restore
 
@@ -102,28 +106,15 @@ TEST_CASE(
 // clobbering the real user file; original HOME is restored afterward.
 TEST_CASE("B1: a tournament does not overwrite the saved career profile", "[Game][SessionLifecycle][Persistence]")
 {
-    const fs::path home = std::filesystem::temp_directory_path() / "bj_b1_test";
+    // B17: the shared RAII guard (tests/test_support.hpp) gives this run a PID-namespaced temp dir, so a
+    // concurrently-scheduled test cannot share it. It restores HOME and removes the tree on scope exit, which also
+    // covers a REQUIRE throwing (the reason the local HomeGuard below existed; it is now redundant).
+    test_support::IsolatedHome isolated("b1");
     std::error_code ec;
-    fs::remove_all(home, ec);
-    fs::create_directories(home);
-    const char* originalHome = std::getenv("HOME");
-    setenv("HOME", home.string().c_str(), 1);
-
-    // RAII: restore HOME + remove the temp dir even if a REQUIRE throws (REQUIRE raises on failure, which would otherwise skip the
-    // manual cleanup below and leak the redirected HOME into every ctest case that runs after this one in the same process).
-    struct HomeGuard {
-        fs::path home; bool hadHome; const char* original; std::error_code ec;
-        ~HomeGuard()
-        {
-            if (hadHome) setenv("HOME", original, 1); else unsetenv("HOME");
-            fs::remove_all(home, ec);
-        }
-    };
-    HomeGuard guard{home, originalHome != nullptr, originalHome};
 
     // 1. Build a career profile with a distinctive bankroll + one hand of history + one round of history, and write it to disk: the state
     // a normal session would have accumulated before clicking Tournament (none of these values arise from any default).
-    const fs::path saved = home / ".local" / "share" / "blackjack" / "saves" / "player_profile.json";
+    const fs::path saved = isolated.profilePath();
     {
         PlayerProfile career("William");
         career.setBankroll(98765);                        // distinctive; the default bankroll is 1000

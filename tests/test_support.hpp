@@ -3,6 +3,8 @@
 #include <vector>
 #include <string>
 #include <filesystem>
+#include <cstdlib>            // getenv/setenv/unsetenv for IsolatedHome
+#include <unistd.h>           // getpid (POSIX; the suite is Linux-only, as is Player::getSavePath's $HOME)
 #include "Card.hpp"
 #include "Deck.hpp"
 #include "Game.hpp"
@@ -76,5 +78,69 @@ namespace test_support {
     {
         return std::filesystem::temp_directory_path() / ("bj_" + tag + "_test_" + name + ".json");
     }
+
+    // ---------------------------------------------------------------------
+    // B17 — hermetic HOME for the tests that touch the real profile path.
+    //
+    // Player::getSavePath() (src/Player.cpp:14) resolves
+    //   $HOME/.local/share/blackjack/saves/player_profile.json
+    // from the environment on every call, so a test that drives a real Game/Player writes the DEVELOPER's career
+    // profile unless HOME is redirected. Five test files each rolled their own redirect, and every one of them used a
+    // FIXED directory name (/tmp/bj_b1_test, /tmp/bj_u8_test, /tmp/bj_b7_test, /tmp/bj_t1_autosave_home,
+    // /tmp/bj_name_entry_0). ctest + Catch2 run each TEST_CASE in its OWN PROCESS, so those directories are shared by
+    // every concurrently-scheduled test: one test's committed profile is loaded by another, and assertions about a
+    // "fresh" profile become a race. (test_name_entry.cpp's counter is `static int` -- per-process, so it is always 0
+    // and its "per-invocation unique" dir is in fact bj_name_entry_0 for every process.)
+    //
+    // This RAII guard fixes that in one place. The directory name embeds the PID (unique across the processes ctest
+    // spawns) and a per-process counter (unique across several guards inside one process), so no two live tests can
+    // collide. HOME is restored and the tree removed on destruction, including when a Catch2 REQUIRE throws.
+    // ---------------------------------------------------------------------
+    class IsolatedHome
+    {
+      public:
+        explicit IsolatedHome(const std::string& tag = "home")
+            : hadHome_(std::getenv("HOME") != nullptr)
+        {
+            if (hadHome_)
+                original_ = std::getenv("HOME");
+
+            static int counter = 0;   // per-process; disambiguates several guards inside one TEST_CASE
+            dir = std::filesystem::temp_directory_path() /
+                  ("bj_" + tag + "_home_" + std::to_string(static_cast<long>(::getpid())) + "_" +
+                   std::to_string(counter++));
+            std::error_code ec;
+            std::filesystem::remove_all(dir, ec);       // never inherit a previous run's profile
+            std::filesystem::create_directories(dir, ec);
+            ::setenv("HOME", dir.string().c_str(), 1);
+        }
+
+        ~IsolatedHome()
+        {
+            if (hadHome_)
+                ::setenv("HOME", original_.c_str(), 1);
+            else
+                ::unsetenv("HOME");
+            std::error_code ec;
+            std::filesystem::remove_all(dir, ec);
+        }
+
+        IsolatedHome(const IsolatedHome&) = delete;
+        IsolatedHome& operator=(const IsolatedHome&) = delete;
+
+        // The temp dir HOME currently points at.
+        const std::filesystem::path& path() const { return dir; }
+
+        // Where Player::getSavePath() will resolve while this guard is alive.
+        std::filesystem::path profilePath() const
+        {
+            return dir / ".local" / "share" / "blackjack" / "saves" / "player_profile.json";
+        }
+
+      private:
+        std::filesystem::path dir;
+        bool hadHome_;
+        std::string original_;
+    };
 
 } // namespace test_support

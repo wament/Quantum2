@@ -3,6 +3,7 @@
 #include <Constants.hpp>
 #include <Hand.hpp>
 #include <BasicStrategy.hpp>
+#include "test_support.hpp"   // test_support::IsolatedHome (B17: hermetic, per-process-unique HOME)
 
 #include <filesystem>   // U8 test: hermetic HOME redirect so load() returns a fresh profile
 #include <cstdlib>      // setenv/unsetenv/getenv for the HOME redirect
@@ -238,24 +239,13 @@ TEST_CASE("determineRoundBet sizes progressive strategies off internal state", "
 // redirected to an isolated temp dir so load() returns a fresh profile, exactly like the B7 test; original HOME is restored.
 TEST_CASE("U8: a brand-new human player starts at the same bankroll as an NPC seat", "[Player][Bankroll]")
 {
-    const std::filesystem::path home = std::filesystem::temp_directory_path() / "bj_u8_test";
-    std::error_code ec;
-    std::filesystem::remove_all(home, ec);
-    std::filesystem::create_directories(home);
+    // B17: the shared RAII guard replaces this test's hand-rolled redirect, its try/catch cleanup and its two
+    // duplicated restore blocks. The directory is PID-namespaced, so a concurrently-scheduled test cannot share it.
+    test_support::IsolatedHome home("u8");
 
-    const char* originalHome = std::getenv("HOME");
-    setenv("HOME", home.string().c_str(), 1);
-    try {
-        Player human("William");                              // fresh profile (empty name) -> seeded to STARTING_BANKROLL
-        Player npc("Alice", GameConfig::STARTING_BANKROLL);   // NPC seat at the standard stack
-        CHECK(human.getBankroll() == GameConfig::STARTING_BANKROLL);
-        CHECK(npc.getBankroll() == GameConfig::STARTING_BANKROLL);
-        CHECK(human.getBankroll() == npc.getBankroll());      // no more 10x human-vs-NPC gap
-    } catch (...) {
-        if (originalHome) setenv("HOME", originalHome, 1); else unsetenv("HOME");
-        std::filesystem::remove_all(home, ec);
-        throw;
-    }
-    if (originalHome) setenv("HOME", originalHome, 1); else unsetenv("HOME");
-    std::filesystem::remove_all(home, ec);
+    Player human("William");                              // fresh profile (empty name) -> seeded to STARTING_BANKROLL
+    Player npc("Alice", GameConfig::STARTING_BANKROLL);   // NPC seat at the standard stack
+    CHECK(human.getBankroll() == GameConfig::STARTING_BANKROLL);
+    CHECK(npc.getBankroll() == GameConfig::STARTING_BANKROLL);
+    CHECK(human.getBankroll() == npc.getBankroll());      // no more 10x human-vs-NPC gap
 }

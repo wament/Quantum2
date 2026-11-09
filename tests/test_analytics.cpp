@@ -470,6 +470,7 @@ TEST_CASE("StatsDashboard: best/worst single-hand net profit", "[Feature4][Stats
 
 TEST_CASE("StatsDashboard: aggregates across multiple shoes (history flattening)", "[Feature4][Stats]")
 {
+    test_support::IsolatedHome home("analytics");   // B17: hermetic HOME (see test_support.hpp)
     // Mirrors Game::startStatsSession(): flatten every ShoeRecord's rounds into one history list, then feed.
     PlayerStats career;
     std::vector<ShoeRecord> shoes;
@@ -573,6 +574,7 @@ namespace
 
 TEST_CASE("REPRO stats flow: play -> quit-to-menu -> open dashboard", "[StatsRepro][TEMP]")
 {
+    test_support::IsolatedHome home("analytics");   // B17: this drives a real round + dashboard, so keep writes off the real profile
     Game game(true); // headless
     std::vector<Card> shoe = {
         reproCard(2, Suit::Spades), reproCard(3, Suit::Hearts), reproCard(4, Suit::Diamonds), reproCard(5, Suit::Clubs),

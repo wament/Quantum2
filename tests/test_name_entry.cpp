@@ -2,6 +2,7 @@
 
 #include "Game.hpp"
 #include "Constants.hpp"
+#include "test_support.hpp"   // test_support::IsolatedHome (B17: hermetic, per-process-unique HOME)
 
 #include <cstdlib>
 #include <filesystem>
@@ -16,36 +17,11 @@ namespace fs = std::filesystem;
 // which writes seat 0's display + persisted profile.name and saves. Text-capture glue (sf::Event::TextInput) is visual and
 // lives in InputHandler; persistence/gating/edit semantics here are driven headlessly with an isolated HOME dir.
 
-namespace
-{
-    // Isolate the profile for one test invocation so gating + round-trip assertions are deterministic regardless of what
-    // sits in the real ~/.local/share/blackjack. A per-invocation unique dir avoids races under ctest -j8.
-    struct IsolatedHome
-    {
-        std::string home;          // temp dir we point HOME at while the test runs
-        bool hadHome{};            // whether HOME was set before this test ran
-        std::string original{};    // value to restore on teardown (or unset)
-        IsolatedHome() : hadHome(std::getenv("HOME") != nullptr)
-        {
-            if (hadHome)
-                original = std::getenv("HOME");
-            static int counter = 0;
-            const fs::path dir = fs::temp_directory_path() / ("bj_name_entry_" + std::to_string(counter++));
-            fs::create_directories(dir);
-            home = dir.string();
-            setenv("HOME", home.c_str(), 1);
-        }
-        ~IsolatedHome()
-        {
-            if (hadHome)
-                setenv("HOME", original.c_str(), 1);
-            else
-                unsetenv("HOME");
-            std::error_code ec;
-            fs::remove_all(home, ec);
-        }
-    };
-}
+// B17: the isolation guard used to live here as a local struct whose directory name came from a `static int counter`.
+// That counter is per-PROCESS, and ctest runs every TEST_CASE in its own process, so it was always 0 -- every test in
+// this file landed in /tmp/bj_name_entry_0. "commitPlayerName persists..." (#291) writes a profile named "Ada" there;
+// "needsNameEntry gates..." (#290) then loaded it, saw a non-empty name and failed its REQUIRE. Reproduced by running
+// the two side by side. The guard is now shared (test_support.hpp) and namespaced by PID.
 
 TEST_CASE("NameEntry editing buffer appends, backspaces and clamps to the max length", "[NameEntry]")
 {
@@ -73,7 +49,7 @@ TEST_CASE("NameEntry editing buffer appends, backspaces and clamps to the max le
 
 TEST_CASE("needsNameEntry gates on whether the profile has a persisted name", "[NameEntry]")
 {
-    IsolatedHome home;                     // empty fresh profile -> no name yet
+    test_support::IsolatedHome home("name_entry");   // empty fresh profile -> no name yet
     Game game(true);
     game.startNewGame();                   // load the real persistable human seat from isolated HOME
 
@@ -87,7 +63,7 @@ TEST_CASE("needsNameEntry gates on whether the profile has a persisted name", "[
 
 TEST_CASE("commitPlayerName persists the name through save/load", "[NameEntry][Persistence]")
 {
-    IsolatedHome home;                     // isolated so the round-trip is deterministic
+    test_support::IsolatedHome home("name_entry");   // isolated so the round-trip is deterministic
 
     Game game(true);                       // fresh profile, empty name
     game.startNewGame();                   // load the real persistable human seat from isolated HOME

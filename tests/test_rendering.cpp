@@ -63,6 +63,7 @@ TEST_CASE("Game::update routes Playing to RoundEngine and advances past PlayerTu
 // Sub-system modes self-build their state machine on entry, so build them first (like the real game's full constructor).
 TEST_CASE("Game::update routes every non-Playing mode without advancing the playing round", "[Game][UpdateDispatch]")
 {
+    test_support::IsolatedHome home("rendering");   // B17: routes through Tournament/Stats entry points, which touch the profile
     Game game(true);
     seedRound(game, {test_support::make_card(5, Suit::Hearts), test_support::make_card(6, Suit::Clubs)});  // one easy dealt round
 

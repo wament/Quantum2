@@ -3,6 +3,7 @@
 #include "Game.hpp"
 #include "InputHandler.hpp"
 #include "PlayerProfile.hpp"
+#include "test_support.hpp"   // test_support::IsolatedHome (B17: hermetic, per-process-unique HOME)
 #include <array>
 #include <functional>
 #include <filesystem>
@@ -28,6 +29,7 @@ namespace
 
 TEST_CASE("Escape returns every per-mode handler to the main menu", "[InputHandler][MainMenu]")
 {
+    test_support::IsolatedHome home("b7");   // B17: defensive hermeticity; the Rules handler stamps table settings on exit
     Game game(true); // headless
     InputHandler input(game);
 
@@ -62,13 +64,9 @@ TEST_CASE("Escape returns every per-mode handler to the main menu", "[InputHandl
 // there (it resolves $HOME/.local/share/blackjack/saves/player_profile.json); original HOME is restored afterward.
 TEST_CASE("B7: returning to the main menu via Escape persists the profile", "[InputHandler][Persistence]")
 {
-    const fs::path home = std::filesystem::temp_directory_path() / "bj_b7_test";
+    // B17: shared guard -> a PID-namespaced temp dir, so no concurrently-scheduled test can share it.
+    test_support::IsolatedHome home("b7");
     std::error_code ec;
-    fs::remove_all(home, ec);
-    fs::create_directories(home);
-
-    const char* originalHome = std::getenv("HOME");
-    setenv("HOME", home.string().c_str(), 1);
 
     Game game(true);                          // headless: no window / assets / replay / HUD
     InputHandler input(game);
@@ -82,14 +80,9 @@ TEST_CASE("B7: returning to the main menu via Escape persists the profile", "[In
     // safe with game.trainer == nullptr and appMode still Playing (startNewGame sets that).
     input.processTrainerEvents(escapeEvent());
 
-    const fs::path saved = home / ".local" / "share" / "blackjack" / "saves" / "player_profile.json";
+    const fs::path saved = home.profilePath();
     CHECK(fs::exists(saved.string(), ec));                       // before fix: nothing was written on this exit path
     const PlayerProfile loaded = PlayerProfile::load(saved.string());
     CHECK(loaded.getBankroll() == distinctiveBankroll);          // before fix: still the default 1000
-
-    if (originalHome)
-        setenv("HOME", originalHome, 1);
-    else
-        unsetenv("HOME");
-    fs::remove_all(home, ec);
+    // HOME restoration and temp-dir removal happen in ~IsolatedHome, so they run even if a CHECK/REQUIRE throws.
 }

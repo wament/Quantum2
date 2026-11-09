@@ -35,8 +35,8 @@ TEST_CASE("auto-save cadence fires every AUTO_SAVE_EVERY_HANDS human hands", "[T
 TEST_CASE("settling N rounds writes the profile far fewer times than there are hands", "[T1]")
 {
     // Hermetic: redirect the profile's save path into a temp dir so driving rounds writes nowhere that matters (save() mkdir -p's it).
-    const std::string originalHome = getenv("HOME") ? getenv("HOME") : "";
-    setenv("HOME", "/tmp/bj_t1_autosave_home", 1);
+    // B17: this used the fixed name /tmp/bj_t1_autosave_home, which every concurrently-scheduled ctest process shared.
+    test_support::IsolatedHome home("t1");
 
     constexpr int rounds = 12;           // > AUTO_SAVE_EVERY_HANDS, so the cadence fires at least twice
     Game game(true);
@@ -59,5 +59,5 @@ TEST_CASE("settling N rounds writes the profile far fewer times than there are h
     CHECK(writes < rounds);                   // RED pre-fix: one write per settled round (writes==rounds=12), NOT written each round
     CHECK(writes == rounds / Constants::AUTO_SAVE_EVERY_HANDS); // exact gating: floor(12/5) == 2 writes over 12 hands
 
-    if (!originalHome.empty()) setenv("HOME", originalHome.c_str(), 1); else unsetenv("HOME");
+    // HOME restoration and temp-dir removal happen in ~IsolatedHome, so they run even if a CHECK/REQUIRE throws.
 }
