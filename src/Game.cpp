@@ -206,7 +206,14 @@ std::string Game::bettingControlsHint() const
     // Betting-phase control hint, the single source of truth for the line drawn in the play band during PlaceBets. One
     // consistent "<key> <action>" format (no "Left: optimal" vagueness) so it can't drift against startupControlsBanner(); every
     // key is a real PlaceBets binding (InputHandler.cpp). Pure -- shared with headless tests, no SFML or mutable state.
-    return "↑ Increase Bet   ↓ Decrease Bet   ← Auto Kelly → Confirm";
+    // Betting-phase control hint, the single source of truth for the line drawn in the play band during PlaceBets. One
+    // consistent "<key> <action>" format (no "Left: optimal" vagueness) so it can't drift against startupControlsBanner(); every
+    // key is a real PlaceBets binding (InputHandler.cpp). Pure -- shared with headless tests, no SFML or mutable state.
+    // ASCII-only, deliberately: this string goes straight into sf::Text, and (a) sf::String decodes std::string as ANSI
+    // through std::locale, so a UTF-8 arrow decodes to three code points, and (b) the shipped UI font has no U+2191/U+2193
+    // glyph at all (verified with fontTools against assets/fonts/noto/NotoSans-Regular.ttf). The arrows this replaces
+    // rendered as tofu boxes on screen. Locked by the ASCII test in tests/test_presentation_layout.cpp.
+    return "Up Increase Bet   Down Decrease Bet   Left Auto Kelly   Right Confirm";
 }
 
 std::string Game::sideBetControlsHint() const

@@ -515,9 +515,14 @@ void InputHandler::processMenuEvents(const sf::Event& event)
         }
     }
 
-    // Hover selects the menu item under the cursor
-    if (auto moved = event.getIf<sf::Event::MouseMoved>())
-        applyMenuRowSelection(game.renderer.getHoveredMenuItemIndex(game), game.menuSelection);
+    // U1: hover is a VISUAL affordance only -- it must not move the keyboard selection. It used to, via
+    // applyMenuRowSelection() on every MouseMoved, which made "the row under the cursor" and "the row Enter
+    // will activate" the same variable. That is the real root cause of two rows looking selected at once: the
+    // renderer could not distinguish the two states because the game had only one. Gold now marks the keyboard
+    // selection (what Enter activates) and the hover pill + chevron mark what a click activates, so the player
+    // can see exactly what each input will do. No MouseMoved handler is needed at all: drawMainMenu() already
+    // asks the shared hit-test for the hovered row every frame, clicking activates the hovered row directly
+    // (above), and the wheel below keeps its own hover authority -- so no pointer path loses functionality.
 
     // Mouse wheel scrubs PlayerCount / GameSpeed rows via hover authority (hovered row if under the
     // cursor, else game.menuSelection): same row-selection rule as click in activateMainMenuOption().

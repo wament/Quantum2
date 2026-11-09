@@ -13,6 +13,7 @@
 // header needs the enum even though it only forward-declares Game for its draw(Game&) methods. Game.hpp defines AppMode
 // before including this header, so this self-reference resolves without a circular-include cycle.
 #include "Game.hpp"
+#include "PresentationLayout.hpp"
 
 // One source of truth for menu contents and row positions, shared by the renderer (drawing + hover)
 // and InputHandler (click selection)
@@ -34,6 +35,24 @@ inline const std::vector<MainMenuItem> &mainMenuItems()
     return items;
 }
 
+// Vertical centre of main-menu row `index` at a given WORLD height. The table above stores the design-height (900)
+// positions; scaling by worldH/900 keeps them pixel-identical at the default window and reflows the whole menu
+// proportionally at any other, so the drawn row and its hover band can never separate (U11) and the last row
+// always clears the hint line below it (U3). Both drawing and hit-testing call this -- one source of truth.
+inline float mainMenuRowYAt(int index, float worldH)
+{
+    const auto &items = mainMenuItems();
+    if (index < 0 || index >= static_cast<int>(items.size()))
+        return -1.f;
+    return items[static_cast<std::size_t>(index)].y * (worldH / PresentationLayout::kDesignWorldHeight);
+}
+
+// y of the "Up/Down: navigate ..." hint line that sits below the last menu row, so it can never land on a row.
+inline float mainMenuHintYAt(float worldH)
+{
+    const int last = static_cast<int>(mainMenuItems().size()) - 1;
+    return mainMenuRowYAt(last, worldH) + 45.f * (worldH / PresentationLayout::kDesignWorldHeight);
+}
 // Same shared table pattern as mainMenuItems(): one table drives both drawing/hover (renderer) and
 // click selection (input). Fractional Y keeps each row's centre stable regardless of window height.
 struct PauseMenuItem { PauseOption option; const char *label; float yFrac; };
@@ -105,6 +124,28 @@ public:
     // pointing at a rule selects it, exactly like getHoveredMenuItemIndex() does for the main menu.
     int getHoveredGameRulesRowIndex(Game &game) const;
 
+    // ---- Presentation seam: pure layout + hit-testing (U1, U2, U3, U6, U11) ----
+    // Every one of these takes the WORLD rect (Game::gameView size) and a WORLD-space cursor, never a window,
+    // so they run headless. The getHovered*Index(Game&) entry points above are thin wrappers that read the world
+    // from game.gameView and convert the cursor with mapPixelToCoords, then delegate here -- which is what makes
+    // the drawn row and the hover target share one basis at every window size.
+    int hoveredMainRowAt(const sf::Vector2f &worldCursor, const sf::Vector2f &worldSize) const;
+    int hoveredPauseRowAt(const sf::Vector2f &worldCursor, const sf::Vector2f &worldSize) const;
+    int hoveredRulesRowAt(const sf::Vector2f &worldCursor, const sf::Vector2f &worldSize) const;
+
+    // Row centres the renderer draws at, for the given world size. Drawing and hit-testing both go through these.
+    float mainMenuRowYForTest(int index, const sf::Vector2f &worldSize) const;
+    float pauseMenuRowYForTest(int index, const sf::Vector2f &worldSize) const;
+    float gameRulesRowYForTest(int index, const sf::Vector2f &worldSize) const;
+
+    // Layout the draw code consumes, exposed so a test can assert the no-overlap invariant on the real values.
+    static PresentationLayout::ListLayout achievementListLayoutForTest(int rowCount, const sf::Vector2f &worldSize);
+    static PresentationLayout::ListLayout gameRulesLayoutForTest(int rowCount, const sf::Vector2f &worldSize);
+    static PresentationLayout::PausePanelLayout pausePanelLayoutForTest(const sf::Vector2f &worldSize);
+    static PresentationLayout::MenuRowVisual menuRowVisualForTest(bool hovered, bool selected);
+    static float cardFanStepForTest();
+    static float cardFanWidthForTest(int cardCount);
+
     // expose the presentation-only reveal-clock internals so headless tests can drive the deal
     // animation timeline deterministically without a window, mirroring Game's *ForTest() accessors. Pure logic only --
     // no window/audio/network -- so they run over the Graphics-only Blackjack2Tests binary like every other logic test.
@@ -116,6 +157,12 @@ public:
     float dealClockForTest() const { return dealClock_; }
 
 private:
+    // The WORLD rect this renderer draws into (Game::gameView, a fixed 1600x900 letterboxed into the window by
+    // resizeView()). Every layout call site must use this instead of window.getSize(): window pixels and world
+    // units coincide only at exactly 1600x900, and mixing them is what made rows drift from their hover targets
+    // and lists collide with their footers after a resize (U3/U11).
+    static sf::Vector2f worldSizeOf(const Game &game);
+
     // Single source of truth for draw()'s AppMode->{backdrop, render} dispatch: one table replaces the old
     // backdrop if/else-if chain + separate dispatch switch
     // once on first use; consumed by draw() and exposed via modeEntryForTest(). Render lambdas call non-const draw* methods

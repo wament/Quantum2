@@ -18,6 +18,29 @@
 #include <string>
 #include "SideBet.hpp"
 
+// The pure presentation geometry (U1/U2/U3/U6/U11) is used unqualified throughout this file.
+using namespace PresentationLayout;
+
+// ---- U11: the renderer's single coordinate basis ------------------------------
+// Game::gameView is a FIXED world rect (1600x900, Game.cpp:100-111) whose viewport is letterboxed into the OS
+// window by resizeView(). Window pixels and world units therefore coincide only at exactly 1600x900: every site
+// that read window.getSize() while drawing into that view drew at the wrong place after a resize, and every
+// hit-test that used raw sf::Mouse::getPosition (window pixels) against a world-space row pointed at a row that
+// was not there.
+//
+// The rule for this file: draw in WORLD units (this function) and convert the cursor with
+// window.mapPixelToCoords(...) before comparing it. Never mix the two.
+// The world rect the renderer draws into. A static member because Game::gameView is private and GameRenderer is
+// its friend; every layout call site in this file must use this, never window.getSize().
+sf::Vector2f GameRenderer::worldSizeOf(const Game& game)
+{
+    const sf::Vector2f size = game.gameView.getSize();
+    return (size.x > 0.f && size.y > 0.f)
+               ? size
+               : sf::Vector2f(static_cast<float>(Constants::WINDOW_WIDTH),
+                              static_cast<float>(Constants::WINDOW_HEIGHT));
+}
+
 // Single source of truth for draw()'s AppMode->{backdrop, render} dispatch: one table replaces the old backdrop
 // if/else-if chain + separate dispatch switch
 // Per-mode modules still call their own ->draw(window); this only routes to them after clearing. Render lambdas use the
@@ -114,44 +137,62 @@ ModeEntry GameRenderer::modeEntryForTest(AppMode appMode)
 void GameRenderer::drawAchievementList(Game& game)
 {
     const auto& defs = game.achievementManager_.all();
-    const float w = static_cast<float>(game.window.getSize().x);
-    const float h = static_cast<float>(game.window.getSize().y);
-    const float cx = w / 2.0f;
+    const sf::Vector2f world = worldSizeOf(game);
+    const float cx = world.x / 2.0f;
+
+    // U3: this screen used to read two coordinate spaces at once -- rows at absolute y=96 with a fixed 60px
+    // pitch, and the footer at window-pixel h-28. Twelve rows of 60 from 96 run to 816, so at a squashed world
+    // the footer (532) landed in the middle of the list and rows ran off the bottom. Row pitch is now derived
+    // from the space between header and footer, and the list is clipped to the rows that actually fit, so
+    // overlap is impossible by construction at any window size.
+    const int rowCount = static_cast<int>(defs.size());
+    const ListLayout L = achievementListLayout(world.x, world.y, rowCount);
 
     sf::Text title(FontManager::get(), "ACHIEVEMENTS", 34);
     title.setFillColor(sf::Color(255, 215, 0));
     const auto tb = title.getLocalBounds();
     title.setOrigin(sf::Vector2f(tb.size.x / 2.0f, 0));
-    title.setPosition(sf::Vector2f(cx, 40.f));
+    title.setPosition(sf::Vector2f(cx, L.titleY));
     game.window.draw(title);
 
-    float y = 96.f;
-    const float rowH = 60.f; // state + name line and a description line per achievement
+    // Type scales with the row pitch so a compressed list stays readable rather than colliding.
+    const float rowH = L.rowHeight;
+    const int stateFont = std::max(12, static_cast<int>(rowH * 0.36f));
+    const int nameFont  = std::max(12, static_cast<int>(rowH * 0.33f));
+    const int descFont  = std::max(10, static_cast<int>(rowH * 0.23f));
+
+    float y = L.startRowY;
+    int drawn = 0;
     for (const auto& def : defs)
     {
-        sf::Text state(FontManager::get(), def.unlocked ? "[X]" : "[ ]", 22);
+        if (drawn >= L.visibleRows)
+            break;  // the rest would collide with the footer
+
+        sf::Text state(FontManager::get(), def.unlocked ? "[X]" : "[ ]", stateFont);
         state.setFillColor(def.unlocked ? sf::Color(103, 255, 103) : sf::Color(160, 160, 160));
         state.setPosition(sf::Vector2f(cx - 224.f, y));
         game.window.draw(state);
 
-        sf::Text name(FontManager::get(), def.name, 20);
+        sf::Text name(FontManager::get(), def.name, nameFont);
         name.setFillColor(def.unlocked ? sf::Color::White : sf::Color(190, 190, 190));
         name.setPosition(sf::Vector2f(cx - 184.f, y));
         game.window.draw(name);
 
-        sf::Text desc(FontManager::get(), def.description, 14);
+        sf::Text desc(FontManager::get(), def.description, descFont);
         desc.setFillColor(sf::Color(160, 160, 160));
-        desc.setPosition(sf::Vector2f(cx - 184.f, y + 26.f));
+        desc.setPosition(sf::Vector2f(cx - 184.f, y + rowH * 0.43f));
         game.window.draw(desc);
 
         y += rowH;
+        ++drawn;
     }
 
     sf::Text hint(FontManager::get(), "Esc: back", 14);
     hint.setFillColor(sf::Color(140, 140, 140));
-    hint.setPosition(sf::Vector2f(cx, h - 28.f));
+    hint.setPosition(sf::Vector2f(cx, L.footerY));
     game.window.draw(hint);
 }
+
 
 // brief popup for the most recently unlocked achievement during play. Shown only while HUDState has a name set;
 // Game arms its lifetime on unlock and RoundEngine::tick clears the name once that lifetime elapses, so it never
@@ -469,14 +510,24 @@ sf::Vector2f GameRenderer::getPlayerPosition(Game& game, size_t playerIndex, siz
     return {x - Constants::PLAYER_X + offset.x, y - Constants::PLAYER_Y + offset.y};
 }
 
-// Draws a numeric hand total in white (16pt). With rightAlign the number's right edge sits at x
-// (used for the dealer, flush left of its cards); otherwise it is centered on the anchor (player
-// hands above each card fan).
+// Draws a numeric hand total (16pt) on a small dark pill. With rightAlign the number's right edge sits at x
+// (used for the dealer, flush left of its cards); otherwise it is centered on the anchor (player hands above
+// each card fan). U6: the number used to be bare white text straight on the green felt arc, the lowest-contrast
+// placement in the game; the dark backing makes it readable over any card that reaches up behind it.
 void GameRenderer::drawTotal(Game& game, int value, float x, float y, bool rightAlign) const
 {
     sf::Text text(FontManager::get(), std::to_string(value), 16.f);
     text.setFillColor(sf::Color::White);
     sf::FloatRect bounds = text.getLocalBounds();
+
+    // The pill is centred on the anchor; the text is placed to match its own origin convention.
+    const float textCx = rightAlign ? x - bounds.size.x / 2.f : x;
+    const sf::Rect<float> pill = totalPillRect(textCx, y, bounds.size.x, bounds.size.y);
+    sf::RectangleShape backing(sf::Vector2f(pill.size.x, pill.size.y));
+    backing.setPosition(sf::Vector2f(pill.position.x, pill.position.y));
+    backing.setFillColor(sf::Color(0, 0, 0, 165));
+    game.window.draw(backing);
+
     if (rightAlign)
         text.setOrigin(sf::Vector2f(bounds.size.x, bounds.size.y / 2.f));
     else
@@ -484,6 +535,7 @@ void GameRenderer::drawTotal(Game& game, int value, float x, float y, bool right
     text.setPosition(sf::Vector2f(x, y));
     game.window.draw(text);
 }
+
 
 // Draw a status label ("BUSTED"/"BLACKJACK!") centered horizontally and vertically over a hand's anchor
 // point so it sits squarely on the cards instead of flush to one corner. 18pt bold text; color is chosen
@@ -545,13 +597,13 @@ void GameRenderer::drawPlayers(Game& game, const std::vector<PlayerHandLayout>& 
             const int nCards = static_cast<int>(hand.size());
             float cardShift = 0.f;
             if (nCards > 2 && (nCards >= 4 || hand.isDoubledDown()))
-                cardShift = -8.f * static_cast<float>(nCards);
+                cardShift = cardFanCenterShift(nCards);   // exactly -(n-1)*step/2, so the fan centres on the anchor
             float fanLeftX = handX + cardShift; // where card 0 actually sits after rebalancing
 
             // Safety clamp: keep the whole row inside the side-panel band
             // long rebalanced / doubled-down fan. Normal single and double hands sit well within the band and are left
             // exactly put; only an overflowing fan is nudged back in-bounds (preserving its anchored seat).
-            const float fanWidth = static_cast<float>(nCards - 1) * 16.f + Constants::CARD_WIDTH;
+            const float fanWidth = cardFanWidth(nCards);
             if (fanLeftX < Constants::HANDS_LEFT_MARGIN)
                 fanLeftX = Constants::HANDS_LEFT_MARGIN;
             else
@@ -564,8 +616,8 @@ void GameRenderer::drawPlayers(Game& game, const std::vector<PlayerHandLayout>& 
             // Draw cards for this hand
             for (std::size_t i = 0; i < hand.size(); i++)
             {
-                float cardX = fanLeftX + i * 16;
-                float cardY = handY - i * 16;
+                float cardX = fanLeftX + i * kCardFanStep;
+                float cardY = handY - i * kCardFanStep;
 
                 // ease this card in from the shoe over its staggered reveal window. A fully-arrived card sits
                 // exactly on (cardX, cardY), so settled frames are pixel-for-pixel identical to the pre-animation layout.
@@ -599,9 +651,9 @@ void GameRenderer::drawPlayers(Game& game, const std::vector<PlayerHandLayout>& 
                 hand.size() > 0)
             {
                 const std::size_t n = hand.size();
-                float fanRight = static_cast<float>(n - 1) * 16.f + Constants::CARD_WIDTH;                // right edge of the card row
+                float fanRight = cardFanWidth(static_cast<int>(n));                                     // right edge of the card row
                 float cx = fanLeftX + fanRight / 2.f;                                                     // center horizontally over this hand's rebalanced cards
-                float cy = handY - Constants::CARD_HEIGHT / 2.f - 16.f - static_cast<float>(n - 1) * 8.f; // sit above the rising cards
+                float cy = handY - static_cast<float>(n - 1) * kCardFanStep - 16.f;                       // sit above the topmost rising card
                 drawTotal(game, hand.getValue(), cx, cy, false);
             }
 
@@ -619,9 +671,9 @@ void GameRenderer::drawPlayers(Game& game, const std::vector<PlayerHandLayout>& 
             if (hand.isBlackjack() && hand.size() > 0)
             {
                 int pn = static_cast<int>(hand.size());
-                float fanRight = static_cast<float>(pn - 1) * 16.f + Constants::CARD_WIDTH;
+                float fanRight = cardFanWidth(pn);                                                        // right edge of the rebalanced card row
                 float pcx = fanLeftX + fanRight / 2.f;                                               // center horizontally over the rebalanced card row
-                float pcy = handY - static_cast<float>(pn - 1) * 8.f + Constants::CARD_HEIGHT / 2.f; // vertical center of the rising cards
+                float pcy = handY - static_cast<float>(pn - 1) * (kCardFanStep / 2.f) + Constants::CARD_HEIGHT / 2.f; // vertical center of the rising cards
                 drawStatusLabel(game, "BLACKJACK!", pcx, pcy, sf::Color(0, 180, 0));
             }
 
@@ -1054,116 +1106,186 @@ void GameRenderer::drawSummaryOverlay(Game& game)
 
 void GameRenderer::drawMenuItem(Game& game, const std::string& label, bool selected, float y, bool hovered)
 {
+    // U1: hover and keyboard selection used to render identically (`if (hovered || selected)` -> both gold,
+    // hover only added Bold), so two rows looked selected at once and it was genuinely ambiguous what a click
+    // would do. Gold is now RESERVED for the keyboard-selected row; a merely-hovered row gets a background pill
+    // plus a leading ">" marker in its own colour, so the row under the cursor and the row Enter will activate
+    // are always visually distinct.
+    const MenuRowVisual visual = menuRowVisualFor(hovered, selected);
+
     sf::Text text(FontManager::get(), label, 24);
+    sf::FloatRect bounds = text.getLocalBounds();
 
-    // Hovered and keyboard-selected options are both drawn in gold; hovering is
-    // additionally bolded so the option under the cursor stands out clearly.
-    if (hovered || selected)
-        text.setFillColor(sf::Color(255, 215, 0));
-    else
-        text.setFillColor(sf::Color(200, 200, 200));
+    const float worldCx = worldSizeOf(game).x / 2.0f;
 
-    if (hovered)
+    if (visual == MenuRowVisual::Hovered)
+    {
+        // Pill sized from the label's own bounds so it hugs any string length.
+        const sf::Rect<float> pill = menuRowPill(worldCx, y, bounds.size.x, bounds.size.y);
+        sf::RectangleShape backing(sf::Vector2f(pill.size.x, pill.size.y));
+        backing.setPosition(sf::Vector2f(pill.position.x, pill.position.y));
+        backing.setFillColor(sf::Color(255, 255, 255, 26));
+        backing.setOutlineColor(sf::Color(255, 255, 255, 90));
+        backing.setOutlineThickness(1.f);
+        game.window.draw(backing);
+
+        // Chevron just left of the label.
+        sf::Text marker(FontManager::get(), menuHoverMarker(), 24);
+        marker.setFillColor(sf::Color(255, 255, 255, 200));
+        sf::FloatRect mb = marker.getLocalBounds();
+        marker.setOrigin(sf::Vector2f(mb.size.x, mb.size.y / 2.0f));
+        marker.setPosition(sf::Vector2f(worldCx - bounds.size.x / 2.0f - 10.f, y));
+        game.window.draw(marker);
+    }
+
+    // Gold = selected. A hovered row stays near-white (bold, so it still reads as "under the cursor"), which is
+    // what makes the two states distinguishable at a glance.
+    text.setFillColor(visual == MenuRowVisual::Selected ? sf::Color(255, 215, 0) : sf::Color(200, 200, 200));
+    if (visual == MenuRowVisual::Hovered)
         text.setStyle(sf::Text::Bold);
 
-    sf::FloatRect bounds = text.getLocalBounds();
     text.setOrigin(sf::Vector2f(bounds.size.x / 2.0f, bounds.size.y / 2.0f));
-    text.setPosition(sf::Vector2f(static_cast<float>(game.window.getSize().x) / 2.0f, y));
+    text.setPosition(sf::Vector2f(worldCx, y));
     game.window.draw(text);
 }
 
-int GameRenderer::getHoveredMenuItemIndex(Game& game) const
-{
-    float cx = static_cast<float>(game.window.getSize().x) / 2.0f;
-    sf::Vector2f mousePos = game.window.mapPixelToCoords(sf::Mouse::getPosition(game.window));
 
-    int hoveredIndex = -1;
-    const float rowHalfHeight = 30.f; // comfortably covers a size-24 menu line
-    float bestDistance = rowHalfHeight;
-    for (int i = 0; i < static_cast<int>(mainMenuItems().size()); ++i)
-    {
-        const MainMenuItem& item = mainMenuItems()[i];
-        float distance = std::abs(mousePos.y - item.y);
-        if (distance < bestDistance && std::abs(mousePos.x - cx) < 250.f)
-        {
-            // Keep the option whose centre is closest to the cursor so that a
-            // point between two rows resolves unambiguously to the nearer one.
-            bestDistance = distance;
-            hoveredIndex = i;
-        }
-    }
-    return hoveredIndex;
+// ---- U11: one coordinate basis -------------------------------------------------
+// Game::gameView is a FIXED world rect (1600x900) whose viewport is letterboxed into the OS window by
+// resizeView(). Window pixels and world units therefore coincide only at exactly 1600x900. The three hit-tests
+// used to disagree about which one they were reading -- getHoveredMenuItemIndex compared mapPixelToCoords output
+// against absolute-pixel item.y, getHoveredGameRulesRowIndex compared mapPixelToCoords against h*0.30, and
+// getHoveredPauseMenuItemIndex used RAW sf::Mouse::getPosition (window pixels) against a world-space pauseRowY.
+// All three now convert the cursor to world units once (see worldSizeOf, top of file) and delegate to a *RowAt()
+// helper that computes the row centres with exactly the same function the draw code uses.
+
+float GameRenderer::mainMenuRowYForTest(int index, const sf::Vector2f& worldSize) const
+{
+    return mainMenuRowYAt(index, worldSize.y);
 }
 
-// rows sit at startY = h*0.30 + i*spacing (see drawGameRules), so this hit-test matches the
-// drawn rows exactly -- one source of truth for hover->selection that processMenuEvents()/processRulesEvents() both consume,
-// keeping pointing-at-a-row consistent across menus. Same pattern as getHoveredMenuItemIndex().
-int GameRenderer::getHoveredGameRulesRowIndex(Game& game) const
-{
-    float cx = static_cast<float>(game.window.getSize().x) / 2.0f;
-    sf::Vector2f mousePos = game.window.mapPixelToCoords(sf::Mouse::getPosition(game.window));
-
-    int hoveredIndex = -1;
-    const float rulesRowHalfHeight = 21.f; // under half the 46px row spacing, so adjacent rows stay unambiguous
-    const float startY = static_cast<float>(game.window.getSize().y) * 0.30f;
-    const float spacing = 46.f;
-    const auto& rows = gameRuleRows();
-    for (int i = 0; i < static_cast<int>(rows.size()); ++i)
-    {
-        // Rows are uniformly spaced, so the first row whose centre is close enough to the cursor wins. The horizontal band
-        // is wider than getHoveredMenuItemIndex()'s because rules rows also carry a longer description column.
-        float distance = std::abs(mousePos.y - (startY + i * spacing));
-        if (distance < rulesRowHalfHeight && std::abs(mousePos.x - cx) < 420.f)
-        {
-            hoveredIndex = i;
-            break;
-        }
-    }
-    return hoveredIndex;
-}
-
-// Vertical pixel-centre of pause-menu row `index` at the current window height. Uses the
-// fractional positions from pauseMenuItems() so it matches drawPauseMenu and the click/hover
-// hit-testing exactly -- one source of truth for where those rows sit.
-float GameRenderer::pauseRowY(Game& game, int index) const
+float GameRenderer::pauseMenuRowYForTest(int index, const sf::Vector2f& worldSize) const
 {
     if (index < 0 || index >= static_cast<int>(pauseMenuItems().size()))
         return -1.f;
-
-    float height = game.window.getSize().y;
-    return height * pauseMenuItems()[index].yFrac;
+    // The yFrac table is the authored source of the row positions; the panel rect is derived from the same
+    // fractions (pausePanelLayout), so drawing, hit-testing and the panel cannot disagree.
+    return worldSize.y * pauseMenuItems()[static_cast<std::size_t>(index)].yFrac;
 }
 
-// Index of the pause-menu row currently under the mouse cursor, or -1 if none. Nearest-centre
-// within each row's half-height and centred horizontally around the screen centre
-// hover highlighting (drawPauseMenu) and click selection (processPauseEvents) so they agree.
+float GameRenderer::gameRulesRowYForTest(int index, const sf::Vector2f& worldSize) const
+{
+    const int n = static_cast<int>(gameRuleRows().size());
+    if (index < 0 || index >= n)
+        return -1.f;
+    const ListLayout L = gameRulesLayout(worldSize.x, worldSize.y, n);
+    return L.startRowY + static_cast<float>(index) * L.rowHeight;
+}
+
+int GameRenderer::hoveredMainRowAt(const sf::Vector2f& worldCursor, const sf::Vector2f& worldSize) const
+{
+    const int n = static_cast<int>(mainMenuItems().size());
+    std::vector<RowBand> bands;
+    bands.reserve(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i)
+        bands.push_back(RowBand{mainMenuRowYAt(i, worldSize.y), 30.f, 250.f});
+
+    return hitTestRowBand(worldCursor, worldSize.x / 2.f, bands);
+}
+
+int GameRenderer::hoveredPauseRowAt(const sf::Vector2f& worldCursor, const sf::Vector2f& worldSize) const
+{
+    const int n = static_cast<int>(pauseMenuItems().size());
+    const PausePanelLayout L = pausePanelLayout(worldSize.x, worldSize.y, n);
+    std::vector<RowBand> bands;
+    bands.reserve(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i)
+        bands.push_back(RowBand{pauseMenuRowYForTest(i, worldSize), L.rowHalfHeight, 190.f});
+
+    return hitTestRowBand(worldCursor, worldSize.x / 2.f, bands);
+}
+
+int GameRenderer::hoveredRulesRowAt(const sf::Vector2f& worldCursor, const sf::Vector2f& worldSize) const
+{
+    const int n = static_cast<int>(gameRuleRows().size());
+    const ListLayout L = gameRulesLayout(worldSize.x, worldSize.y, n);
+    std::vector<RowBand> bands;
+    bands.reserve(static_cast<std::size_t>(n));
+    for (int i = 0; i < n; ++i)
+        // Half the row spacing keeps adjacent rows unambiguous. The band is wider than the main menu's because
+        // rules rows also carry a longer description column.
+        bands.push_back(RowBand{L.startRowY + static_cast<float>(i) * L.rowHeight, L.rowHeight / 2.f, 420.f});
+
+    return hitTestRowBand(worldCursor, worldSize.x / 2.f, bands);
+}
+
+
+PresentationLayout::ListLayout GameRenderer::achievementListLayoutForTest(int rowCount, const sf::Vector2f& worldSize)
+{
+    return achievementListLayout(worldSize.x, worldSize.y, rowCount);
+}
+
+PresentationLayout::ListLayout GameRenderer::gameRulesLayoutForTest(int rowCount, const sf::Vector2f& worldSize)
+{
+    return gameRulesLayout(worldSize.x, worldSize.y, rowCount);
+}
+
+PresentationLayout::PausePanelLayout GameRenderer::pausePanelLayoutForTest(const sf::Vector2f& worldSize)
+{
+    return pausePanelLayout(worldSize.x, worldSize.y, static_cast<int>(pauseMenuItems().size()));
+}
+
+PresentationLayout::MenuRowVisual GameRenderer::menuRowVisualForTest(bool hovered, bool selected)
+{
+    return menuRowVisualFor(hovered, selected);
+}
+
+float GameRenderer::cardFanStepForTest()
+{
+    return kCardFanStep;
+}
+
+float GameRenderer::cardFanWidthForTest(int cardCount)
+{
+    return cardFanWidth(cardCount);
+}
+
+// Menu-item index under the cursor, or -1. The cursor is converted to WORLD units here -- the single place the
+// window->world conversion happens for menu hover -- so the drawn row and its hover target can never separate.
+int GameRenderer::getHoveredMenuItemIndex(Game& game) const
+{
+    const sf::Vector2f world = worldSizeOf(game);
+    const sf::Vector2f cursor = game.window.mapPixelToCoords(sf::Mouse::getPosition(game.window));
+    return hoveredMainRowAt(cursor, world);
+}
+
+// Rules-row index under the cursor, or -1. Rows sit at gameRulesLayout()'s startRowY + i*rowHeight (see
+// drawGameRules), so this matches the drawn rows exactly -- one source of truth for hover->selection that
+// processMenuEvents()/processRulesEvents() both consume, keeping pointing-at-a-rule consistent across menus.
+int GameRenderer::getHoveredGameRulesRowIndex(Game& game) const
+{
+    const sf::Vector2f world = worldSizeOf(game);
+    const sf::Vector2f cursor = game.window.mapPixelToCoords(sf::Mouse::getPosition(game.window));
+    return hoveredRulesRowAt(cursor, world);
+}
+
+// Vertical centre of pause-menu row `index` at the current WORLD height. Uses the same formula as drawPauseMenu,
+// the panel rect and the hit-test -- one source of truth for where those rows sit.
+float GameRenderer::pauseRowY(Game& game, int index) const
+{
+    return pauseMenuRowYForTest(index, worldSizeOf(game));
+}
+
+// Index of the pause-menu row currently under the mouse cursor, or -1 if none. Nearest-centre within each row's
+// half-height, horizontally centred on the world centre, so hover highlighting (drawPauseMenu) and click
+// selection (processPauseEvents) agree at every window size.
 int GameRenderer::getHoveredPauseMenuItemIndex(Game& game) const
 {
-    constexpr float rowHalfHeight = 20.f;
-
-    sf::Vector2i mousePos = sf::Mouse::getPosition(game.window);
-    int hoveredIndex = -1;
-    double bestDistance = 1e9;
-    for (int i = 0; i < static_cast<int>(pauseMenuItems().size()); ++i)
-    {
-        float y = pauseRowY(game, i);
-        if (y <= 0.f)
-            continue;
-
-        // Rows are horizontally centred around the screen's horizontal centre.
-        float cx = game.window.getSize().x / 2.0f;
-        if (std::abs(static_cast<float>(mousePos.x) - cx) > 150.f)
-            continue;
-
-        double distance = std::abs(static_cast<double>(static_cast<float>(mousePos.y) - y));
-        if (distance <= static_cast<double>(rowHalfHeight) && distance < bestDistance)
-        {
-            bestDistance = distance;
-            hoveredIndex = i;
-        }
-    }
-    return hoveredIndex;
+    const sf::Vector2f world = worldSizeOf(game);
+    const sf::Vector2f cursor = game.window.mapPixelToCoords(sf::Mouse::getPosition(game.window));
+    return hoveredPauseRowAt(cursor, world);
 }
+
 
 void GameRenderer::drawNameEntry(Game& game)
 {
@@ -1187,7 +1309,8 @@ void GameRenderer::drawNameEntry(Game& game)
     game.window.draw(nameFont);
 
     const unsigned remaining = Constants::MAX_PLAYER_NAME_LENGTH - static_cast<unsigned>(current.size());
-    sf::Text hint(FontManager::get(), "Enter = confirm   •   Esc = skip   •   " + std::to_string(remaining) + " left", 20);
+    // ASCII-only: sf::String decodes std::string as ANSI, so the previous U+2022 bullets arrived as mojibake.
+    sf::Text hint(FontManager::get(), nameEntryHintText(remaining), 20);
     hint.setFillColor(sf::Color(180, 180, 180));
     sf::FloatRect hb = hint.getLocalBounds();
     hint.setOrigin(sf::Vector2f(hb.size.x / 2.0f, 0));
@@ -1198,7 +1321,9 @@ void GameRenderer::drawNameEntry(Game& game)
 void GameRenderer::drawMainMenu(Game& game)
 {
     game.window.clear(sf::Color(20, 20, 30));
-    float cx = static_cast<float>(game.window.getSize().x) / 2.0f;
+    const sf::Vector2f world = worldSizeOf(game);
+    const float cx = world.x / 2.0f;
+    const float scale = world.y / PresentationLayout::kDesignWorldHeight;
 
     // U10b: render from the single canonical window-title brand string instead of a hardcoded uppercase literal, so the in-app
     // banner and the OS window title can never drift apart (both read Constants::WINDOW_TITLE).
@@ -1206,7 +1331,7 @@ void GameRenderer::drawMainMenu(Game& game)
     title.setFillColor(sf::Color(255, 215, 0));
     sf::FloatRect tb = title.getLocalBounds();
     title.setOrigin(sf::Vector2f(tb.size.x / 2.0f, 0));
-    title.setPosition(sf::Vector2f(cx, 150.0f));
+    title.setPosition(sf::Vector2f(cx, 150.0f * scale));
     game.window.draw(title);
 
     int hoveredIndex = getHoveredMenuItemIndex(game);
@@ -1271,14 +1396,16 @@ void GameRenderer::drawMainMenu(Game& game)
         }
 
         bool hovered = (i == hoveredIndex);
-        drawMenuItem(game, label, game.menuSelection == item.option, item.y, hovered);
+        // U11/U3: the row is drawn at mainMenuRowYAt(), the exact value the hover hit-test uses, and the value
+        // scales with the world height so the last row always clears the hint line below it.
+        drawMenuItem(game, label, game.menuSelection == item.option, mainMenuRowYAt(i, world.y), hovered);
     }
 
-    // Controls hint sits below every menu row: the last row (Statistics) is at y=540 and rows are 40px apart
-    // previously sat at y=470 directly on top of the Achievements row. Kept centered horizontally like the title above.
+    // Controls hint sits below every menu row, derived from the last row's position (it previously sat at a fixed
+    // y=470, directly on top of the Achievements row). Kept centred horizontally like the title above.
     sf::Text instr(FontManager::get(), "Up/Down: navigate  Enter: select  Esc: quit", 14);
     instr.setFillColor(sf::Color(140, 140, 140));
-    instr.setPosition(sf::Vector2f(cx, 585.0f));
+    instr.setPosition(sf::Vector2f(cx, mainMenuHintYAt(world.y)));
     game.window.draw(instr);
 }
 
@@ -1288,9 +1415,14 @@ void GameRenderer::drawMainMenu(Game& game)
 // Game::update(); Escape persists there via rememberTableSettings().
 void GameRenderer::drawGameRules(Game& game)
 {
-    const float w = static_cast<float>(game.window.getSize().x);
-    const float h = static_cast<float>(game.window.getSize().y);
-    const float cx = w / 2.0f;
+    const sf::Vector2f world = worldSizeOf(game);
+    const float cx = world.x / 2.0f;
+
+    // U3: spacing was a fixed 46px while the instruction line sat at h*0.78, so at a squashed world the
+    // instruction (436.8) landed inside the last rule row (444). Row pitch is now derived from the space between
+    // the first row and the instruction line, and the list is clipped to what fits.
+    const auto& rows = gameRuleRows();
+    const ListLayout L = gameRulesLayout(world.x, world.y, static_cast<int>(rows.size()));
 
     sf::Text title(FontManager::get(), "Custom Game Rules", 36);
     title.setFillColor(sf::Color(255, 215, 0));
@@ -1298,19 +1430,17 @@ void GameRenderer::drawGameRules(Game& game)
         sf::FloatRect tb = title.getLocalBounds();
         title.setOrigin(sf::Vector2f(tb.size.x / 2.0f, 0));
     }
-    title.setPosition(sf::Vector2f(cx, h * 0.12f));
+    title.setPosition(sf::Vector2f(cx, L.titleY));
     game.window.draw(title);
 
-    const auto& rows = gameRuleRows();
-    const float startY = h * 0.30f;
-    const float spacing = 46.f;
-    for (size_t i = 0; i < rows.size(); ++i)
+    const int visible = std::min(static_cast<int>(rows.size()), L.visibleRows);
+    for (int i = 0; i < visible; ++i)
     {
-        bool selected = (static_cast<int>(i) == game.gameRulesSelectedRow);
+        bool selected = (i == game.gameRulesSelectedRow);
         std::string lineText = std::string(selected ? "> " : "  ") + rows[i].label + "   " + gameRuleDescription(game.gameRules_, rows[i].id);
         sf::Text line(FontManager::get(), lineText, 24);
         line.setFillColor(selected ? sf::Color(255, 255, 255) : sf::Color(200, 200, 200));
-        line.setPosition(sf::Vector2f(cx, startY + i * spacing));
+        line.setPosition(sf::Vector2f(cx, L.startRowY + static_cast<float>(i) * L.rowHeight));
         game.window.draw(line);
     }
 
@@ -1320,25 +1450,36 @@ void GameRenderer::drawGameRules(Game& game)
         sf::FloatRect ib = instr.getLocalBounds();
         instr.setOrigin(sf::Vector2f(ib.size.x / 2.0f, 0));
     }
-    instr.setPosition(sf::Vector2f(cx, h * 0.78f));
+    instr.setPosition(sf::Vector2f(cx, L.footerY));
     game.window.draw(instr);
 }
 
+
 void GameRenderer::drawPauseMenu(Game& game)
 {
-    float w = static_cast<float>(game.window.getSize().x);
-    float h = static_cast<float>(game.window.getSize().y);
-    float cx = w / 2.0f;
+    const sf::Vector2f world = worldSizeOf(game);
+    const float cx = world.x / 2.0f;
 
-    sf::RectangleShape overlay(sf::Vector2f(w, h));
+    sf::RectangleShape overlay(sf::Vector2f(world.x, world.y));
     overlay.setFillColor(sf::Color(0, 0, 0, 128));
     game.window.draw(overlay);
+
+    // U2: the pause menu was bare text over the dimmed felt, so "Quit to Menu" collided with the seat-name
+    // labels drawn under it. A centred panel with padding now sits behind the items, reusing the HUD side-panel
+    // style (dark fill + 2px grey outline), sized from the same layout the rows and the hit-test use.
+    const PausePanelLayout L = pausePanelLayout(world.x, world.y, static_cast<int>(pauseMenuItems().size()));
+    sf::RectangleShape panel(sf::Vector2f(L.panel.size.x, L.panel.size.y));
+    panel.setPosition(sf::Vector2f(L.panel.position.x, L.panel.position.y));
+    panel.setFillColor(sf::Color(40, 40, 40, 240));
+    panel.setOutlineColor(sf::Color(80, 80, 80));
+    panel.setOutlineThickness(2.f);
+    game.window.draw(panel);
 
     sf::Text title(FontManager::get(), "PAUSED", 36);
     title.setFillColor(sf::Color(255, 215, 0));
     sf::FloatRect tb = title.getLocalBounds();
     title.setOrigin(sf::Vector2f(tb.size.x / 2.0f, 0));
-    title.setPosition(sf::Vector2f(cx, h * 0.25f));
+    title.setPosition(sf::Vector2f(cx, L.titleY));
     game.window.draw(title);
 
     int hoveredIndex = getHoveredPauseMenuItemIndex(game);
@@ -1355,6 +1496,6 @@ void GameRenderer::drawPauseMenu(Game& game)
     instr.setFillColor(sf::Color(140, 140, 140));
     sf::FloatRect ib = instr.getLocalBounds();
     instr.setOrigin(sf::Vector2f(ib.size.x / 2.0f, 0));
-    instr.setPosition(sf::Vector2f(cx, h * 0.68f));
+    instr.setPosition(sf::Vector2f(cx, L.instrY));
     game.window.draw(instr);
 }
