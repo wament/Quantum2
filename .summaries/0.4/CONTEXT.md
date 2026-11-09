@@ -381,9 +381,13 @@ after the phase-0.4 changes:
 | 5 | Should the console control banner survive at all? | keep trimmed / replace with in-game Controls screen | B11, U4 |
 | 6 | Is a name-entry screen in scope for 0.4, or deferred? | in scope / defer with a tracking note | U7 |
 | 7 | How long should the achievement toast show? | suggested 4s | B2 | **Resolved** — chose 4s, implemented in B2 (`f3aeb1f`) |
+| 8 | What bounds should the **Bets Placed** histogram use? (U12's axis half) | (a) fixed 10–100 that grows up to `MAXIMUM_BET`; (b) log-scale buckets; (c) keep `[0, MAXIMUM_BET]` and fix the docs | U12 (axis) | **Open** — deferred with U12 on 2026-11-09 |
+| 9 | Is a **session** a new dataset, or a view over existing per-shoe accumulators? (U12's session-view half) | (a) new session-scoped accumulator reset at session end; (b) derive from `currentHistory` + completed shoes in the session | U12 (session view) | **Open** — the user flagged this must be distinct from `longHistory` |
 
 Defaults if nobody answers: 1(a), 2(a), 3 = $1,000 everywhere, 4 = expose, 5 = keep trimmed + add Controls,
-6 = defer, 7 = 4s (resolved: implemented as `ACHIEVEMENT_TOAST_SECONDS` = 4.0 in B2, `f3aeb1f`). Record the final choice in §5's decision list.
+6 = defer, 7 = 4s (resolved: implemented as `ACHIEVEMENT_TOAST_SECONDS` = 4.0 in B2, `f3aeb1f`), **8 = (a) 10–100 growing to
+`MAXIMUM_BET`** (it is what the docs already promise), **9 = (a) a new session-scoped accumulator** (the user stated the session
+view must be distinct from `longhistory`). Record the final choice in §5's decision list.
 
 ## 11. Status tracker
 
@@ -391,7 +395,7 @@ Update this table as work lands; it is the first thing the next window should re
 
 **Re-audited against source on 2026-11-09 at HEAD `7a19af3`** (branch `3.1`), and re-checked again after the U-series
 landed. The B-series is **closed except B9**, which stays **Partial** because its original intermittent crash is
-genuinely unreproducible and carries no test. What is actually open now: **U12** (needs a bucket-bounds decision) and
+genuinely unreproducible and carries no test. What is actually open now: **U12** (deferred by decision on 2026-11-09 — it needs §10 #8 and #9 answered first) and
 **T1**'s history-growth half. The vision-critical set **U1, U2, U3, U6, U11** is **Resolved and verified on screen**, and
 the screenshot pass surfaced one more on-screen defect, **U13** (non-ASCII text → SFML), also Resolved.
 Every row below was re-checked against the source rather than trusted from this table. (An earlier revision of this

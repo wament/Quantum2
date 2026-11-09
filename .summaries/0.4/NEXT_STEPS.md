@@ -793,6 +793,10 @@ hint's U+2022 bullets. *Fix:* ASCII labels, or build `sf::String(U"…")`/`std::
 `tests/test_presentation_layout.cpp` **#326** (red verified against the exact pre-fix byte sequences). Recorded, not
 fixed: `Card::getSuitSymbol()` returns `u8"♠"[0]` — a single truncated byte, dead code, no callers.
 
+**U12 — DEFERRED by decision on 2026-11-09** (the phase stopped with the U-series closed; U12 is the only UI item left, and it
+is the largest: three sub-parts, two of which need §10 decisions #8 (histogram bounds) and #9 (session = new dataset vs view)
+answered first). Original finding follows.
+
 **U12 — Side-panel graphs: no per-graph visibility toggle, only a per-shoe view (no session view), and Bets Placed X-axis is
 the full [0, MAXIMUM_BET] instead of the intended 10–100 scaling range.** 🟡 Vision-critical. Three parts, all on the side panel
 (`StatsDashboard` drawn at `GameRenderer.cpp:74`; HUDState series in `HUDState.hpp:55-56`, Bets Placed histogram per-shoe):
