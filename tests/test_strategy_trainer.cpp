@@ -232,3 +232,33 @@ TEST_CASE("StrategyTrainer: auto-dealt questions never include a natural blackja
     }
     CHECK(guard > 1); // a fresh shoe yields many non-blackjack questions before it could run out
 }
+
+// B19 — the generation rule above has a hole the shuffled test could only ever flake on, never pin. nextQuestion()
+// rejects blackjacks with a do/while bounded by `deck.size() >= 3`:
+//
+//     do { draw 2 player cards + 1 dealer card; }
+//     while (questionHand.isBlackjack() && attempts < 500 && deck.size() >= 3);
+//     computeBookAction();
+//
+// The entry guard only requires deck.size() >= 3, so the loop can draw the shoe dry on its very first pass. When that
+// hand is a blackjack the condition's `deck.size() >= 3` term is false, the loop exits, and computeBookAction()
+// presents the blackjack anyway — a natural 21, which has no decision to train. Reaching it needs the shoe to run out
+// at exactly that moment, which is why #259 flaked under load instead of failing every time.
+//
+// Injecting an exact three-card shoe (dealer up-card, ten, ace — drawn back-to-front, so the player gets ace+ten and
+// the shoe is spent) makes the exhaustion path deterministic: RED before the guard, green after.
+TEST_CASE("StrategyTrainer: a blackjack at shoe exhaustion is never presented", "[StrategyTrainer][Generation]")
+{
+    StrategyTrainer trainer;
+    trainer.startSession(6, 0);
+    // Deck::draw() pops from the back: ace, then ten -> a natural blackjack, and the shoe is empty afterwards.
+    trainer.setDeckForTest({test_support::make_card(7, Suit::Clubs),
+                            test_support::make_card(10, Suit::Hearts),
+                            test_support::make_card(1, Suit::Spades)});
+    REQUIRE(trainer.remainingCardsForTest() == 3);   // passes the `deck.size() < 3` entry guard, then runs dry
+
+    trainer.nextQuestion();
+
+    CHECK(!trainer.questionHandForTest().isBlackjack());  // RED before the fix: the natural 21 is presented
+    CHECK(!trainer.sessionActiveForTest());               // shoe spent -> the session ends rather than dealing it
+}

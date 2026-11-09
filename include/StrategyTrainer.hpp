@@ -76,6 +76,10 @@ class StrategyTrainer
     // A timed session is complete once its wall-clock budget has elapsed; an untimed one never reports completion here.
     bool timedSessionCompleteForTest() const { return timed && elapsedSeconds >= static_cast<float>(secondsPerSession); }
     int remainingCardsForTest() const { return static_cast<int>(deck.size()); }
+    // Replace the session's shoe with an exact card order (deal order is back-to-front, matching Deck::draw).
+    // Test seam: the shoe-exhaustion path in nextQuestion() is unreachable on demand with a shuffled shoe, so the
+    // blackjack-rejection behaviour can only be pinned by injecting a shoe that runs out mid-retry.
+    void setDeckForTest(const std::vector<Card>& cards) { deck.setCards(cards); }
     char currentCorrectActionForTest() const { return currentCorrect; }
     const Hand& questionHandForTest() const { return questionHand; }
     const Hand& questionDealerUpForTest() const { return questionDealer; }

@@ -147,6 +147,21 @@ void StrategyTrainer::nextQuestion()
         ++attempts;
     } while (questionHand.isBlackjack() && attempts < 500 && deck.size() >= 3);
 
+    // B19 — the loop's `deck.size() >= 3` term can stop it with a blackjack still in hand: the entry guard above only
+    // requires three cards, so the very first pass can draw the shoe dry. computeBookAction() would then present a
+    // natural 21, which has no decision to train. Treat that as what it is -- shoe exhaustion -- and end the session
+    // exactly as the exhaustion branch at the top of this function does, rather than showing the hand.
+    if (questionHand.isBlackjack())
+    {
+        questionHand.clear();
+        questionDealer.clear();
+        active = false;
+        complete = !timed;
+        if (lastVerdict.empty())
+            lastVerdict = "Shoe finished - press Enter for a new session.";
+        return;
+    }
+
     computeBookAction();
 }
 
