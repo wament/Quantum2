@@ -3,6 +3,7 @@
 #include <SFML/Graphics.hpp>
 #include <vector>
 #include <string>
+#include <optional>
 
 #include "Deck.hpp"
 #include "Hand.hpp"
@@ -48,6 +49,11 @@ class StrategyTrainer
     // Start (or restart) a session from a fresh shoe of `deckCount` decks. A positive `secondsPerSession` bounds the
     // session by wall-clock time via update(); <=0 means untimed: it ends only when the shoe runs out.
     void startSession(int deckCount = 6, int secondsPerSession = 0);
+
+    // Deterministic variant of startSession() for tests (B18): the shoe is built exactly as startSession() builds it,
+    // but shuffled from `seed` rather than the OS RNG, so the whole sequence of auto-dealt questions is reproducible.
+    // Production never calls it — startSession() keeps the OS seed, so real sessions stay unpredictable.
+    void startSessionWithSeedForTest(int deckCount, int secondsPerSession, unsigned long long seed);
 
     // Present a specific player hand + dealer up-card as the current question (tests inject known hands here; the
     // game's auto-generation path calls nextQuestion() instead). Recomputes the book's action and returns it.
@@ -102,6 +108,9 @@ class StrategyTrainer
     int buttonIndexAt(float x, float y, float w, float h) const;
 
   private:
+    // Shared body of startSession() / startSessionWithSeedForTest(); an engaged `seed` shuffles deterministically.
+    void startSessionWith(int deckCount_, int secondsPerSession_, std::optional<unsigned long long> seed);
+
     Deck deck;
     int deckCount = 6;
 

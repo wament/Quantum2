@@ -30,6 +30,19 @@ void Deck::create(int numberOfDecks)
 
 void Deck::shuffle()
 {
+    // Reseed from the OS RNG so each shoe's order is unpredictable.
+    shuffleWith(std::random_device{}());
+}
+
+void Deck::shuffleWithSeed(unsigned long long seed)
+{
+    shuffleWith(seed);
+}
+
+// Shared body of shuffle() and shuffleWithSeed(): builds one shoe. `seed` is the only thing that differs between the
+// two entry points, so the production path (OS seed) and the deterministic test path cannot drift apart.
+void Deck::shuffleWith(unsigned long long seed)
+{
     // If a prior shoe has no saver yet, move its record to "previous" so it can be saved next.
     if (!activeShoeRecord.empty())
     {
@@ -37,8 +50,7 @@ void Deck::shuffle()
         hasPreviousRecord = true;
     }
 
-    // Reseed from the OS RNG so each shoe's order is unpredictable.
-    lastShuffleSeed = std::random_device{}();
+    lastShuffleSeed = seed;
     rng = std::mt19937(static_cast<std::mt19937::result_type>(lastShuffleSeed));
     std::shuffle(cards.begin(), cards.end(), rng);
 

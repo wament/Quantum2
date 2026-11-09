@@ -369,11 +369,21 @@ void Game::resetShoeAnalytics()
 
 void Game::startNewShoe()
 {
+    startNewShoeWith(std::nullopt);
+}
+
+// Shared body of startNewShoe() and startNewShoeWithSeedForTest(); the seed is the only thing that differs between
+// them, so the production path (OS seed) and the deterministic test path cannot drift apart.
+void Game::startNewShoeWith(std::optional<unsigned long long> seed)
+{
     // A fresh, full shoe plus the shared analytics reset. Used by the R key at end of shoe and by auto-play's
     // auto-advance; the mid-shoe reshuffle (handleEmptyDeck) reuses resetShoeAnalytics() but keeps its partially
     // dealt cards, and startNewGame() resets a whole session rather than just a shoe.
     deck.create(gameRules_.numDecks);
-    deck.shuffle();
+    if (seed)
+        deck.shuffleWithSeed(*seed);
+    else
+        deck.shuffle();
     currentShoeRecord = {};
     currentShoeRecord.initialDeck = deck.getCards();
     resetShoeAnalytics();

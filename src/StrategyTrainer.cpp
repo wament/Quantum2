@@ -62,11 +62,26 @@ StrategyTrainer::StrategyTrainer() = default;
 
 void StrategyTrainer::startSession(int deckCount_, int secondsPerSession_)
 {
+    startSessionWith(deckCount_, secondsPerSession_, std::nullopt);
+}
+
+void StrategyTrainer::startSessionWithSeedForTest(int deckCount_, int secondsPerSession_, unsigned long long seed)
+{
+    startSessionWith(deckCount_, secondsPerSession_, seed);
+}
+
+// Shared body of startSession() and startSessionWithSeedForTest(); the seed is the only thing that differs, so the
+// production and test paths cannot drift. With no seed, Deck's own RNG drives the deal order (reseeded from the OS
+// each shuffle), so auto-generated questions are unpredictable; the trainer only needs to grade whatever the shoe deals.
+void StrategyTrainer::startSessionWith(int deckCount_, int secondsPerSession_, std::optional<unsigned long long> seed)
+{
     deckCount = deckCount_;
-    // Rebuild a fresh shoe and shuffle it. Deck's own RNG drives the deal order (reseeded from the OS each shuffle),
-    // so auto-generated questions are unpredictable; the trainer only needs to grade whatever the shoe deals.
+    // Rebuild a fresh shoe and shuffle it.
     deck.create(deckCount);
-    deck.shuffle();
+    if (seed)
+        deck.shuffleWithSeed(*seed);
+    else
+        deck.shuffle();
 
     stats = SessionStats{};
     elapsedSeconds = 0.0f;

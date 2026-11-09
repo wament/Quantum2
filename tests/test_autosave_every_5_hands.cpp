@@ -40,6 +40,18 @@ TEST_CASE("settling N rounds writes the profile far fewer times than there are h
 
     constexpr int rounds = 12;           // > AUTO_SAVE_EVERY_HANDS, so the cadence fires at least twice
     Game game(true);
+    // B18: seed a deterministic shoe so EXACTLY ONE hand settles per round. Values alternate 10/7, so the human's two
+    // cards are always a hard 17 -- never a pair (so never a split, which would settle two hands in one round) and
+    // never a natural blackjack (which settles immediately). The autosave counter accumulates SETTLED HUMAN HANDS and
+    // resets on a write, so a round that settles two hands discards the overflow and the write count lands BELOW
+    // floor(hands/5) -- that is what made the exact-gating assertion below true ~19 runs in 20. Pinning the deal order
+    // is what makes it true every run.
+    std::vector<Card> shoe;
+    shoe.reserve(160);
+    const Suit suits[4] = {Suit::Spades, Suit::Hearts, Suit::Diamonds, Suit::Clubs};
+    for (int i = 0; i < 160; ++i)
+        shoe.push_back(test_support::make_card((i % 2 == 0) ? 10 : 7, suits[i % 4]));
+    test_support::seed_deck(game, shoe);
     game.startTestRound();               // first round (mirrors test_analytics.cpp's multi-round driver)
     game.testPlayer(0).setPersistable(true);   // startTestRound seats an ephemeral NPC (persistable=false); the real human persists, so
                                                // enable it here or saveProfile() short-circuits before ++saveWriteCount and writes stays 0.
@@ -57,7 +69,14 @@ TEST_CASE("settling N rounds writes the profile far fewer times than there are h
     REQUIRE(writes >= 1);                     // cadence reached and a write actually happened (RED before fix: 0)
     CHECK(handsEvaluated >= rounds / 2);      // driver reached evaluateHands on essentially every round -- guards against an early short-circuit that would make writes meaningless
     CHECK(writes < rounds);                   // RED pre-fix: one write per settled round (writes==rounds=12), NOT written each round
-    CHECK(writes == rounds / Constants::AUTO_SAVE_EVERY_HANDS); // exact gating: floor(12/5) == 2 writes over 12 hands
+    // B18: this used to assert `writes == rounds / AUTO_SAVE_EVERY_HANDS`, i.e. against the number of DRIVER ROUNDS.
+    // The cadence counts SETTLED HUMAN HANDS, and an unseeded shoe settles a varying number per round (a natural
+    // settles at once, a split settles two): handsEvaluated measured 10, 11 and 12 across 12 runs, so the fixed
+    // floor(12/5)==2 was only sometimes true and the case flaked. With the deterministic one-hand-per-round shoe
+    // above, settled hands equal driver rounds and the exact-gating assertion is the real invariant: one write per
+    // AUTO_SAVE_EVERY_HANDS settled hands.
+    CHECK(handsEvaluated == rounds);          // the seeded shoe settles exactly one hand per round -- the precondition the next line needs
+    CHECK(writes == handsEvaluated / Constants::AUTO_SAVE_EVERY_HANDS); // exact gating: floor(12/5) == 2 writes over 12 settled hands
 
     // HOME restoration and temp-dir removal happen in ~IsolatedHome, so they run even if a CHECK/REQUIRE throws.
 }

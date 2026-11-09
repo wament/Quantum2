@@ -132,7 +132,7 @@ The two-copy divergence this phase once worried about is gone: the "edit one cop
 | `preferredSoundVolume/MusicVolume/Muted` | ✔ | `j.value()` + default | |
 | `unlockedAchievementIds` | **only if non-empty** | `j.value()` + `{}` | |
 | `gameRules` | ✔ | guarded `contains()` | nested object, 7 keys (+maxSplitHands; B10) |
-| `currentHistory` | ✔ (additive) | `j.value()` + `{}` on load | **B13** — now serialised; guarded read keeps legacy mid-shoe-quit saves loading (§6.10, test #273) |
+| `currentHistory` | ✔ (additive) | `j.value()` + `{}` on load | **B13** — now serialised; guarded read keeps legacy mid-shoe-quit saves loading (§6.10, test #280) |
 
 **Two-tier read contract.** Four core fields use `j.at()` and therefore *throw*; every additive field uses
 `j.value(key, default)` and degrades gracefully. The additive half is deliberate and well documented in the
@@ -150,7 +150,7 @@ recompute matches the live per-hand increments.
 trap was that `currentHistory` is not serialised, so after a reload the recompute runs on `longHistory` alone and
 the next save overwrites good numbers with smaller ones — two individually-correct decisions composing into silent
 data loss. Proven in §6.10. **B13 fixed it** by adding `currentHistory` to the write (a guarded read on load keeps
-legacy mid-shoe-quit saves loading) and a test (`test_profile_settings.cpp#273`) asserting an in-progress shoe's
+legacy mid-shoe-quit saves loading) and a test (`test_profile_settings.cpp#280`) asserting an in-progress shoe's
 rounds survive a save/load round trip. If you touch this recompute again, that test is your guardrail: it fails the
 moment the in-progress shoe stops surviving a reload.
 
@@ -178,7 +178,10 @@ Serialisation round-trips it and clamps out-of-range stored values back into the
 - **B7 persist-on-exit choke point** (resolved 2026-11-06): exit-persist is centralised into `Game::persistOnExit()`, called from `InputHandler::returnToMainMenu()` so every Escape→main-menu route persists like the window-close path did. It stamps shoe record + current table settings + unlocked achievements then saveProfile through the existing profile plumbing — no new persisted field, purely re-routing an already-existing save. Guarded against an empty seat vector (headless tests build a bare Game). The single-choke-point placement is what keeps the fix one small method instead of sprinkling another `saveProfile()` onto each exit route.
 - **B6 rules-panel keyboard edit edge-triggered** (resolved 2026-11-06): Left/Right rule edits fire only on a false→true key transition (`&& !rulesRightPrev_` / `&& !rulesLeftPrev_`) so one tap = one step at any framerate. Deliberate decision — Up/Down highlight navigation keeps its held-key repeat (moving the highlight fast is the point, so it's desirable) and stays plain held-key polling; only the rule-edit axis was throttled. That split call-out lives in the B6 commit message.
 - **§10 open decisions — all resolved 2026-11-07 (recorded here for traceability):** #1 tournament persistence → option (b) record a SEPARATE tournament history; career-profile preservation itself is already delivered by B1 via gating (#see inline bullet). #2 main-bet escrow → at commit (Model C), implemented in B5 (`4f85d37`). #3 starting bankroll → $10,000 everywhere (inline bullet). #4 `maxSplitHands` → expose restricted to {2,3,4,Unlimited}, implemented in B10 (`69cd9e8`). #5 console control banner → keep trimmed along the bottom middle (a UI/presentation decision; unblocks B11 — the banner's Auto-Kelly row is mislabelled "Right Arrow" when the binding is Left — but repositioning it to bottom-middle needs a visual/Xvfb check, so the label fix and placement are queued as follow-ups rather than done this round). #6 name-entry screen → in scope for 0.4: entered automatically before hitting main menu, then reachable from main menu to view player stats (a lifecycle/UI task affecting U7) — IMPLEMENTED 2026-11-07 (`e157052`): auto-prompt before main menu when profile has no name (Game::needsNameEntry gate at run() start); editing via the clamped Game `nameEntry*` buffer + commitPlayerName persisting seat 0's display + profile; Player Stats reuses the existing Statistics→StatsDashboard path (no new view, verified covered by test_menu_navigation.cpp). Headless tests #286–#288. #7 achievement-toast lifetime → 4s (`ACHIEVEMENT_TOAST_SECONDS`), implemented in B2 (`f3aeb1f`).
-- **B9 overlay bounds guard** (resolved 2026-11-07, `facea14`): the summary-overlay renderer in `drawSummaryOverlay()` indexed the per-player value from `game.players[i]` (`GameRenderer.cpp:1025`) inside a loop bounded by `playerSummaries.size()` (`:1022`) without clamping, so it read out of range whenever live players exceeded the summaries drawn, and the per-row fan-width helper underflowed on an empty/single hand. Decided to clamp row count to `min(summaryCount, playerCount)` and make the fan-width helper return 0.f for 0/1 hands — a renderer-only bounds guard (no persisted field, no data-model change) that keeps summary rendering safe as presentation only; headless tests #296/#297 (`tests/test_summary_overlay_bounds.cpp`) fail before the clamp and pass after. B9 stays **Partial** in §11 because the original intermittent single-occurrence crash is genuinely unreproducible and carries no test.
+- **B9 overlay bounds guard** (resolved 2026-11-07, `facea14`): the summary-overlay renderer in `drawSummaryOverlay()` indexed the per-player value from `game.players[i]` (`GameRenderer.cpp:1025`) inside a loop bounded by `playerSummaries.size()` (`:1022`) without clamping, so it read out of range whenever live players exceeded the summaries drawn, and the per-row fan-width helper underflowed on an empty/single hand. Decided to clamp row count to `min(summaryCount, playerCount)` and make the fan-width helper return 0.f for 0/1 hands — a renderer-only bounds guard (no persisted field, no data-model change) that keeps summary rendering safe as presentation only; headless tests **#299/#300** (`tests/test_summary_overlay_bounds.cpp`; the §11 row's "#296/#297" is stale — see §13 2026-11-09) fail before the clamp and pass after. B9 stays **Partial** in §11 because the original intermittent single-occurrence crash is genuinely unreproducible and carries no test.
+- **B17 test-isolation guard: one shared RAII `test_support::IsolatedHome`, PID-namespaced** (resolved 2026-11-09). Decided to centralise rather than patch five hand-rolled redirects: `Player::getSavePath()` reads `$HOME` from the environment, and ctest + Catch2 run each `TEST_CASE` in its **own process**, so any *fixed* temp dir (`/tmp/bj_b1_test`, `/tmp/bj_u8_test`, `/tmp/bj_b7_test`, `/tmp/bj_t1_autosave_home`, `/tmp/bj_name_entry_0`) is shared by every concurrently-scheduled test. The dir name embeds the **PID** (unique across processes) plus a per-process counter (unique across several guards in one case) — a counter alone is what broke the old guard, because a `static int` is per-process and therefore always 0. Restoration and removal happen in the destructor, so a Catch2 `REQUIRE` throwing cannot leak a redirected `HOME` into later cases in the same process (the reason `test_session_lifecycle.cpp` carried a local `HomeGuard`; it is deleted). Test-only: no product code, no persisted field, no schema change. Also decided to audit at **`TEST_CASE` granularity**, not per file — a file containing one isolated case can still contain nine unisolated ones, and those nine were writing the developer's real career profile.
+- **B18 determinism seam: seed the shuffle, never change it** (resolved 2026-11-09). Chose to add `Deck::shuffleWithSeed(seed)` alongside the existing `shuffle()` rather than to seed `shuffle()` itself: production keeps `std::random_device`, so real shoe order stays unpredictable, and both entry points share one private `shuffleWith()` body so the two paths cannot drift. Same pattern for `StrategyTrainer::startSessionWithSeedForTest()` (shared `startSessionWith()`) and `Game::startNewShoeWithSeedForTest()` (shared `startNewShoeWith()`), plus `StrategyTrainer::setDeckForTest()` for exact-shoe injection. Tests that need a *real shuffled* shoe (not an injected card list) now sweep a fixed seed list; #306's assertion was retargeted from driver rounds to the settled-hand count the autosave gate actually counts. No new persisted field; `*ForTest()` convention preserved.
+- **B19 blackjack-at-exhaustion: end the session, do not present the hand** (resolved 2026-11-09). `StrategyTrainer::nextQuestion()`'s rejection loop can exit with a blackjack in hand when the shoe runs dry mid-retry. Decided that the correct behaviour is to treat it as shoe exhaustion — clear the question and end the session exactly as the existing `deck.size() < 3` branch at the top of the function does — rather than to keep drawing, because the trainer's contract is "every presented hand requires a real decision" and a natural 21 has none. Presentation-only + session-state only: no persisted field, no `GameRules` change, no `AppMode` change.
 
 ---
 
@@ -265,7 +268,7 @@ BUG: hands silently lost from career stats
 
 The program: add 5 rounds → `addShoeRecord()` → add 3 rounds → `save()` → `load()` → add 1 round → `save()` →
 `load()`. The career hand count goes **backwards** across a save that added a hand. This is the regression test it
-now backs: `tests/test_profile_settings.cpp#273` ("B13: an in-progress shoe's rounds survive a save/load and still
+now backs: `tests/test_profile_settings.cpp#280` ("B13: an in-progress shoe's rounds survive a save/load and still
 book into career stats"), which fails before the fix and passes after.
 
 *Note:* this proof originally lived at `/tmp/hist_proof.cpp` and did not survive a reboot — that is why it is now
@@ -382,14 +385,28 @@ Defaults if nobody answers: 1(a), 2(a), 3 = $1,000 everywhere, 4 = expose, 5 = k
 
 Update this table as work lands; it is the first thing the next window should read.
 
-**Re-audited 2026-11-06 at `96fd416`: nothing has landed. All 15 defects (B1–B15) plus U1–U10, T1–T2 and B16 are
-still open.** Each row below was re-checked against the source rather than trusted from the previous revision —
-the "Evidence" column now says what the 2026-11-06 check actually was, which for several items is weaker than the
-word "reproduced" implied.
+**Re-audited against source on 2026-11-09 at HEAD `7a19af3`** (branch `3.1`). The B-series is **closed except B9**,
+which stays **Partial** because its original intermittent crash is genuinely unreproducible and carries no test.
+What is actually open now: the vision-critical UI set **U1, U2, U3, U6, U11, U12**, and **T1**'s history-growth half.
+Every row below was re-checked against the source rather than trusted from this table. (An earlier revision of this
+header said "nothing has landed; all 15 defects plus U1–U10, T1–T2 and B16 are still open" — that was the 2026-11-06
+snapshot and is contradicted by the table beneath it; it has been replaced.)
 
-**Resolved since:** `B3` (`c7978f1`) and `B15` (`9a89185`) landed on 2026-11-06; `B5` (`4f85d37`), `B8` (`11f6f50`), the B9 overlay bounds guard (`facea14`, #296/#297) and `U7` (`e157052`) landed on 2026-11-07; `B11`'s banner fix also 2026-11-07.
-the rows below for those are marked **Resolved** (B9 is **Partial** — only its intermittent-crash half stays unreproducible); every other row here is still open — see the §13 audit log.
-Suite at **297/297** (0 failures; #256 known flaky, see §13).
+**Resolved since that audit:** `B3` (`c7978f1`) and `B15` (`9a89185`) on 2026-11-06; `B1` (`5107aa7`), `B5` (`4f85d37`),
+`B8` (`11f6f50`), `B10` (`69cd9e8`), `B11`, `B16` (`5f81d48`), the B9 logger flush (`d6d6436`) and the B9 overlay bounds
+guard (`facea14`), plus `U7` (`e157052`), `U4`, `U5`, `U9`, `U10`, all on 2026-11-07; and **`B17`, `B18`, `B19` on
+2026-11-09**. B9 is **Partial** — only its intermittent-crash half stays unreproducible.
+
+**Suite at 316/316 serial.** The `-j8` figure is only trustworthy from B17 onward: the documented "315/315 green at
+`-j8`" was **false** (3 of 10 soak runs had ≥1 failure), and the gate in `NEXT_STEPS.md` now requires a 10-run soak.
+Post-B17/B18/B19 the soak measures **12 clean / 0 failing**, every run 316/316, with the developer's real profile md5
+stable across the soak.
+
+> **The test IDs in the Evidence column drifted again and were re-derived on 2026-11-09** against `ctest -N`:
+> **B13 is #280** (not #273 — #273 is now a Surrender test, exactly the trap §13 warns about), the **B9 overlay pair is
+> #299/#300** (not #296/#297, which are the Logger-flush tests), **B11 is #298** (not #295), **U7 is #289–#291** (not
+> #286–#288). Checked and correct as written: U4 #307–#308, U5 #309–#311, U9 #312–#315, U10 #281/#282. Historical §13
+> entries keep their period IDs; use the current ones above.
 
 | ID | Sev | Title | Status | Evidence as of 2026-11-06 |
 |---|---|---|---|---|
@@ -397,20 +414,24 @@ Suite at **297/297** (0 failures; #256 known flaky, see §13).
 | B2 | 🔴 | Achievement toast never clears | **Resolved 2026-11-06 (`f3aeb1f`)** | Added `achievementToastTimer` to `HUDState.hpp`; armed in `AchievementFeeder.cpp:48` on each unlock, ticked in `RoundEngine.cpp` alongside the other HUD timers and cleared at 0 (renderer draws only while a name is set). Test #210 arms/advances past lifetime/re-arms (fails before fix). Suite 275/275 |
 | B3 | 🔴 | Side bet always reports "WON" | **Resolved 2026-11-06 (`c7978f1`)** | Fixed in `include/SideBetLabels.hpp`: branch won/lost/push on net with the sign preserved; `GameRenderer.cpp:997` calls the pure fn. Guard test in `test_side_bets.cpp` asserts WON +20 / LOST -20 / PUSH 0 (fails before fix). Suite 266/266 |
 | B4 | 🔴 | Reko seed ignores deck count | **Resolved 2026-11-06 (`3924b56`)** | Seeds from `gameRules_.numDecks` in `resetShoeAnalytics()` (`Game.cpp:277`); `Deck::create()` remembers shoe size and reshuffle rebuilds from it (`Deck.cpp:73`). Tests assert the roadmap seeds 1/2/4/6/8 → -1/-5/-12/-20/-27 through a headless Game, plus a one-deck reshuffle stays ~53 cards (both fail before fix). Two `test_deck.cpp` reshuffle-size assertions were corrected from the old NUM_DECKS behavior. Suite 274/274 |
-| B13 | 🔴 | Mid-shoe quit deletes those hands from career stats | **Resolved 2026-11-06 (`387a3e0`)** | Persist in-progress shoe rounds (currentHistory) so quitting mid-shoe still books them into career stats; guarded read. Test #273 passes; hist_proof.cpp (§6.10) now exits 0 and confirms the shipped schema. §11 listed it Open after the commit and was corrected here |
+| B13 | 🔴 | Mid-shoe quit deletes those hands from career stats | **Resolved 2026-11-06 (`387a3e0`)** | Persist in-progress shoe rounds (currentHistory) so quitting mid-shoe still books them into career stats; guarded read. Test **#280** passes (the row formerly said #273, which is now a Surrender test — see the §11 header ID note); hist_proof.cpp (§6.10) now exits 0 and confirms the shipped schema. §11 listed it Open after the commit and was corrected here |
 | B5 | 🟠 | Main bet not escrowed; bankroll can go negative | **Resolved 2026-11-07 (`4f85d37`)** | Escrow at commit (Model C): `getAvailableBankroll()` returns bankroll minus committed main − pending side bet; `confirmBet()`/`placeSideBet()` clamp + hint against that balance, not the full bankroll. 3 regression tests in `test_settlement.cpp`: accessor invariant (#111); a same-limit side bet refused once the main is committed so it can't over-commit the roll (#112); and a losing round (dealer natural −MIN plus a lost PerfectPairs side) settling to after == STARTING − MIN − sideWager == 9930, never negative (#113). Win/lose arithmetic unchanged; full suite 281/281 (0 failures) |
 | B6 | 🟠 | Rules panel key repeat | **Resolved 2026-11-06 (`584aa4b`)** | Added false->true edge detection in \`Game::update()\` rules case via \`rulesRightPrev_\`/\`rulesLeftPrev_\`; applyGameRuleEdit fires only on a press (one step per tap). Up/Down highlight repeat left as-is (desirable, called out in commit). Headless test #277 (\`test_rules_panel_editing.cpp\`) holds Right 25 frames and asserts result == one tap; fails before / passes after. Suite 277/277 (+1 over B7) |
 | B7 | 🟠 | Escape-quit skips the save | **Resolved 2026-11-06 (`11b187b`)** | Centralised persist-on-exit into `Game::persistOnExit()` (shoe record + current table settings + unlocked achievements, then save) routed through `InputHandler::returnToMainMenu()`, so every Escape->menu route persists like the window-close path did; guarded against an empty seat vector. Headless test #276 (`test_input_return_to_main_menu.cpp`) fails before / passes after; full suite 276/276 (+1) |
 | B8 | 🟠 | `Deck::draw()` no empty guard | **Resolved 2026-11-07 (`11f6f50`)** | Two unguarded `back()`/`pop_back()` pairs in `Deck::draw()` — the first when the shoe is already empty, the second after only the cut card was drawn (a single-card shoe whose one card is the cut card), both UB on an empty std::vector. Guarded: entry returns `Card{}` for a truly empty shoe; before the second `back()` it now checks `cards.empty()` and returns the cut card when nothing remains. Purely defensive — every production caller already guards `deck.empty()`, so real gameplay is byte-for-byte unchanged and all 5 callers keep the `Card` return type. Headless-testable via `Deck::setCards({})`: `tests/test_deck_empty_draw.cpp` (#13/#14) drove both sites, SEGFAULT / returned garbage (value 33 != CUT_CARD_VALUE) before the fix, PASS after. Suite 291/291 |
-| B9 | 🟠 | Flaky crash + unflushable logger | **Partial** — flush fixed (`d6d6436`) and overlay bounds guard resolved via `facea14` (#296/#297); only the original intermittent crash remains genuinely unreproducible | `Logger::log()` now uses `std::endl` so every record is flushed to std::cout synchronously (commit `d6d6436`), proven by #284/#293/#294 in `tests/test_logger.cpp`. B9's second DoD clause — the bounds guard so the per-player draw index in `drawSummaryOverlay()` cannot exceed the summary loop bound (`GameRenderer.cpp:1022`) nor read out of range at `:1025` — is fixed via helpers that clamp rows to `min(summaryCount, playerCount)` and return 0.f for an empty/single-hand fan width; tests #296/#297 in `tests/test_summary_overlay_bounds.cpp` fail before the clamp and pass after (red-green). The single-occurrence intermittent crash has never been deterministically reproducible (one playtest hit, three failed replays, one clean 60-cycle soak) and carries no test. |
+| B9 | 🟠 | Flaky crash + unflushable logger | **Partial** — flush fixed (`d6d6436`) and overlay bounds guard resolved via `facea14` (**#299/#300**; the row formerly cited #296/#297, which are the Logger-flush tests); only the original intermittent crash remains genuinely unreproducible | `Logger::log()` now uses `std::endl` so every record is flushed to std::cout synchronously (commit `d6d6436`), proven by #284/#293/#294 in `tests/test_logger.cpp`. B9's second DoD clause — the bounds guard so the per-player draw index in `drawSummaryOverlay()` cannot exceed the summary loop bound (`GameRenderer.cpp:1022`) nor read out of range at `:1025` — is fixed via helpers that clamp rows to `min(summaryCount, playerCount)` and return 0.f for an empty/single-hand fan width; tests #296/#297 in `tests/test_summary_overlay_bounds.cpp` fail before the clamp and pass after (red-green). The single-occurrence intermittent crash has never been deterministically reproducible (one playtest hit, three failed replays, one clean 60-cycle soak) and carries no test. |
 | B14 | 🟠 | Non-atomic save; corrupt file → silent wipe | **Resolved 2026-11-06 (`9d1d125`)** | Atomic write + corrupt-save rescue under a `.corrupt.<ts>` suffix, and partial-JSON field retention in `PlayerProfile.cpp`. Tests #232/#233 pass. §11 listed it Open after the commit and was corrected here |
 | B15 | 🟠 | Two live copies of `Serialization.hpp` | **Resolved 2026-11-06 (`9a89185`)** | Deleted `src/Serialization.hpp`; exactly one copy remains (include/), enforced by a guard test that fails with two / passes with one. No CMake edit needed; `PlayerProfile.cpp` now resolves to the include copy, unblocking every schema edit (B12/B13/B14) |
 | B10 | 🟡 | `maxSplitHands` dead config | **Resolved 2026-11-07 (`69cd9e8`)** | Serialised (`to_json`/`from_json`, clamps to {2,3,4,-1}; -1==unlimited) and exposed via a gameRuleRow cycling only {2,3,4,Unlimited}; the -1 sentinel is guarded at both enforcement sites. Regression tests #278–#282 (test_max_split_hand_rules.cpp): schema round-trip + clamp fail before fix; restricted-value cycling and unlimited-vs-finite-cap enforcement verified. Suite 289/289 |
 | B11 | 🟡 | startup control banner mislabels the betting-phase keys | **Resolved 2026-11-07** | Extracted the startup "PLAYER CONTROLS" banner from the inline `Logger::info` in `Game::Game()` into a pure helper `Game::startupControlsBanner() const`; corrected its labels to match the real `InputHandler.cpp:635-645` PlaceBets bindings (Left = auto Kelly via `calculateOptimalBet()`/`setBet()`, Right = confirm). Regression test #295 (`tests/test_banner_b11.cpp`) reads it from a headless `Game(true)` and asserts Left-present / Right-absent on the auto-kelly row — fails before, passes after. Suite 294 → 295/295. §10 #5 (banner-survival: keep trimmed vs permanent in-game Controls screen) stays open; this was the minimal fix |
 | B12 | 🟡 | `resplitTentsAllowed` typo in save schema | **Resolved 2026-11-06** | Renamed field+enum to `resplitTensAllowed`/`ResplitTens`; `to_json` writes the corrected key, `from_json` reads it then falls back to the legacy typo'd key (new wins). On-disk writer verified via `test_profile_settings.cpp:232` using real `PlayerProfile::save()` — shipped binary now writes `resplitTensAllowed`. Suite 272/272 |
 | B16 | 🟡 | `reconstructDeckAtRound()` dead and wrong | **Resolved 2026-11-07 (`5f81d48`)** | Removed — static analysis confirmed zero callers (sole occurrence was its own definition at `GameRecord.hpp:307`), so deletion is behaviour-preserving; it also recomputed deck state with the wrong card-drop order, which no code relied on. Full suite unchanged at 289/289 |
-| U1–U12 | 🟡 | UI/UX set (see NEXT_STEPS Phase 4) | Partial — this phase Resolved: U4 (#307–#308), U5 (#309–#311), U7 (#286–#288), U8 (#70), U9 (#312–#315), U10 (#281/#282). Open: U1, U2, U3, U6 (vision-critical) + U11, U12 (new 2026-11-09). Not re-verified on screen this pass; cited renderer lines all resolve to the claimed functions. Headless-testability: HARDEST — needs an SDL window context + screenshots/Xvfb for visual assertions; no pure headless unit test can lock rendering.
-| T1–T2 | 🟢 | Save amplification; unbounded history | Open | `HandEvaluator.cpp:297` still saves every settled round. Headless-testability: MEDIUM — needs byte-counting output interception (T1) and a chosen history cap before it is assertable (T2).
+| B17 | 🟠 | Test suite is not hermetic: shared `/tmp` HOME dirs made `ctest -j8` flaky, and the suite wrote the **developer's real** career profile | **Resolved 2026-11-09** | The documented "315/315 green at `-j8`" baseline was **false**: measured 3 of 4 runs (and 3 of 10 in a soak) had ≥1 failure. Root cause: `Player::getSavePath()` (`src/Player.cpp:14`) resolves `$HOME/.local/share/blackjack/saves/player_profile.json` from the environment, and five test files each redirected `HOME` to a **fixed** path (`/tmp/bj_b1_test`, `/tmp/bj_u8_test`, `/tmp/bj_b7_test`, `/tmp/bj_t1_autosave_home`, `/tmp/bj_name_entry_0`). ctest + Catch2 run each `TEST_CASE` in its **own process**, so those dirs are shared by every concurrently-scheduled test. `test_name_entry.cpp`'s "per-invocation unique" dir came from a `static int counter` — per-process, therefore **always 0**: #291 writes a profile named "Ada" into `/tmp/bj_name_entry_0`, #290 then loads it, sees a non-empty name and fails `REQUIRE(needsNameEntry() == true)`. Reproduced deterministically by running #290 and #291 side by side (1/25). Separately, a per-`TEST_CASE` audit found **9** cases calling `startNewGame()`/`startTournamentSession()`/`startStatsSession()`/`rememberTableSettings()` with no redirect at all — those rewrite the real `~/.local/share/blackjack/saves/player_profile.json` (its mtime moved across a suite run). Fix: one shared RAII `test_support::IsolatedHome` (`tests/test_support.hpp`) whose dir embeds the **PID** (unique across the processes ctest spawns) plus a per-process counter; migrated all 5 hand-rolled redirects and guarded all 9 unguarded cases. Gate = **10 consecutive `ctest -j8` runs**: red 7 clean / 3 failing before, **10 clean / 0 failing** after, with the real profile's md5 verified stable across the soak. No product code changed. |
+| B18 | 🟡 | Three tests asserted against an **unseeded** OS RNG, so they flaked instead of pinning anything | **Resolved 2026-11-09** | `Deck::shuffle()` reseeds from `std::random_device` (`src/Deck.cpp:41`), so (a) #259 swept one *random* shoe per run and (b) #306 asserted `writes == rounds / AUTO_SAVE_EVERY_HANDS` against **driver rounds** while the cadence counts **settled hands** — an unseeded shoe settles a varying number per round (a natural settles at once, a split settles two); `handsEvaluated` measured 10, 11 and 12 across 12 runs, so the fixed `floor(12/5)==2` was only sometimes true. Added a deterministic seed seam — `Deck::shuffleWithSeed(seed)` (shares one private `shuffleWith()` body with `shuffle()`, so the production OS-seed path is byte-identical) and `StrategyTrainer::startSessionWithSeedForTest()` (delegates to a shared `startSessionWith()`). #259 now sweeps **5 fixed seeds to shoe exhaustion** (the old 100-question cap never reached the exhaustion path that B19 fixed); #306 asserts against the settled-hand count it actually gates on. Retargeting #306's assertion alone was **not enough** — 20 runs still failed 1, because the autosave counter resets on a write and a split round settles two hands, discarding the overflow so writes land *below* `floor(hands/5)`; the case now seeds a uniform alternating 10/7 shoe (hard 17 every round: no pair → no split, no natural) so exactly one hand settles per round and `handsEvaluated == rounds` is a checked precondition. #169 "edge inside the expected band" was a **third** flake of this class, only exposed once B17/B18 removed the noise hiding it; it now sweeps the same 5 seeds. Targeted soak: **0/25–0/30 fails** each, previously load-dependent failures. |
+| B19 | 🟠 | `StrategyTrainer::nextQuestion()` **presents a natural blackjack** when the shoe runs out mid-retry | **Resolved 2026-11-09** | Real product defect that #259 was only ever *flaking* on. The blackjack-rejection loop is `do { draw 2 player + 1 dealer } while (questionHand.isBlackjack() && attempts < 500 && deck.size() >= 3);` followed unconditionally by `computeBookAction()`. The entry guard only requires `deck.size() >= 3`, so the **first pass can draw the shoe dry**; when that hand is a blackjack the `deck.size() >= 3` term is false, the loop exits, and the natural 21 is presented — a hand with no decision to train — with `active` left true on a spent shoe. Reaching it needs the shoe to empty at exactly that moment, which is why it flaked under load rather than failing. Fix: after the loop, if the hand is still a blackjack, clear it and end the session exactly as the exhaustion branch at the top of the function does. Test-first: `setDeckForTest()` seam injects an exact 3-card shoe (dealer up-card, ten, ace — `Deck::draw()` pops from the back, so the player gets ace+ten and the shoe is spent) → **fails before, passes after** (red verified: both `!isBlackjack()` and `!sessionActiveForTest()` failed pre-fix). New test #316; suite 315 → **316/316**. |
+| U1–U12 | 🟡 | UI/UX set (see NEXT_STEPS Phase 4) | Partial — this phase Resolved: U4 (#307–#308), U5 (#309–#311), U7 (#286–#288), U8 (#70), U9 (#312–#315), U10 (#281/#282). Open: U1, U2, U3, U6 (vision-critical) + U11, U12 (new 2026-11-09). **Re-verified against source by code pattern on 2026-11-09** (not on screen): all six sites confirmed real, with `GameRenderer.cpp` line numbers drifted ~+20 — U1 `drawMenuItem` `:1055-1073` (`if (hovered || selected)` → same gold, hover only adds `Bold`), U2 `drawPauseMenu` `:1327-1360` (full-window alpha-128 overlay, **no panel**), U3 `drawAchievementList` `:113-154` (`y = 96.f`, `rowH = 60.f`, footer at `h - 28.f`) and `drawGameRules` `:1289` (note: `startY = h*0.30f` is fractional, only `spacing = 46.f` is hard-coded, and the 7 rows fit at 900×560 — Achievements is the screen that provably overlaps), U6 `drawTotal` `:474` (bare white 16pt), U11 the three hit-tests on three bases (`:1075` / `:1101` / `:1140`, the pause one using **raw `sf::Mouse::getPosition`**), U12 `HUDState.hpp:55-56` + `Constants.hpp:194-200` (buckets span `[0, MAXIMUM_BET=1000]`, not 10–100). Headless-testability: HARDEST — needs an SDL window context + screenshots/Xvfb for visual assertions; no pure headless unit test can lock rendering.
+| T1 | 🟢 | Save amplification (profile rewritten every settled round) | **Partial** — write cadence gated | The *file write* is gated: `AUTO_SAVE_EVERY_HANDS = 5` (`Constants.hpp:184`), enforced in `evaluateHands()` and proven by #305/#306 (`tests/test_autosave_every_5_hands.cpp`); #306's assertion was corrected in B18 to count settled hands rather than driver rounds. `HandEvaluator.cpp:295` still appends a `RoundRecord` every settled round, so the in-profile history still grows per round — that growth is T2's cap, not the write cadence. The 9.3 MB real profile on this machine is the residue of that growth. |
+| T2 | 🟢 | Unbounded history | **Resolved** | `MAX_LONG_HISTORY_SHOES = 100` (`Constants.hpp:181`) with oldest-first roll-up. Tests #301–#304 (`tests/test_history_rollup.cpp`, `[T2][history-cap]`) cover the cap, exact career-total preservation across a roll, save/load survival and the no-op case. §11 previously listed T1 and T2 on one row as Open — T2 has been done since those tests landed; the row was split 2026-11-09.
 | — | ✅ | `handActions` indexing | **Cleared — not a bug** | Do not "fix" without also changing turn order (§6.9) |
 | — | ✅ | Settlement math | **Cleared — correct** | |
 
@@ -437,6 +458,96 @@ next window trusts it.
 These documents are load-bearing, so they get audited like code. Each entry records what was checked, against
 what, and what changed. If you correct something, add a bullet here — a silent edit is how the next window ends up
 trusting a stale claim again.
+
+### 2026-11-09 — B17/B18/B19: the "315/315 green at `-j8`" baseline was false; three defects found from it
+
+**Method.** Ran the documented gate verbatim. Configure + build clean. The first `ctest -j8` returned **314/315**
+(`#290 needsNameEntry gates on whether the profile has a persisted name`), while `ctest -R NameEntry -j1` passed 3/3.
+So the suite is green serially and flaky in parallel. Measured it: **3 of 4 `-j8` runs** had ≥1 failure, and a 10-run
+soak came out **7 clean / 3 failing**. Failures observed: #290 (×2), #259, #306, #169.
+
+**B17 — the suite is not hermetic (the flake).** `Player::getSavePath()` (`src/Player.cpp:14`) resolves
+`$HOME/.local/share/blackjack/saves/player_profile.json` from the environment on every call. Five test files each
+redirected `HOME` to a **fixed** path (`/tmp/bj_b1_test`, `/tmp/bj_u8_test`, `/tmp/bj_b7_test`,
+`/tmp/bj_t1_autosave_home`, `/tmp/bj_name_entry_0`). ctest + Catch2 run each `TEST_CASE` in **its own process**, so
+those directories are shared by every concurrently-scheduled test. The smoking gun: `test_name_entry.cpp`'s guard
+built its dir from a `static int counter`, which is per-process and therefore **always 0** — its comment claimed
+"per-invocation unique ... avoids races under ctest -j8", and it did the opposite. #291 (`commitPlayerName persists`)
+writes a profile named "Ada" into `/tmp/bj_name_entry_0`; #290 (`needsNameEntry gates`) then loads it, sees a
+non-empty name and fails `REQUIRE(needsNameEntry() == true)`. Reproduced deterministically by running the two side by
+side (1/25). A per-`TEST_CASE` audit (not per-file — a file with one isolated case can have nine unisolated ones)
+found **9** more cases calling `startNewGame()` / `startTournamentSession()` / `startStatsSession()` /
+`rememberTableSettings()` with no redirect, which rewrite the **developer's real** profile; its mtime moved across a
+suite run. Fix: one shared RAII `test_support::IsolatedHome` whose dir embeds the **PID** plus a per-process counter;
+migrated all five hand-rolled redirects and guarded all nine cases. After: **10 clean / 0 failing**, real profile md5
+stable across the soak. No product code changed.
+
+**A log line that misleads.** `src/Player.cpp:47` prints `playerName` — the **seat** name (`"William"`, hard-coded) —
+not `profile.getName()`. "Loaded profile for William with bankroll 10000" therefore does **not** mean the real profile
+was read; 10000 is `STARTING_BANKROLL`. It sent the first hour of this investigation down the wrong path.
+
+**B18 — two tests asserted against an unseeded OS RNG.** `Deck::shuffle()` reseeds from `std::random_device`
+(`src/Deck.cpp:41`). #259 swept one *random* shoe per run; #306 asserted `writes == rounds / AUTO_SAVE_EVERY_HANDS`
+against **driver rounds** while the cadence counts **settled hands** — `handsEvaluated` measured 10, 11 and 12 across
+12 runs, so the fixed `floor(12/5)==2` was only sometimes true. Added `Deck::shuffleWithSeed()` (one private
+`shuffleWith()` body shared with `shuffle()`, so the production OS-seed path is byte-identical),
+`StrategyTrainer::startSessionWithSeedForTest()` and `Game::startNewShoeWithSeedForTest()` (shared
+`startNewShoeWith()` body). #259 and #169 now sweep 5 fixed seeds; #306 asserts against the settled-hand count it
+gates on. #169 was a **third** flake of this class, exposed only after B17/B18 removed the noise hiding it.
+Retargeting #306's assertion was **not sufficient on its own** — a soak of 20 still failed 1. The autosave counter
+accumulates settled hands and **resets on a write**, so a round that settles two hands (a split) discards the overflow
+and the write count lands *below* `floor(hands/5)`. The case now seeds a uniform alternating 10/7 shoe, which makes the
+human's hand a hard 17 every round: never a pair (so no split), never a natural (which settles immediately), so exactly
+one hand settles per round and `handsEvaluated == rounds` becomes a checkable precondition of the exact-gating
+assertion. 0/30 after.
+
+**B19 — #259's flake was a real product defect, not a flaky test.** `StrategyTrainer::nextQuestion()` rejects
+blackjacks with `do { draw 2 player + 1 dealer } while (questionHand.isBlackjack() && attempts < 500 && deck.size()
+>= 3);` followed **unconditionally** by `computeBookAction()`. The entry guard only requires `deck.size() >= 3`, so the
+first pass can draw the shoe dry; when that hand is a blackjack the `deck.size() >= 3` term is false, the loop exits,
+and the natural 21 is **presented** — a hand with no decision to train — with `active` left true on a spent shoe.
+Reaching it needs the shoe to empty at exactly that moment, which is why it flaked under load instead of failing.
+Proven test-first with a new `setDeckForTest()` seam injecting an exact 3-card shoe: **red before** (both
+`!isBlackjack()` and `!sessionActiveForTest()` failed), green after. New test #316; suite 315 → **316/316**.
+
+**Claims in these docs corrected this pass:**
+
+1. **§11 header + NEXT_STEPS gate — "315/315 green (`-j8`)" and "Suite at 297/297"** were both stale/false. §11 now
+   states 316/316 serial and flags the `-j8` figure as trustworthy only from B17 onward; the NEXT_STEPS gate gains a
+   10-run soak, because one passing `-j8` run proves almost nothing about a suite that fails 3 runs in 10.
+2. **§11 header "All 15 defects (B1–B15) plus U1–U10, T1–T2 and B16 are still open"** — the 2026-11-06 snapshot,
+   flatly contradicted by the table printed directly beneath it. Replaced with the current composition.
+3. **§11 "T1–T2 | Open"** — T2 is **Resolved**: `MAX_LONG_HISTORY_SHOES = 100` (`Constants.hpp:181`) plus tests
+   #301–#304 (`test_history_rollup.cpp`, `[T2][history-cap]`). The row was split; T1 is **Partial** — the *write* is
+   gated by `AUTO_SAVE_EVERY_HANDS` (`Constants.hpp:184`, proven by #305/#306) but the per-round `RoundRecord`
+   append at `HandEvaluator.cpp:295` still grows the history every settled round. The 9.3 MB real profile on this
+   machine is the residue of that growth.
+4. **§11 test IDs drifted again** (the docs already warn about one +3 shift; it has moved since): **B13 is #280**, not
+   #273 — #273 is now a Surrender test, exactly the trap §13:657 warns about; **B9 overlay is #299/#300**, not
+   #296/#297 (those are the Logger-flush tests); **B11 is #298**, not #295; **U7 is #289–#291**, not #286–#288.
+   Verified correct as written: U4 #307–#308, U5 #309–#311, U9 #312–#315, U10 #281/#282. §6.10's
+   "`test_profile_settings.cpp#273`" pointer is stale for the same reason.
+5. **§13:666 "B8 (`Deck.cpp:123-137`) still open"** — B8 is **Resolved** (`11f6f50`); the §11 row says so and this
+   §13 sentence contradicted it.
+
+6. **`GameRenderer.cpp` citations drifted ~+20** (the B9 comments were inserted upstream of them): U1 `:1034-1046` →
+   `:1055-1073`; U2 `:1274` → `drawPauseMenu` `:1327`; U3 `:108-141` → `:113-154` and `:1236` → `:1289`; U6 `:468` →
+   `:474`. U11's `:1071` and `:1134` are exact. All six U-sites were re-verified **by code pattern, not by line
+   number**, and every described defect is real: `drawMenuItem` draws hover and selection in the same gold
+   (`if (hovered || selected)`, hover only adds `Bold`); `drawPauseMenu` draws a full-window alpha-128 overlay and
+   bare rows with **no panel**; `drawAchievementList` uses `y = 96.f` / `rowH = 60.f` against a footer at `h - 28.f`;
+   `drawTotal` is bare white 16pt; and the three hover hit-tests use three different coordinate bases
+   (`getHoveredMenuItemIndex` `mapPixelToCoords` vs absolute `item.y`; `getHoveredGameRulesRowIndex`
+   `mapPixelToCoords` vs `h*0.30`; `getHoveredPauseMenuItemIndex` **raw `sf::Mouse::getPosition`** vs `pauseRowY`).
+7. **U3's "Game Rules uses hard-coded pixel offsets" is only half true**: `startY = h * 0.30f` is fractional and the
+   7 rule rows fit at 900×560; only `spacing = 46.f` is hard-coded. Achievements is the fully hard-coded screen and
+   the one that provably overlaps at 900×560 (rows run to `96 + 60N`, footer sits at `h - 28 = 532`).
+8. **`test_name_entry.cpp:22`'s comment** ("A per-invocation unique dir avoids races under ctest -j8") described
+   behaviour it did not have; replaced with the B17 explanation.
+
+**Not done:** the vision-critical U-items (U1, U2, U3, U6, U11, U12) are untouched — this round hardened the gate so
+they can be worked against something that does not lie. §10 #5 (hint-strip placement) still blocks U2/U3 layout.
+B9 stays **Partial**: the intermittent crash is still unreproducible and carries no test.
 
 ### 2026-11-07 — B5 main-bet escrow at commit (over-commit → negative bankroll) fixed
 
@@ -663,7 +774,9 @@ each Resolved claim against source (not the table). Baseline is **277/277**.
   its core point — the green suite hides defects in the seam the headless contract never exercises.
 
 **Confirmed accurate this pass:** every `file:line` citation listed in §1 against HEAD; §5 two-tier read contract and
-`gameRules` key list; §6.1–§6.9 evidence; B8 (`Deck.cpp:123-137`) still open; §11 open rows for B5/B8/B9/B10/B11 match
+`gameRules` key list; §6.1–§6.9 evidence; B8 (`Deck.cpp:123-137`) still open **[STALE — B8 was Resolved on 2026-11-07
+by `11f6f50`; this sentence is the 2026-11-06 record, kept as written. See §11's B8 row and §13 2026-11-09 item 5.]**;
+§11 open rows for B5/B8/B9/B10/B11 match
 source (B10 `maxSplitHands` enforced at `Game.cpp:821`, Banner mislabels keys at `Game.cpp:162-163` vs bindings
 `InputHandler.cpp:595-606`). No code changed.
 

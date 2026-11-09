@@ -38,9 +38,32 @@ cmake --build 'out/build/GCC 13.3.0 x86_64-linux-gnu' --parallel
 ctest --test-dir 'out/build/GCC 13.3.0 x86_64-linux-gnu' -j8 --output-on-failure
 ```
 
-Baseline: **277/277 pass in ~8s** (`-j8`), HEAD `356fc31`. Configure and build are clean — warnings only (the pre-existing
-`=` implicit-`this` deprecation in `GameRenderer.cpp`'s `modeTable()` lambdas). Nine defects already have regression tests
-(B2,B3,B4,B6,B7,B12,B13,B14,B15); the open reds are B1,B5,B8,B9,B10,B11. Never commit with a lower count than you started.
+Baseline: **316/316 pass**, HEAD `7a19af3` + this round's work. Configure and build are clean — warnings only (the
+pre-existing `=` implicit-`this` deprecation in `GameRenderer.cpp`'s `modeTable()` lambdas). Never commit with a lower
+count than you started.
+
+> **A single `-j8` run proves almost nothing. Run the soak.** Until B17 (2026-11-09) the suite was **not hermetic**:
+> five test files redirected `HOME` to a *fixed* `/tmp` directory, and ctest + Catch2 run each `TEST_CASE` in its own
+> process, so concurrently-scheduled tests shared one profile directory. The documented "315/315 green (`-j8`)" was
+> **false** — measured 3 of 4 runs, and 3 of 10 in a soak, had ≥1 failure (#290, #259, #306, #169). Serial was always
+> green, which is exactly why nobody noticed. So gate like this:
+>
+> ```bash
+> # 1) serial is the authoritative correctness gate
+> ctest --test-dir 'out/build/GCC 13.3.0 x86_64-linux-gnu' -j1 --output-on-failure
+> # 2) 10x -j8 is the hermeticity gate: a flake is a DEFECT, not noise
+> for i in $(seq 1 10); do ctest --test-dir 'out/build/GCC 13.3.0 x86_64-linux-gnu' -j8 > /tmp/soak_$i.log 2>&1 \
+>     || echo "run $i FAILED: $(grep -oE '[0-9]+ - .*\(Failed\)' /tmp/soak_$i.log)"; done
+> ```
+>
+> Post-B17/B18 the soak is **12 clean / 0 failing**. Any new fixed-name temp dir, unseeded `Deck::shuffle()`, or
+> statistical assertion over an unseeded shoe re-introduces the flake — use `test_support::IsolatedHome`,
+> `Deck::shuffleWithSeed()` / `Game::startNewShoeWithSeedForTest()` / `StrategyTrainer::startSessionWithSeedForTest()`,
+> and assert against quantities the code actually counts. See CONTEXT.md §13 (2026-11-09) and §11's B17/B18/B19 rows.
+>
+> **Never rebuild while a soak is running.** `cmake --build` during a `-j8` run replaces the test binary under the
+> runner and ctest reports **`BAD_COMMAND`** for a large slice of the suite at once (observed: 106 of 316 in 7.5s).
+> That is the runner race CONTEXT §13 records, not a regression — build once, up front, then soak.
 
 > **The working tree is clean.** The Tournament refactor this document used to describe as "uncommitted" landed
 > as `96fd416 "new horizons"` on branch `3.1`, and it carried the `.summaries/0.4/` docs in with it. Every line

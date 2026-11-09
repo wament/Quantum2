@@ -782,41 +782,50 @@ TEST_CASE("Edge Over Time samples the current edge instead of adding it up each 
 // version did, no matter how many rounds the shoe gets through.
 TEST_CASE("A whole shoe of ordinary rounds keeps the edge inside the expected band", "[Feature3][Analytics][Edge]")
 {
-    Game game(true);
-    game.startNewShoeForTest();  // a real shuffled 6-deck shoe, not an injected one
-    game.startTestRound();
-
-    int rounds = 0;
-    for (int i = 0; i < 40 && game.gameStateForTest() == GameState::Started; ++i)
+    // B18: this drove ONE shoe shuffled from std::random_device, so the ±5 band and the <5 span were sampled against a
+    // fresh random deal order on every run — an unlucky shoe breached them and the case flaked (it failed 1 run in 10
+    // under `ctest -j8`). Sweeping fixed seeds keeps the original intent (a REAL shuffled shoe, not an injected card
+    // list) while making the sweep reproducible.
+    const unsigned long long seeds[] = {1ULL, 7ULL, 42ULL, 1234ULL, 99991ULL};
+    for (unsigned long long seed : seeds)
     {
-        game.confirmBet();
-        game.stand();
-        test_support::settleRound(game);
-        ++rounds;
-        if (game.gameStateForTest() != GameState::Started)
-            break;
-        game.nextRoundForTest();
+        Game game(true);
+        game.startNewShoeWithSeedForTest(seed);  // a real shuffled 6-deck shoe, not an injected one -- just reproducible
+        game.startTestRound();
+
+        int rounds = 0;
+        for (int i = 0; i < 40 && game.gameStateForTest() == GameState::Started; ++i)
+        {
+            game.confirmBet();
+            game.stand();
+            test_support::settleRound(game);
+            ++rounds;
+            if (game.gameStateForTest() != GameState::Started)
+                break;
+            game.nextRoundForTest();
+        }
+
+        const std::vector<double>& series = game.edgeSeriesForTest();
+        INFO("seed " << seed << " rounds=" << rounds << " series=" << series.size());
+        // A 6-deck shoe cut 25 cards short still deals plenty of rounds; a tiny count means the shoe setup broke.
+        // not the edge model.
+        REQUIRE(rounds >= 10);
+        REQUIRE(series.size() >= 10u);
+
+        double lo = series.front(), hi = series.front();
+        for (double v : series)
+        {
+            lo = std::min(lo, v);
+            hi = std::max(hi, v);
+            CHECK(v > -5.0);
+            CHECK(v < 5.0);
+        }
+
+        // The whole curve spans a narrow band around the baseline rather than drifting across it.
+        CHECK(hi - lo < 5.0);
+        CHECK(game.edgePercentForTest() > -5.0);
+        CHECK(game.edgePercentForTest() < 5.0);
     }
-
-    const std::vector<double>& series = game.edgeSeriesForTest();
-    // A 6-deck shoe cut 25 cards short still deals plenty of rounds; a tiny count means the shoe setup broke.
-    // not the edge model.
-    REQUIRE(rounds >= 10);
-    REQUIRE(series.size() >= 10u);
-
-    double lo = series.front(), hi = series.front();
-    for (double v : series)
-    {
-        lo = std::min(lo, v);
-        hi = std::max(hi, v);
-        CHECK(v > -5.0);
-        CHECK(v < 5.0);
-    }
-
-    // The whole curve spans a narrow band around the baseline rather than drifting across it.
-    CHECK(hi - lo < 5.0);
-    CHECK(game.edgePercentForTest() > -5.0);
-    CHECK(game.edgePercentForTest() < 5.0);
 }
 
 // ---------------------------------------------------------------------------

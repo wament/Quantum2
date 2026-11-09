@@ -14,6 +14,10 @@ class Deck
 
     void create(int numberOfDecks);
     void shuffle();
+    // Deterministic variant of shuffle() for tests: identical shoe construction (shuffle + cut card + shoe record),
+    // but the shuffle is driven by `seed` instead of std::random_device. Production shuffle() keeps the OS seed, so
+    // gameplay order stays unpredictable; this seam exists so a test can pin an exact shoe order (B18).
+    void shuffleWithSeed(unsigned long long seed);
     // Reshuffle the cards still in the shoe together with ones that were dealt (offTable), then reinsert
     // the cut card. Used to start a fresh shoe after the cut card is reached or on reshuffle requests.
     void reshuffleWithRemaining(const std::vector<Card>& offTable);
@@ -36,6 +40,9 @@ class Deck
     std::vector<Card> cards;
     std::mt19937 rng;
     unsigned long long lastShuffleSeed;
+
+    // Shared body of shuffle() / shuffleWithSeed(): the only difference is where the seed comes from.
+    void shuffleWith(unsigned long long seed);
     bool cutCardReached = false;
 
     // Shoe size this deck was created with. reshuffleWithRemaining() rebuilds from this (not the compile-time

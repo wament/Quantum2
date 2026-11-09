@@ -221,16 +221,27 @@ TEST_CASE("StrategyTrainer: no grading before a session; stats reset each new se
 
 TEST_CASE("StrategyTrainer: auto-dealt questions never include a natural blackjack", "[StrategyTrainer][Generation]")
 {
-    StrategyTrainer trainer;
-    trainer.startSession(6, 0); // the first question is dealt via nextQuestion(), which skips blackjacks
-
-    int guard = 0;
-    while (trainer.sessionActiveForTest() && guard++ < 100)
+    // B18: this used to sweep ONE shoe shuffled from std::random_device, so it sampled a fresh random order every run
+    // and could only ever flake, never pin. Sweeping a fixed seed list makes the identical sweep reproducible, and
+    // running it to shoe exhaustion (not to an arbitrary 100-question cap) is what reaches the B19 path at all.
+    const unsigned long long seeds[] = {1ULL, 7ULL, 42ULL, 1234ULL, 99991ULL};
+    for (unsigned long long seed : seeds)
     {
-        CHECK(!trainer.questionHandForTest().isBlackjack()); // every presented hand requires a real decision
-        trainer.nextQuestion();
+        StrategyTrainer trainer;
+        trainer.startSessionWithSeedForTest(6, 0, seed);   // 6 decks, untimed: the session runs until the shoe is spent
+
+        int guard = 0;
+        int questions = 0;
+        while (trainer.sessionActiveForTest() && guard++ < 400)
+        {
+            INFO("seed " << seed << " question " << questions);
+            CHECK(!trainer.questionHandForTest().isBlackjack()); // every presented hand requires a real decision
+            ++questions;
+            trainer.nextQuestion();
+        }
+        CHECK(questions > 1);   // a fresh shoe yields many non-blackjack questions before it runs out
+        INFO("seed " << seed << " swept " << questions << " questions");
     }
-    CHECK(guard > 1); // a fresh shoe yields many non-blackjack questions before it could run out
 }
 
 // B19 — the generation rule above has a hole the shuffled test could only ever flake on, never pin. nextQuestion()

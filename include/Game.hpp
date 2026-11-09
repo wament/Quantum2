@@ -3,6 +3,7 @@
 #include <SFML/Graphics.hpp>
 #include <vector>
 #include <memory>
+#include <optional>
 
 enum class AppMode
 {
@@ -147,6 +148,10 @@ class Game
     int shoeGenerationForTest() const { return shoeGeneration; }
     // Drive the real shoe boundary (the same path the R key and auto-play advance take) from a test.
     void startNewShoeForTest() { startNewShoe(); }
+    // Deterministic variant (B18): builds the shoe exactly as startNewShoe() does — create + shuffle + shoe record +
+    // resetShoeAnalytics — but shuffles from `seed` instead of the OS RNG. For tests that need a REAL shuffled shoe
+    // (not an injected card list) with a reproducible order; production never calls it.
+    void startNewShoeWithSeedForTest(unsigned long long seed) { startNewShoeWith(seed); }
     // Deal the next round at the same table without touching the shoe (what R does between rounds).
     void nextRoundForTest() { nextRound(); }
     void updateHUDStateForTest() { updateHUDState(); }
@@ -466,6 +471,8 @@ class Game
     // mid-shoe reshuffle) goes through these, so no boundary can silently skip the reset.
     void resetShoeAnalytics();
     void startNewShoe();
+    // Shared body of startNewShoe() / startNewShoeWithSeedForTest(); an engaged `seed` shuffles deterministically.
+    void startNewShoeWith(std::optional<unsigned long long> seed);
 
     void loadAssets();
 
