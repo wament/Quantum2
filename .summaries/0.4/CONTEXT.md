@@ -181,7 +181,11 @@ Serialisation round-trips it and clamps out-of-range stored values back into the
 - **B9 overlay bounds guard** (resolved 2026-11-07, `facea14`): the summary-overlay renderer in `drawSummaryOverlay()` indexed the per-player value from `game.players[i]` (`GameRenderer.cpp:1025`) inside a loop bounded by `playerSummaries.size()` (`:1022`) without clamping, so it read out of range whenever live players exceeded the summaries drawn, and the per-row fan-width helper underflowed on an empty/single hand. Decided to clamp row count to `min(summaryCount, playerCount)` and make the fan-width helper return 0.f for 0/1 hands — a renderer-only bounds guard (no persisted field, no data-model change) that keeps summary rendering safe as presentation only; headless tests **#299/#300** (`tests/test_summary_overlay_bounds.cpp`; the §11 row's "#296/#297" is stale — see §13 2026-11-09) fail before the clamp and pass after. B9 stays **Partial** in §11 because the original intermittent single-occurrence crash is genuinely unreproducible and carries no test.
 - **B17 test-isolation guard: one shared RAII `test_support::IsolatedHome`, PID-namespaced** (resolved 2026-11-09). Decided to centralise rather than patch five hand-rolled redirects: `Player::getSavePath()` reads `$HOME` from the environment, and ctest + Catch2 run each `TEST_CASE` in its **own process**, so any *fixed* temp dir (`/tmp/bj_b1_test`, `/tmp/bj_u8_test`, `/tmp/bj_b7_test`, `/tmp/bj_t1_autosave_home`, `/tmp/bj_name_entry_0`) is shared by every concurrently-scheduled test. The dir name embeds the **PID** (unique across processes) plus a per-process counter (unique across several guards in one case) — a counter alone is what broke the old guard, because a `static int` is per-process and therefore always 0. Restoration and removal happen in the destructor, so a Catch2 `REQUIRE` throwing cannot leak a redirected `HOME` into later cases in the same process (the reason `test_session_lifecycle.cpp` carried a local `HomeGuard`; it is deleted). Test-only: no product code, no persisted field, no schema change. Also decided to audit at **`TEST_CASE` granularity**, not per file — a file containing one isolated case can still contain nine unisolated ones, and those nine were writing the developer's real career profile.
 - **B18 determinism seam: seed the shuffle, never change it** (resolved 2026-11-09). Chose to add `Deck::shuffleWithSeed(seed)` alongside the existing `shuffle()` rather than to seed `shuffle()` itself: production keeps `std::random_device`, so real shoe order stays unpredictable, and both entry points share one private `shuffleWith()` body so the two paths cannot drift. Same pattern for `StrategyTrainer::startSessionWithSeedForTest()` (shared `startSessionWith()`) and `Game::startNewShoeWithSeedForTest()` (shared `startNewShoeWith()`), plus `StrategyTrainer::setDeckForTest()` for exact-shoe injection. Tests that need a *real shuffled* shoe (not an injected card list) now sweep a fixed seed list; #306's assertion was retargeted from driver rounds to the settled-hand count the autosave gate actually counts. No new persisted field; `*ForTest()` convention preserved.
+- **B17 hermeticity: isolate at PROCESS scope, not per TEST_CASE** (resolved 2026-11-09, follow-up). The original fix redirected five files; a serial bisect found Test #99 (`tests/test_settlement.cpp`) still rewriting the developer's real 9.3 MB career profile, with 68 round-driving `Game(true)` cases across eight files unguarded. Decided to redirect `$HOME` once per test **process** — `test_support::ProcessHomeIsolation` instantiated in the always-compiled `tests/test_process_isolation.cpp` — because `catch_discover_tests` gives every TEST_CASE its own process of one binary, so one static-init guard covers all of them and no future test can forget a guard. Rejected: patching 68 call sites (the sprawl B17 decided against; re-opens on the next added test), and an `inline` object in `test_support.hpp` (only covers TUs that include it). Test infrastructure only: no product code, no persisted field, no schema change. Locked by **#327**.
 - **B19 blackjack-at-exhaustion: end the session, do not present the hand** (resolved 2026-11-09). `StrategyTrainer::nextQuestion()`'s rejection loop can exit with a blackjack in hand when the shoe runs dry mid-retry. Decided that the correct behaviour is to treat it as shoe exhaustion — clear the question and end the session exactly as the existing `deck.size() < 3` branch at the top of the function does — rather than to keep drawing, because the trainer's contract is "every presented hand requires a real decision" and a natural 21 has none. Presentation-only + session-state only: no persisted field, no `GameRules` change, no `AppMode` change.
+- **U11/U3/U1 layout basis: one `GameRenderer::worldSizeOf(game)` for drawing *and* hit-testing** (resolved 2026-11-09). The renderer laid out screens in `gameView` **world** units (`GameRenderer.cpp:35-37` sets the view to `window.getSize()`, so world units equal window pixels only at exactly 1600×900), while the InputHandler hit-tested menu rows in **raw window pixels** with hard-coded 900-basis y constants — three screens on three bases. Decided to add one accessor, `GameRenderer::worldSizeOf(const Game&)`, and route *both* sides through it: every menu/pause/achievements/rules y-coordinate is derived from that size, and every hit-test resolves the row the renderer actually draws at the current size. Rejected: (a) fixing only the renderer (hover would still drift), (b) switching to a fixed-viewpoint letterboxed view (a real windowing change, out of scope for a QA phase), (c) per-call `sf::Mouse::getPosition(window)` snapshots (the pause hit-test used the **desktop-space** `sf::Mouse::getPosition()`, which is the same bug class). This is presentation + input plumbing only: no persisted field, no schema change, no `AppMode` change. Locked by **#323–#325** (`tests/test_presentation_layout.cpp`), which assert the pure helpers agree with the renderer's accessors at 1600×900, 900×560 and 1200×800 — the tests fail before the unification because the two bases disagree off-default.
+- **U1 hover is a visual state, not a selection** (resolved 2026-11-09). `InputHandler::processMenuEvents` called `applyMenuRowSelection()` on `MouseMoved`, so moving the mouse *moved* the keyboard selection; the renderer then drew hovered and selected rows in the same gold, leaving no way to see which row Enter would fire. Decided to decouple them in the direction of a normal desktop menu: hover paints a background pill plus a leading marker and never mutates `menuSelection`; gold stays reserved for the keyboard-selected row; a click activates immediately. Rejected: making hover steal the gold (keeps the ambiguity), and making hover set the selection while rendering them differently (leaves the selection state mutated by an incidental mouse sweep across the window). Regression test **#317** asserts hover and selection are distinct states and that a hover event leaves the selection index untouched.
+- **Non-ASCII text must not be passed to SFML as `std::string`; use ASCII, or `sf::String(U"…")`** (decided 2026-11-09, U13). The first U1 build drew `›` (U+203A) as the hover marker and the Xvfb screenshot showed **tofu boxes**. The first explanation — "the shipped font has no U+203A glyph" — was **wrong and is corrected here**: `assets/fonts/noto/NotoSans-Regular.ttf` maps U+203A to `guilsinglright` with a real 1-contour outline (fontTools). The actual cause is SFML 3's decoding: `sf::String(const std::string&, const std::locale& = {})` is documented as an **ANSI** string converted through the locale (`SFML/include/SFML/System/String.hpp:173`), so a UTF-8 literal in the source becomes **three** code points — `›` = `0xE2 0x80 0xBA` → `â`, U+0080, `º` — and U+0080 has no glyph. Decided to keep ASCII `>` for the marker (the rules panel already uses it; proven to render) rather than build `sf::String(U"›")`, because a cosmetic marker does not justify a UTF-32 path. **The general rule for the next visual fix: a string reaching `sf::Text` must be ASCII-only, or be built as `sf::String(U"…")`/`std::u32string`.** Two live violations were found by sweeping `src/` for non-ASCII and are fixed as **U13**: `Game::bettingControlsHint()` (U+2191/U+2193/U+2190/U+2192 — these are *genuinely* absent from the Noto cmap, so ASCII is the only correct fix) and the name-entry hint (U+2022 bullets). Locked by **#326** (`isSfmlSafeAscii`). Not fixed, recorded: `Card::getSuitSymbol()` (`src/Card.cpp:32`) returns `u8"♠"[0]` — a single `char`, i.e. the truncated first byte of a UTF-8 sequence — so it can never produce a suit glyph; it is **dead code** (no callers), which is why it is a trap rather than a defect. The startup banner's `♠ ♣ ↑ ↓` are `std::cout` output on a UTF-8 terminal and are fine.
 
 ---
 
@@ -385,9 +389,11 @@ Defaults if nobody answers: 1(a), 2(a), 3 = $1,000 everywhere, 4 = expose, 5 = k
 
 Update this table as work lands; it is the first thing the next window should read.
 
-**Re-audited against source on 2026-11-09 at HEAD `7a19af3`** (branch `3.1`). The B-series is **closed except B9**,
-which stays **Partial** because its original intermittent crash is genuinely unreproducible and carries no test.
-What is actually open now: the vision-critical UI set **U1, U2, U3, U6, U11, U12**, and **T1**'s history-growth half.
+**Re-audited against source on 2026-11-09 at HEAD `7a19af3`** (branch `3.1`), and re-checked again after the U-series
+landed. The B-series is **closed except B9**, which stays **Partial** because its original intermittent crash is
+genuinely unreproducible and carries no test. What is actually open now: **U12** (needs a bucket-bounds decision) and
+**T1**'s history-growth half. The vision-critical set **U1, U2, U3, U6, U11** is **Resolved and verified on screen**, and
+the screenshot pass surfaced one more on-screen defect, **U13** (non-ASCII text → SFML), also Resolved.
 Every row below was re-checked against the source rather than trusted from this table. (An earlier revision of this
 header said "nothing has landed; all 15 defects plus U1–U10, T1–T2 and B16 are still open" — that was the 2026-11-06
 snapshot and is contradicted by the table beneath it; it has been replaced.)
@@ -397,10 +403,16 @@ snapshot and is contradicted by the table beneath it; it has been replaced.)
 guard (`facea14`), plus `U7` (`e157052`), `U4`, `U5`, `U9`, `U10`, all on 2026-11-07; and **`B17`, `B18`, `B19` on
 2026-11-09**. B9 is **Partial** — only its intermittent-crash half stays unreproducible.
 
-**Suite at 316/316 serial.** The `-j8` figure is only trustworthy from B17 onward: the documented "315/315 green at
+**Resolved on 2026-11-09 (U-series):** `U1`, `U2`, `U3`, `U6`, `U11` — five vision-critical defects, nine new tests
+(#317–#325), verified with an Xvfb screenshot harness rather than by code reading. The same screenshot pass surfaced
+`U13` (non-ASCII text reaching SFML), also Resolved, test #326.
+
+**Suite at 327/327 serial.** The `-j8` figure is only trustworthy from B17 onward: the documented "315/315 green at
 `-j8`" was **false** (3 of 10 soak runs had ≥1 failure), and the gate in `NEXT_STEPS.md` now requires a 10-run soak.
-Post-B17/B18/B19 the soak measures **12 clean / 0 failing**, every run 316/316, with the developer's real profile md5
-stable across the soak.
+Post-B17/B18/B19 the soak measured **12 clean / 0 failing**, every run 316/316, with the developer's real profile md5
+stable across the soak. **That profile check was not catching the writer** — see §13's 2026-11-09 B17 entry: a soak
+compares runs to each other, so a writer that emits identical content every run looks stable from run 1. The gate is
+now md5 **before** and **after** against a baseline captured outside the suite.
 
 > **The test IDs in the Evidence column drifted again and were re-derived on 2026-11-09** against `ctest -N`:
 > **B13 is #280** (not #273 — #273 is now a Surrender test, exactly the trap §13 warns about), the **B9 overlay pair is
@@ -426,12 +438,15 @@ stable across the soak.
 | B11 | 🟡 | startup control banner mislabels the betting-phase keys | **Resolved 2026-11-07** | Extracted the startup "PLAYER CONTROLS" banner from the inline `Logger::info` in `Game::Game()` into a pure helper `Game::startupControlsBanner() const`; corrected its labels to match the real `InputHandler.cpp:635-645` PlaceBets bindings (Left = auto Kelly via `calculateOptimalBet()`/`setBet()`, Right = confirm). Regression test #295 (`tests/test_banner_b11.cpp`) reads it from a headless `Game(true)` and asserts Left-present / Right-absent on the auto-kelly row — fails before, passes after. Suite 294 → 295/295. §10 #5 (banner-survival: keep trimmed vs permanent in-game Controls screen) stays open; this was the minimal fix |
 | B12 | 🟡 | `resplitTentsAllowed` typo in save schema | **Resolved 2026-11-06** | Renamed field+enum to `resplitTensAllowed`/`ResplitTens`; `to_json` writes the corrected key, `from_json` reads it then falls back to the legacy typo'd key (new wins). On-disk writer verified via `test_profile_settings.cpp:232` using real `PlayerProfile::save()` — shipped binary now writes `resplitTensAllowed`. Suite 272/272 |
 | B16 | 🟡 | `reconstructDeckAtRound()` dead and wrong | **Resolved 2026-11-07 (`5f81d48`)** | Removed — static analysis confirmed zero callers (sole occurrence was its own definition at `GameRecord.hpp:307`), so deletion is behaviour-preserving; it also recomputed deck state with the wrong card-drop order, which no code relied on. Full suite unchanged at 289/289 |
-| B17 | 🟠 | Test suite is not hermetic: shared `/tmp` HOME dirs made `ctest -j8` flaky, and the suite wrote the **developer's real** career profile | **Resolved 2026-11-09** | The documented "315/315 green at `-j8`" baseline was **false**: measured 3 of 4 runs (and 3 of 10 in a soak) had ≥1 failure. Root cause: `Player::getSavePath()` (`src/Player.cpp:14`) resolves `$HOME/.local/share/blackjack/saves/player_profile.json` from the environment, and five test files each redirected `HOME` to a **fixed** path (`/tmp/bj_b1_test`, `/tmp/bj_u8_test`, `/tmp/bj_b7_test`, `/tmp/bj_t1_autosave_home`, `/tmp/bj_name_entry_0`). ctest + Catch2 run each `TEST_CASE` in its **own process**, so those dirs are shared by every concurrently-scheduled test. `test_name_entry.cpp`'s "per-invocation unique" dir came from a `static int counter` — per-process, therefore **always 0**: #291 writes a profile named "Ada" into `/tmp/bj_name_entry_0`, #290 then loads it, sees a non-empty name and fails `REQUIRE(needsNameEntry() == true)`. Reproduced deterministically by running #290 and #291 side by side (1/25). Separately, a per-`TEST_CASE` audit found **9** cases calling `startNewGame()`/`startTournamentSession()`/`startStatsSession()`/`rememberTableSettings()` with no redirect at all — those rewrite the real `~/.local/share/blackjack/saves/player_profile.json` (its mtime moved across a suite run). Fix: one shared RAII `test_support::IsolatedHome` (`tests/test_support.hpp`) whose dir embeds the **PID** (unique across the processes ctest spawns) plus a per-process counter; migrated all 5 hand-rolled redirects and guarded all 9 unguarded cases. Gate = **10 consecutive `ctest -j8` runs**: red 7 clean / 3 failing before, **10 clean / 0 failing** after, with the real profile's md5 verified stable across the soak. No product code changed. |
+| B17 | 🟠 | Test suite is not hermetic: shared `/tmp` HOME dirs made `ctest -j8` flaky, and the suite wrote the **developer's real** career profile | **Resolved 2026-11-09** | The documented "315/315 green at `-j8`" baseline was **false**: measured 3 of 4 runs (and 3 of 10 in a soak) had ≥1 failure. Root cause: `Player::getSavePath()` (`src/Player.cpp:14`) resolves `$HOME/.local/share/blackjack/saves/player_profile.json` from the environment, and five test files each redirected `HOME` to a **fixed** path (`/tmp/bj_b1_test`, `/tmp/bj_u8_test`, `/tmp/bj_b7_test`, `/tmp/bj_t1_autosave_home`, `/tmp/bj_name_entry_0`). ctest + Catch2 run each `TEST_CASE` in its **own process**, so those dirs are shared by every concurrently-scheduled test. `test_name_entry.cpp`'s "per-invocation unique" dir came from a `static int counter` — per-process, therefore **always 0**: #291 writes a profile named "Ada" into `/tmp/bj_name_entry_0`, #290 then loads it, sees a non-empty name and fails `REQUIRE(needsNameEntry() == true)`. Reproduced deterministically by running #290 and #291 side by side (1/25). Separately, a per-`TEST_CASE` audit found **9** cases calling `startNewGame()`/`startTournamentSession()`/`startStatsSession()`/`rememberTableSettings()` with no redirect at all — those rewrite the real `~/.local/share/blackjack/saves/player_profile.json` (its mtime moved across a suite run). Fix: one shared RAII `test_support::IsolatedHome` (`tests/test_support.hpp`) whose dir embeds the **PID** (unique across the processes ctest spawns) plus a per-process counter; migrated all 5 hand-rolled redirects and guarded all 9 unguarded cases. Gate = **10 consecutive `ctest -j8` runs**: red 7 clean / 3 failing before, **10 clean / 0 failing** after, with the real profile's md5 verified stable across the soak. No product code changed. **B17 was INCOMPLETE and is now closed (2026-11-09).** The five-file redirect did not make the suite hermetic; the soak's profile-md5 check passed because the writer happens to produce a file that was not compared against a changing baseline in that run. A **serial bisect over every test index** (md5 the real profile before and after each `ctest -I i,i`) found **Test #99, "Resplitting tens is refused when RESPLIT_TENS_ALLOWED is false"** in `tests/test_settlement.cpp` writing the developer's real career profile — the live **9.3 MB** file came out **1.34 MB**, i.e. the career history was replaced by a test's game state. Eight files construct `Game(true)` and drive real rounds with **zero** guards: test_settlement (21 cases), test_side_bets (18), test_game_rules (12), test_achievements (7), test_advisor_feedback (4), test_counting_box_label (3), test_max_split_hand_rules (2), test_side_bet_paytable (1) — 68 cases. Patching 68 call sites is the hand-rolled-redirect sprawl B17 itself decided to stop centralising, and any new round-driving test in those files re-opens the hole silently. Fix: **process-scope isolation** — `test_support::ProcessHomeIsolation` instantiated in `tests/test_process_isolation.cpp`, the one TU always compiled into `Blackjack2Tests`; `catch_discover_tests` launches every TEST_CASE as its own process of that binary, so a static-init redirect covers every test, including files that never include `test_support.hpp`. Locked by a new test (`[B17][hermeticity]`, **#327**) asserting `$HOME` is a `bj_proc_home_<pid>` dir, that the real profile path is not reachable from inside a test process, and that the per-case `IsolatedHome` still nests inside it. Re-bisect: **zero writers across all 327 tests**; full `-j8` suite leaves the profile md5 unchanged. |
 | B18 | 🟡 | Three tests asserted against an **unseeded** OS RNG, so they flaked instead of pinning anything | **Resolved 2026-11-09** | `Deck::shuffle()` reseeds from `std::random_device` (`src/Deck.cpp:41`), so (a) #259 swept one *random* shoe per run and (b) #306 asserted `writes == rounds / AUTO_SAVE_EVERY_HANDS` against **driver rounds** while the cadence counts **settled hands** — an unseeded shoe settles a varying number per round (a natural settles at once, a split settles two); `handsEvaluated` measured 10, 11 and 12 across 12 runs, so the fixed `floor(12/5)==2` was only sometimes true. Added a deterministic seed seam — `Deck::shuffleWithSeed(seed)` (shares one private `shuffleWith()` body with `shuffle()`, so the production OS-seed path is byte-identical) and `StrategyTrainer::startSessionWithSeedForTest()` (delegates to a shared `startSessionWith()`). #259 now sweeps **5 fixed seeds to shoe exhaustion** (the old 100-question cap never reached the exhaustion path that B19 fixed); #306 asserts against the settled-hand count it actually gates on. Retargeting #306's assertion alone was **not enough** — 20 runs still failed 1, because the autosave counter resets on a write and a split round settles two hands, discarding the overflow so writes land *below* `floor(hands/5)`; the case now seeds a uniform alternating 10/7 shoe (hard 17 every round: no pair → no split, no natural) so exactly one hand settles per round and `handsEvaluated == rounds` is a checked precondition. #169 "edge inside the expected band" was a **third** flake of this class, only exposed once B17/B18 removed the noise hiding it; it now sweeps the same 5 seeds. Targeted soak: **0/25–0/30 fails** each, previously load-dependent failures. |
 | B19 | 🟠 | `StrategyTrainer::nextQuestion()` **presents a natural blackjack** when the shoe runs out mid-retry | **Resolved 2026-11-09** | Real product defect that #259 was only ever *flaking* on. The blackjack-rejection loop is `do { draw 2 player + 1 dealer } while (questionHand.isBlackjack() && attempts < 500 && deck.size() >= 3);` followed unconditionally by `computeBookAction()`. The entry guard only requires `deck.size() >= 3`, so the **first pass can draw the shoe dry**; when that hand is a blackjack the `deck.size() >= 3` term is false, the loop exits, and the natural 21 is presented — a hand with no decision to train — with `active` left true on a spent shoe. Reaching it needs the shoe to empty at exactly that moment, which is why it flaked under load rather than failing. Fix: after the loop, if the hand is still a blackjack, clear it and end the session exactly as the exhaustion branch at the top of the function does. Test-first: `setDeckForTest()` seam injects an exact 3-card shoe (dealer up-card, ten, ace — `Deck::draw()` pops from the back, so the player gets ace+ten and the shoe is spent) → **fails before, passes after** (red verified: both `!isBlackjack()` and `!sessionActiveForTest()` failed pre-fix). New test #316; suite 315 → **316/316**. |
-| U1–U12 | 🟡 | UI/UX set (see NEXT_STEPS Phase 4) | Partial — this phase Resolved: U4 (#307–#308), U5 (#309–#311), U7 (#286–#288), U8 (#70), U9 (#312–#315), U10 (#281/#282). Open: U1, U2, U3, U6 (vision-critical) + U11, U12 (new 2026-11-09). **Re-verified against source by code pattern on 2026-11-09** (not on screen): all six sites confirmed real, with `GameRenderer.cpp` line numbers drifted ~+20 — U1 `drawMenuItem` `:1055-1073` (`if (hovered || selected)` → same gold, hover only adds `Bold`), U2 `drawPauseMenu` `:1327-1360` (full-window alpha-128 overlay, **no panel**), U3 `drawAchievementList` `:113-154` (`y = 96.f`, `rowH = 60.f`, footer at `h - 28.f`) and `drawGameRules` `:1289` (note: `startY = h*0.30f` is fractional, only `spacing = 46.f` is hard-coded, and the 7 rows fit at 900×560 — Achievements is the screen that provably overlaps), U6 `drawTotal` `:474` (bare white 16pt), U11 the three hit-tests on three bases (`:1075` / `:1101` / `:1140`, the pause one using **raw `sf::Mouse::getPosition`**), U12 `HUDState.hpp:55-56` + `Constants.hpp:194-200` (buckets span `[0, MAXIMUM_BET=1000]`, not 10–100). Headless-testability: HARDEST — needs an SDL window context + screenshots/Xvfb for visual assertions; no pure headless unit test can lock rendering.
+| U4, U5, U7, U8, U9, U10 | 🟡 | UI/UX set (see NEXT_STEPS Phase 4) | **Resolved this phase** | U4 (#307–#308), U5 (#309–#311), U7 (#287 + #289–#291), U8 (#70), U9 (#312–#315), U10 (#282/#283). |
+| U1, U2, U3, U6, U11 | 🟡 | Vision-critical UI set (menu hover/selection, pause panel, reflow, card fan + totals, resize drift) | **Resolved 2026-11-09** | All five fixed and **verified on screen** with an Xvfb + python-xlib screenshot harness (the only way to lock rendering; §6 method). **U1** root cause: `InputHandler::processMenuEvents` called `applyMenuRowSelection()` on `MouseMoved`, so the mouse *moved* the keyboard selection, and `drawMenuItem` painted hovered and selected rows in the same gold — no way to see which row Enter fires. Hover is now purely visual (background pill + leading `>` marker), gold is reserved for the keyboard selection, click activates. Screenshot proof: gold "Review History" (selected) and pill+marker "Achievements" (hovered) visible simultaneously. **U2**: `drawPauseMenu` painted a full-window alpha-128 overlay with no panel, so "Quit to Menu" collided with the seat-name label over the live table; added a centred panel (fill + outline) sized from the row bounds with padding, proven at 1600×900 and 900×560. **U3**: `drawAchievementList` (`y=96`, `rowH=60`) and `drawGameRules` used hard-coded offsets while the footer sat at `h-28`, so the list ran under the footer at 900×560; both now derive their geometry from the world size. **U6**: 3+ card hands advanced by a 16px step (a sliver of each card) and `drawTotal` drew bare 16pt white over the felt; introduced `cardFanCenterShift` (fan is centred on the seat, proven with a 7-card hand centred on the chip/label) and a dark pill behind every hand total (dealer **7** and player **28** legible over the felt text). **U11**: the three menu hit-tests used three coordinate bases — the pause one used desktop-space `sf::Mouse::getPosition()` — so rows drifted from their hover targets after a resize; all drawing and hit-testing now go through one accessor, `GameRenderer::worldSizeOf(game)`. Tests **#317–#325** (`tests/test_presentation_layout.cpp`, registered in `CMakeLists.txt`): suite 316 → **325/325**. Screenshots in `/tmp/bj_shots/` (harness `/tmp/bj_visual.py`, `/tmp/bj_u6.py`, `/tmp/bj_menu.py`). |
+| U12 | 🟡 | Bet-distribution histogram buckets span `[0, MAXIMUM_BET=1000]`, not the documented 10–100 | Open | Verified against source 2026-11-09: `HUDState.hpp:55-56` + `Constants.hpp:194-200` — the buckets span `[0, MAXIMUM_BET=1000]`, so the axis label in the docs (10–100) is what is wrong, and typical $10–$50 wagers all land in bucket 0. Needs a decision on bucket bounds (log scale vs. fixed 10–100) before fixing. Headless-testability: HARDEST — needs an SDL window context + screenshots/Xvfb for visual assertions; no pure headless unit test can lock rendering. The Xvfb screenshot harness built this round (`/tmp/bj_visual.py`) closes that gap and is the tool to use. |
+| U13 | 🟡 | Non-ASCII text passed to SFML as `std::string` renders as mojibake/tofu on screen | **Resolved 2026-11-09** | Found by **screenshot**, not by reading code — the same blind spot that hid U1 for two audits. `sf::String(const std::string&, const std::locale& = {})` is an **ANSI** string converted through the locale (`SFML/include/SFML/System/String.hpp:173`), so a UTF-8 source literal decodes to several code points and the 0x80-range byte among them has no glyph. Two live sites: `Game::bettingControlsHint()` rendered as `□□□ Increase Bet  □□□ Decrease Bet` in the play band (U+2191/U+2193/U+2190/U+2192 are **genuinely absent** from the Noto cmap — fontTools — so ASCII is the only correct fix), and the name-entry hint's U+2022 bullets rendered as `â<control>¢`. Both replaced with ASCII; the name-entry string was extracted to the pure helper `PresentationLayout::nameEntryHintText()` so it is headless-testable. Test **#326** (`isSfmlSafeAscii`) — red on the pre-fix byte sequences, green after (verified with a standalone TU, not just asserted). **This row also corrects a false claim**: the earlier note said the shipped font lacks U+203A `›`; it does not (`guilsinglright`, 1 contour) — the marker's tofu was the ANSI decoding. Recorded, not fixed: `Card::getSuitSymbol()` returns `u8"♠"[0]`, a single truncated byte that can never be a suit glyph — dead code, no callers. Also fixed in passing: `include/PresentationLayout.hpp` was not self-contained (no `<string>`); it compiled only because a prior include supplied `std::string`, and a standalone-compile check now passes. |
 | T1 | 🟢 | Save amplification (profile rewritten every settled round) | **Partial** — write cadence gated | The *file write* is gated: `AUTO_SAVE_EVERY_HANDS = 5` (`Constants.hpp:184`), enforced in `evaluateHands()` and proven by #305/#306 (`tests/test_autosave_every_5_hands.cpp`); #306's assertion was corrected in B18 to count settled hands rather than driver rounds. `HandEvaluator.cpp:295` still appends a `RoundRecord` every settled round, so the in-profile history still grows per round — that growth is T2's cap, not the write cadence. The 9.3 MB real profile on this machine is the residue of that growth. |
-| T2 | 🟢 | Unbounded history | **Resolved** | `MAX_LONG_HISTORY_SHOES = 100` (`Constants.hpp:181`) with oldest-first roll-up. Tests #301–#304 (`tests/test_history_rollup.cpp`, `[T2][history-cap]`) cover the cap, exact career-total preservation across a roll, save/load survival and the no-op case. §11 previously listed T1 and T2 on one row as Open — T2 has been done since those tests landed; the row was split 2026-11-09.
+| T2 | 🟢 | Unbounded history | **Resolved** | `MAX_LONG_HISTORY_SHOES = 100` (`Constants.hpp:181`) with oldest-first roll-up. Tests #301–#304 (`tests/test_history_rollup.cpp`, `[T2][history-cap]`) cover the cap, exact career-total preservation across a roll, save/load survival and the no-op case. §11 previously listed T1 and T2 on one row as Open — T2 has been done since those tests landed; the row was split 2026-11-09. |
 | — | ✅ | `handActions` indexing | **Cleared — not a bug** | Do not "fix" without also changing turn order (§6.9) |
 | — | ✅ | Settlement math | **Cleared — correct** | |
 
@@ -458,6 +473,155 @@ next window trusts it.
 These documents are load-bearing, so they get audited like code. Each entry records what was checked, against
 what, and what changed. If you correct something, add a bullet here — a silent edit is how the next window ends up
 trusting a stale claim again.
+
+### 2026-11-09 — B17 was NOT complete: the suite was still rewriting the developer's real career profile
+
+**How it surfaced.** The post-U-series soak was green (10 clean / 0 failing, 326/326) and I checked the developer's
+profile md5 as the B17 entry instructs. It had **changed**: `686b9192…` → `6482a65d…`, and the file had gone from
+**9.3 MB to 1.34 MB**. The suite was writing the real profile again. The earlier soak in the same session had reported
+the md5 stable, so "stable across a soak" is a weaker check than it looks: it compares consecutive runs against each
+other, and a writer that produces the *same* content every time leaves the md5 unchanged from run 1 onward.
+
+**Finding it.** Serial bisect over every test index — md5 the profile, `ctest -I i,i`, md5 again, report any index
+where it moved. One writer: **Test #99, "Resplitting tens is refused when RESPLIT_TENS_ALLOWED is false"**
+(`tests/test_settlement.cpp`). It drives a real round (`start_round` + `tickFrame` + `split()`), and settlement reaches
+the profile write. The adjacent SplitTens cases drive the same flow; the bisect reports only the first because the
+baseline is updated after each detected write.
+
+**Scope of the hole.** Eight files construct `Game(true)` and drive real rounds with **zero** `IsolatedHome` guards:
+`test_settlement` (21 cases), `test_side_bets` (18), `test_game_rules` (12), `test_achievements` (7),
+`test_advisor_feedback` (4), `test_counting_box_label` (3), `test_max_split_hand_rules` (2), `test_side_bet_paytable`
+(1) — **68 cases**. B17 redirected five files and stopped. §11's claim that the suite is hermetic was **overstated**,
+and §11 has been corrected.
+
+**Fix — process scope, not 68 call sites.** B17's own recorded decision was "centralise rather than patch hand-rolled
+redirects", so patching 68 sites contradicts the precedent, and any new round-driving test in those files would
+re-open the hole silently. `catch_discover_tests` launches every TEST_CASE as its **own process of one binary**, so a
+single object constructed during static initialisation redirects `$HOME` for every test process. Added
+`test_support::ProcessHomeIsolation` and instantiated it in a new always-compiled TU, `tests/test_process_isolation.cpp`
+(an `inline` object in the header would not work: `test_betting_controls_hint.cpp`, `test_presentation_layout.cpp` and
+others do not include `test_support.hpp`, and would silently run unisolated). The per-case `IsolatedHome` is unchanged
+and nests correctly — it captures the process temp dir as its "original" and restores to it.
+
+**Lock.** New test **#327** (`[B17][hermeticity]`): `$HOME` is a `bj_proc_home_<pid>` directory, the real profile path
+is **not reachable** from inside a test process, and a nested `IsolatedHome` restores to the process dir.
+
+**Verification.** Re-bisect: **zero writers across all 327 tests**. Full `-j8` suite: 327/327 with the profile md5
+unchanged.
+
+**Data recovery.** The live profile had already been replaced by a test-written 1.34 MB file. A 9.3 MB
+`player_profile.corrupt.1794228271.json` (mtime 06:44, before this session — renamed by B14's corrupt-save handler)
+was valid JSON with `name=William`, `bankroll=17232`, 100 shoes and full stats. Per the developer's choice it was
+promoted over the test-written file, and **verified loadable**: the game logs `Loaded profile for William with
+bankroll 17232.` with no corrupt rename. Recorded so nobody re-deletes it.
+
+**Gate change worth adopting.** "md5 stable across a soak" is not sufficient — it must be **md5 before the soak, md5
+after the soak, against a baseline captured outside the suite**, plus the per-index bisect when anything writes.
+
+### 2026-11-09 — U13: non-ASCII text reaching SFML, and a §5 claim of mine that was wrong
+
+**What prompted this.** The U1 verification screenshot showed the hover marker as tofu boxes, and I wrote the cause
+into §5 as "the shipped font has no U+203A glyph". That claim was **never checked against the font** — it was inferred
+from a screenshot. Checking it with fontTools: `assets/fonts/noto/NotoSans-Regular.ttf` maps **U+203A → `guilsinglright`**,
+1 contour, bbox (39,56,270,471). The glyph is there. §5's bullet has been rewritten.
+
+**The real cause.** SFML 3's `sf::String(const std::string& ansiString, const std::locale& locale = {})`
+(`SFML/include/SFML/System/String.hpp:173`) is an **ANSI** string converted through the locale — not UTF-8. A UTF-8
+literal in the source is therefore decoded as its individual bytes: `›` = `E2 80 BA` → `â`, **U+0080**, `º`. U+0080 has
+no glyph → the box. The plural "boxes" in the screenshot was the tell I did not read at the time.
+
+**Sweep, not spot-fix.** Grepping `src/` for non-ASCII in code (not comments) found four sites, triaged:
+`Game::bettingControlsHint()` (U+2191/2193/2190/2192) — **visible defect**, rendered as `□□□ Increase Bet` in the play
+band, and these four arrows are **genuinely absent from the Noto cmap**, so ASCII is the only correct fix;
+the name-entry hint (two U+2022 bullets) — **visible defect**, extracted to the pure
+`PresentationLayout::nameEntryHintText()`; `Game::startupControlsBanner()` (`♠ ♣ ↑ ↓`) — **not a defect**, it is
+`std::cout` on a UTF-8 terminal; `Card::getSuitSymbol()` (`u8"♠"[0]`) — returns a single truncated byte and can never
+produce a suit glyph, but has **no callers**, so it is recorded as a trap, not fixed.
+
+**Test.** **#326** asserts `isSfmlSafeAscii()` on every hint helper. Red verified properly this time: a standalone TU
+compiling the **exact pre-fix byte sequences** asserts the predicate rejects them — the earlier rounds' red-checks were
+asserted in prose only. Suite 325 → **326/326**.
+
+**Header hygiene (found by the same TU).** `include/PresentationLayout.hpp` used `std::string`/`std::to_string`
+without `#include <string>`; it compiled only because an earlier include supplied them. Added. A header that is a
+pure-geometry seam should compile standalone, and now it is checked to.
+
+**Gate.** `ctest` serial **326/326**. Ten-run `-j8` soak: **10 clean / 0 failing**, every run 326/326, developer's real
+profile md5 unchanged.
+
+**Lesson for the next visual fix.** A screenshot tells you *what* is broken; it does not tell you *why*. Write the
+cause as a hypothesis, then test the hypothesis against the artifact (the font's cmap, the library's header) before it
+goes into §5 — the next window trusts that file.
+
+### 2026-11-09 — U1/U2/U3/U6/U11: five vision-critical UI defects fixed, and the rendering blind spot closed with a screenshot harness
+
+**Method — the new part.** §11 tagged this whole set "Headless-testability: HARDEST … no pure headless unit test can
+lock rendering", and every prior verification of it was **by code pattern** (grep + line numbers). That is exactly how
+U1's root cause stayed invisible for two audits: reading `drawMenuItem` shows a gold row; only a **screenshot** shows
+that the gold row under the cursor is not the row Enter will fire. So the fix round started by building the missing
+tool: `Xvfb` + **python-xlib** (`xdotool` is not installed; python-xlib is) driving the real window —
+`/tmp/bj_visual.py` (menu, resize, achievements, pause), `/tmp/bj_u6.py` (deal → hit fan → settle), `/tmp/bj_menu.py`
+(hover marker). Screenshots land in `/tmp/bj_shots/`. Input is synthetic X11 (`XTEST`), so the app is unmodified.
+**Two harness lessons worth keeping:** (1) keyboard `Up`/`Down` **wraps**, so a fixed number of presses is not
+deterministic navigation — navigate by **clicking the row the renderer draws**, which also exercises the U11 hit-test
+on every transition; (2) `Escape` at the main menu **closes the window**, so a script that presses Escape "to go back"
+kills the app and the next screenshot is pure black. The harness runs under a **temp `$HOME`** seeded with a profile
+(B17's hermeticity rule applies to manual runs too), and reports the real profile's presence at the end.
+
+**U1 — menu hover and selection were the same state.** Two compounding causes. `InputHandler::processMenuEvents`
+called `applyMenuRowSelection()` on `MouseMoved`, so an incidental mouse sweep **moved the keyboard selection**; and
+`drawMenuItem` rendered `if (hovered || selected)` as the same gold, adding only `Bold`. Fix: hover is purely visual
+(background pill + leading marker) and never mutates `menuSelection`; gold is reserved for the keyboard selection; a
+click activates. Verified on screen: gold "Review History" (selected, row 3) and pill+marker "Achievements" (hovered,
+row 6) simultaneously — the two states are unambiguous.
+
+**U2 — pause menu had no panel.** `drawPauseMenu` painted a full-window alpha-128 overlay and drew its rows straight
+over the live table, so "Quit to Menu" collided with the seat-name label. Fix: a centred panel (fill + outline) sized
+from the row bounds with padding. Verified at 1600×900 and 900×560: the "William" label is now behind the panel
+instead of under the text.
+
+**U3 — Achievements / Game Rules did not reflow.** `drawAchievementList` used `y = 96`, `rowH = 60` while the footer
+sat at `h - 28`, so at 900×560 the list ran under the footer. (Correction to the earlier audit note: `drawGameRules`'s
+`startY = h*0.30f` is already fractional — only `spacing = 46f` is hard-coded — and its 7 rows **do** fit at 900×560;
+**Achievements is the screen that provably overlaps**.) Both screens now derive geometry from the world size.
+
+**U6 — card fan showed a sliver; hand totals were unreadable.** Cards advanced 16px, so 3+ card hands hid all but a
+strip of each card, and `drawTotal` drew bare 16pt white over the felt. Fix: `cardFanCenterShift` centres the fan on
+the seat (verified with a **7-card hand** centred on the chip/label at x≈570) and a dark pill backs every total
+(dealer **7**, player **28** legible over the "Dealer must hit soft 17" felt text).
+
+**U11 — hover drifted after a resize.** The renderer laid out in `gameView` **world** units (equal to window pixels
+only at exactly 1600×900) while the InputHandler hit-tested in **raw window pixels** with 900-basis constants; the
+pause hit-test used desktop-space `sf::Mouse::getPosition()`. Three screens, three bases. Fix: one accessor,
+`GameRenderer::worldSizeOf(const Game&)`, used by **both** drawing and hit-testing. Verified: after a 1600×900 →
+900×560 resize the pill+marker land on the drawn row, and hovering the *old* pixel position highlights nothing.
+
+**Font-glyph finding (new, and it bit immediately) — SUPERSEDED by the entry above.** The first U1 build drew `›`
+(U+203A) as the hover marker; the screenshot showed tofu boxes, and this entry attributed it to the shipped font
+lacking the glyph. **That attribution is wrong** — the font has `guilsinglright`; the cause is SFML 3's ANSI decoding
+of `std::string`. See the U13 entry above; §5's bullet has been rewritten. The observation that the U4 betting-hint
+strip renders `↑`/`↓` as tofu was correct and is now fixed as U13.
+
+**Tests.** `tests/test_presentation_layout.cpp` — nine cases, **#317–#325**: hover ≠ selection; pause panel contains
+every row + title + hint; achievements never overlap the footer at any world size; rules rows never overlap the
+instruction line; fan shows more than a sliver of each card; the total's pill fully backs the number; every menu
+hit-test resolves the row the renderer draws at every world size; the main menu reflows so its last row and hint stay
+on screen; the renderer's accessors agree with the pure helpers. Registered in `CMakeLists.txt`. Suite 316 → **325/325**.
+
+**Gate.** `ctest` serial **325/325**. Ten-run `-j8` soak: **10 clean / 0 failing**, every run 325/325, developer's
+real profile md5 (`686b9192…`) unchanged across the soak.
+
+**Docs.** §5 gains three decisions (`worldSizeOf` as the single layout basis; hover as a non-mutating visual state;
+ASCII `>` for the hover marker + the glyph-coverage rule). §11 splits the old single `U1–U12` row into three:
+`U4/U5/U7/U8/U9/U10` (Resolved this phase), **`U1/U2/U3/U6/U11` Resolved 2026-11-09**, and **`U12` Open** — U12 is the
+only UI item left, and it needs a bucket-bounds decision (§10). §11's header now names U12 + T1's growth half as what
+is open. Test IDs re-derived from `ctest -N` per §13's standing warning: **U7 is #287 + #289–#291** and **U10 is
+#282/#283** (the §11 row's "#286–#288" / "#281/#282" are stale).
+
+**Commit note.** The five fixes ship as **one commit**, not five. The §12 "one-bug-one-commit" rule assumes separable
+changes; here `worldSizeOf` is the shared foundation of U1, U3 and U11, and all five edits land in the same regions of
+`GameRenderer.cpp` plus one new header (`include/PresentationLayout.hpp`) that holds the pure geometry helpers every
+one of them uses. Splitting would have produced commits that do not build independently.
 
 ### 2026-11-09 — B17/B18/B19: the "315/315 green at `-j8`" baseline was false; three defects found from it
 

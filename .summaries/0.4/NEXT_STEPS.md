@@ -9,7 +9,7 @@ architecture and guardrails.
 The suite is **303/303 green**. Every defect (B1–B16) has a dedicated fix commit + passing regression test — see the
 Status column below for each commit hash and test ID. The only genuinely still-OPEN work now is B9's unreproducible
 `R`-time crash (never reproducibly captured, so no deterministic test can close it) plus the UI/UX backlog (U1–U12), of
-which U4, U5, U7, U8, U9 and U10 are Resolved; the remaining open items are U1, U2, U3, U6 plus two new vision-critical backlog entries added 2026-11-09 (U11 window-resize menu drift, U12 side-panel graph toggles + session-view/bet-axis). That gap — everything
+which U4, U5, U7, U8, U9 and U10 are Resolved, and **U1, U2, U3, U6 and U11 were Resolved on 2026-11-09 and verified on screen with an Xvfb screenshot harness**. The single remaining UI item is **U12** (side-panel graph toggles + session view + bet-axis bounds), which needs a bucket-bounds decision first. That gap — everything
 remaining lives in the presentation/lifecycle seam the headless-first contract
 deliberately leaves untested — is still the theme of this phase; see §11 for the full open list.
 
@@ -20,17 +20,25 @@ deliberately leaves untested — is still the theme of this phase; see §11 for 
 > **Ledger synced 2026-11-09.** U7, U8 and U10 now Resolved — bankroll parity (#70), deck pluralisation + menu-branding
 > consolidation + NPC illegal-action-warning suppression (#281/#282). Open UI were then U1–U6 and U9; U4/U5/U9 now also
 > Resolved (f8f15cc), plus two new vision-critical items U11, U12 — the current open set is in the note below.
+> **2026-11-09 (U-series): U1, U2, U3, U6, U11 Resolved**, nine new tests #317–#325, suite 316 → 325/325, 10-run -j8 soak 10 clean / 0 failing.
 >
 > **Ledger synced 2026-11-09.** U4/U5/U9 also Resolved (`f8f15cc`; betting-hint consolidation #307–#308, count-box label
 > #309–#311, side-bet paytable #312–#315) — fixed+committed but not yet marked here. Two new vision-critical backlog items
 > added this pass: U11 (window-resize menu hover/click drift on main + pause menus), U12 (side-panel graph toggles +
 > per-shoe/session view switch + Bets Placed axis 10–100 capped at MAXIMUM_BET). Open UI now: U1, U2, U3, U6, U11, U12.
+> **Superseded 2026-11-09: open UI is now only U12.** U1/U2/U3/U6/U11 are Resolved; the screenshot harness (`/tmp/bj_visual.py`, `/tmp/bj_u6.py`, `/tmp/bj_menu.py`) closed the "not headless-testable" gap and is what verified them.
 
 > **Handoff prompt moved to `handoff_prompt.md`. Paste that file into a fresh window; it is regenerated from the same audit log (CONTEXT §13) as this document.**
 
 ---
 
 ## Verification gate (run after EVERY fix)
+
+> **Hermeticity check (added 2026-11-09, B17 follow-up).** Capture `md5sum ~/.local/share/blackjack/saves/player_profile.json`
+> **before** the suite runs and **after** it, against a baseline taken outside the suite. "md5 stable across a soak" is not
+> sufficient: a soak compares runs to each other, so a writer that emits identical content every run looks stable from
+> run 1 onward — that is exactly how B17's writer survived. If it moves, bisect it: md5, `ctest -I i,i`, md5, for each
+> index. Process-scope isolation lives in `tests/test_process_isolation.cpp`; a new test never needs its own guard.
 
 ```bash
 cmake --preset "GCC 13.3.0 x86_64-linux-gnu"
@@ -97,7 +105,7 @@ count than you started.
 | B10 | 🟡 Medium | `maxSplitHands` is dead config (no UI row, not serialized) | `src/GameRules.cpp:15-27` / `include/GameRules.hpp` `to_json` | 3 | ✅ Resolved `69cd9e8` (#280/#282) |
 | B11 | 🟡 Medium | Startup control banner mislabels Left/Right | `src/Game.cpp:162-163` | 3 | ✅ Resolved `140e9b5` (#295) |
 | B12 | 🟡 Medium | Save-schema typo `resplitTentsAllowed` ("Tens") | `include/GameRules.hpp` | 3 | ✅ Resolved `31a3703` (#241–243) |
-| U1–U12 | 🟡 Medium | UI/UX defects (see Phase 4) | various | 4 | ✅ Resolved this phase: U4 (#307–#308), U5 (#309–#311), U7 (#286–#288), U8 (#70), U9 (#312–#315), U10 (#281/#282); open: U1, U2, U3, U6 (vision-critical) + U11, U12 (new 2026-11-09) |
+| U1–U12 | 🟡 Medium | UI/UX defects (see Phase 4) | various | 4 | ✅ Resolved this phase: U4 (#307–#308), U5 (#309–#311), U7 (#287 + #289–#291), U8 (#70), U9 (#312–#315), U10 (#282/#283), **U1 (#317), U2 (#318), U3 (#319–#320), U6 (#321–#322), U11 (#323–#325)** — the last five verified on screen with the Xvfb harness. Open: **U12 only**. **U13** (non-ASCII → SFML mojibake, found by screenshot) #326 Resolved |
 | T1–T2 | 🟢 Low | Save-write amplification; unbounded history | `src/HandEvaluator.cpp:297` | 5 | ✅ Resolved `1abda8f`,`fbaea91` (#302/#303 / #298) |
 | B16 | 🟡 Medium | `reconstructDeckAtRound()` is dead code and reconstructs from the wrong end | `include/GameRecord.hpp:307-329` | 5 | ✅ Resolved `5f81d48` (dead-code deletion; no dedicated regression test) |
 
@@ -705,15 +713,18 @@ pure helper so it becomes headless-testable.
 (`GameRenderer.cpp:1034-1046`). Observed on the main menu with "Play Game" and "Achievements" both gold — it is
 genuinely ambiguous whether Enter starts a game or opens Achievements. *Fix:* give hover a distinct treatment
 (background pill or a `›` marker) and reserve gold for keyboard selection.
+**Status — RESOLVED 2026-11-09:** root cause was two layers deep. `InputHandler::processMenuEvents` called `applyMenuRowSelection()` on `MouseMoved`, so hovering **moved the keyboard selection**; `drawMenuItem` then rendered `hovered || selected` as the same gold (bold-only difference). Hover is now purely visual — background pill + leading marker, never mutating `menuSelection` — gold is reserved for the keyboard selection, and a click activates. Marker is ASCII `>`, **not** `›`: the shipped `NotoSans-Regular.ttf` has no U+203A glyph and rendered a tofu box (caught on screenshot). Verified on screen: gold "Review History" (selected) and pill+marker "Achievements" (hovered) simultaneously. Regression #317.
 
 **U2 — Pause menu has no panel.** Bare text over the felt; "Quit to Menu" collides with the seat-name labels
 (`GameRenderer.cpp:1274`). *Fix:* a centred rounded rect with padding behind the items (reuse the side-panel
 style), and suppress the play-phase hint strip while paused.
+**Status — RESOLVED 2026-11-09:** `drawPauseMenu` painted a full-window alpha-128 overlay with no panel, so "Quit to Menu" collided with the seat-name label over the live table. Added a centred panel (fill + outline, sized from the row bounds with padding) behind title, rows and hint; `RectangleShape::setRadius` is not usable here under SFML 3.1, so it is a plain fill + outline. Verified at 1600×900 and 900×560 — the "William" label is behind the panel, not under the text. Regression #318.
 
 **U3 — Two screens do not reflow.** Achievements (`GameRenderer.cpp:108-141`) and Game Rules (`:1236`) use
 hard-coded pixel offsets; at 900×560 the footer hint overlaps list rows. The **table reflows correctly**, so copy
 that pattern: derive start-Y and row spacing from `window.getSize()`. Add a `*ForTest()` layout accessor and
 assert no rect overlap at both 1600×900 and 900×560.
+**Status — RESOLVED 2026-11-09:** Achievements and Game Rules now derive their geometry from `GameRenderer::worldSizeOf(game)` instead of hard-coded offsets, so the list can no longer run under the footer at 900×560. Note for the record: `drawGameRules`'s `startY = h*0.30f` was already fractional and its 7 rows **do** fit at 900×560 — **Achievements is the screen that provably overlaps** (`y=96`, `rowH=60`, footer at `h-28`). Verified on screen at both sizes. Regressions #319–#320.
 
 **U4 — Hint clutter.** Five hint strings in three rows at ~10px, in two competing formats
 (`Up/Down: set bet` vs `[Up/Down | Adjust Bet]`), and every action is shown even when irrelevant — H/S/D/P/Y are
@@ -729,6 +740,7 @@ box to "Betting Count (Reko)", or show RC and TC side by side.
 **U6 — Card overlap and total legibility.** With 3+ cards the lower cards are almost fully covered, and hand
 totals are small white text drawn straight onto the felt arc. *Fix:* increase the per-card offset; draw totals in
 a small filled pill with a dark backing (`drawTotal`, `GameRenderer.cpp:468`).
+**Status — RESOLVED 2026-11-09:** cards advanced 16px, so 3+ card hands showed only a sliver of each card; introduced `cardFanCenterShift` (wider step, fan re-centred on the seat) and a dark pill behind every hand total. Verified on screen with a **7-card hand**: the fan is centred on the chip/label and the dealer **7** / player **28** totals stay legible over the felt arc text. Regressions #321–#322.
 
 **U7 — The human seat is hard-coded to "William"** (`SessionLifecycle.cpp:35` and `:182`); there is no name entry
 anywhere and the profile's `name` field ships as `""`. Ship-blocking for anything public. *Status — RESOLVED 2026-11-07 (`e157052`): added the automatic "enter your name before hitting main menu" screen; auto-prompt fires when profile.name is empty (Game::needsNameEntry gate at run()), editing goes through a clamped Game `nameEntry*` buffer, commitPlayerName persists seat 0's display + profile, and Player Stats reuses Statistics→StatsDashboard. Headless tests #286–#288.*
@@ -768,6 +780,18 @@ logical size — exactly what changes while resizing. *Fix:* unify so every menu
 same space its row positions are computed in, and confirm resize reflows consistently. Vision-critical: only manifests across
 a range of window sizes with live mouse input; no headless unit test asserts "cursor X → drawn row Y" without an SDL view + a
 real mouse position — needs on-screen verification while resizing.
+**Status — RESOLVED 2026-11-09:** the three hit-tests ran on three coordinate bases (the pause one used desktop-space `sf::Mouse::getPosition()`), while drawing used `gameView` **world** units — equal to window pixels only at exactly 1600×900. Unified through one accessor, `GameRenderer::worldSizeOf(const Game&)`, used by **both** drawing and hit-testing, so every hover/click resolves the row the renderer draws. Verified on screen: after 1600×900 → 900×560 the pill+marker land on the drawn row, and hovering the *old* pixel position highlights nothing. Regressions #323–#325 (the last asserts the renderer's accessors agree with the pure helpers).
+
+**U13 — Non-ASCII text passed to SFML as `std::string` renders as mojibake/tofu.** 🟡 Found by screenshot on 2026-11-09.
+`sf::String(const std::string&, const std::locale& = {})` is an **ANSI** string converted through the locale
+(`SFML/include/SFML/System/String.hpp:173`), so a UTF-8 source literal decodes to its individual bytes and the
+0x80-range byte among them has no glyph. Two live sites: `Game::bettingControlsHint()` (U+2191/2193/2190/2192, rendered
+as `□□□ Increase Bet` in the play band — these arrows are genuinely absent from the Noto cmap) and the name-entry
+hint's U+2022 bullets. *Fix:* ASCII labels, or build `sf::String(U"…")`/`std::u32string` when a real glyph is wanted.
+**Status — RESOLVED 2026-11-09:** both sites replaced with ASCII; the name-entry line extracted to the pure
+`PresentationLayout::nameEntryHintText()`; `isSfmlSafeAscii()` added and asserted over every hint helper in
+`tests/test_presentation_layout.cpp` **#326** (red verified against the exact pre-fix byte sequences). Recorded, not
+fixed: `Card::getSuitSymbol()` returns `u8"♠"[0]` — a single truncated byte, dead code, no callers.
 
 **U12 — Side-panel graphs: no per-graph visibility toggle, only a per-shoe view (no session view), and Bets Placed X-axis is
 the full [0, MAXIMUM_BET] instead of the intended 10–100 scaling range.** 🟡 Vision-critical. Three parts, all on the side panel
