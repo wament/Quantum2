@@ -198,6 +198,7 @@ add_executable(Blackjack2Tests
     tests/test_counting_box_label.cpp
     tests/test_side_bet_paytable.cpp
     tests/test_presentation_layout.cpp
+    tests/test_process_isolation.cpp
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)
