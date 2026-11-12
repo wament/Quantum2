@@ -352,6 +352,9 @@ void Game::cycleGraphView()
     hudState.graphView = (hudState.graphView == HUDState::GraphViewMode::Session)
         ? HUDState::GraphViewMode::Shoe
         : HUDState::GraphViewMode::Session;
+    // U12 part 1: the global 'G' view switch also applies this whole-window scope to every side-panel graph at once. The
+    // graphs are still individually refinable with a click, and pressing 'G' again re-applies the window's view.
+    hud.setAllGraphScope(hudState.graphView == HUDState::GraphViewMode::Session);
 }
 
 void Game::resetShoeAnalytics()

@@ -163,6 +163,9 @@ class Game
     const std::map<int, int>& sessionBetDistributionForTest() const { return session_.betDistribution; }
     HUDState::GraphViewMode graphViewForTest() const { return hudState.graphView; }
 
+    // U12 part 1: expose one side-panel graph's current view for tests. See hud.graphScopeIsSessionForTest().
+    bool graphScopeIsSessionForTest(unsigned index) const { return hud.graphScopeIsSessionForTest(index); }
+
     // Table settings as they stand after the profile was applied at launch.
     int playerCountForTest() const { return playerCount; }
     int gameSpeedForTest() const { return static_cast<int>(gameSpeed); }

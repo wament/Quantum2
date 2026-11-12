@@ -194,8 +194,10 @@ inline bool RESPLIT_TENS_ALLOWED = true;
 constexpr int MINIMUM_BET = 10;
 constexpr int MAXIMUM_BET = 1000;
 
-// Bets Placed chart: wagers are folded into BET_BUCKET_COUNT evenly spaced ranges spanning [0, MAXIMUM_BET]
-// histogram always shows the same number of evenly spaced bars instead of one bar per distinct bet size.
+// Bets Placed chart: wagers are folded into BET_BUCKET_COUNT evenly spaced ranges. The axis spans [MINIMUM_BET, 100] by
+// default and grows to the largest wager placed in the active view window once that exceeds 100, hard-capped at
+// MAXIMUM_BET (see HUD::computeAxisMax, §10 decision #8). The histogram always shows the same number of evenly spaced
+// bars instead of one bar per distinct bet size.
 constexpr int BET_BUCKET_COUNT = 10;
 constexpr int BET_BUCKET_WIDTH = MAXIMUM_BET / BET_BUCKET_COUNT;
 

@@ -985,3 +985,24 @@ TEST_CASE("U12: the session accumulator spans shoes while per-shoe analytics res
         sessionWagerCount += kv.second;
     CHECK(sessionWagerCount == 5);                              // every wager this session, across both shoes
 }
+
+// U12 part 1: the global 'G' view switch now also applies its whole-window scope to every side-panel graph at once.
+// Per-graph defaults stay per-shoe; cycling switches all three graphs together and back.
+TEST_CASE("U12: the global graph view applies every side-panel graph together", "[Feature3][Analytics][Session][U12]")
+{
+    Game game(true);
+
+    CHECK(game.graphScopeIsSessionForTest(0) == false);
+    CHECK(game.graphScopeIsSessionForTest(1) == false);
+    CHECK(game.graphScopeIsSessionForTest(2) == false);
+
+    game.cycleGraphView();
+    CHECK(game.graphScopeIsSessionForTest(0));
+    CHECK(game.graphScopeIsSessionForTest(1));
+    CHECK(game.graphScopeIsSessionForTest(2));
+
+    game.cycleGraphView();
+    CHECK(!game.graphScopeIsSessionForTest(0));
+    CHECK(!game.graphScopeIsSessionForTest(1));
+    CHECK(!game.graphScopeIsSessionForTest(2));
+}

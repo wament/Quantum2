@@ -6,6 +6,7 @@
 #include <utility>
 
 #include <string>
+#include <cstddef>
 
 #include "HUDState.hpp"
 #include "StatBox.hpp"
@@ -74,10 +75,29 @@ public:
     // World-space bounds of the Counting Style toggle box (label + value), used for click hit-testing.
     sf::FloatRect countTitleBounds() const;
 
-    // Screen-space bounds of the three graph panes, in draw order (top to bottom). The panes are display-only:
-    // they are no longer clickable: but the bounds are exposed
-    // panel evenly.
+    // Screen-space bounds of the three graph panes, in draw order (top to bottom): bankroll-curve, edge-over-time,
+    // bets-placed. The panes are clickable (U12 part 1): a left click inside one toggles ONLY that pane between its
+    // per-shoe and its session view (see cycleGraphScope), and this is the hit-test InputHandler uses. Exposed for that
+    // hit-test and for the layout tests, which measure the real pane rects instead of re-deriving coordinates.
     std::vector<sf::Rect<float>> chartPaneBounds() const;
+
+    // U12 part 1: per-graph view toggles. Clicking a side-panel graph switches ONLY that graph between its per-shoe view
+    // (the default) and the session view (every shoe in this play window); each graph is independent, so no control moves
+    // all three at once. index matches chartPaneBounds() order: 0 bankroll-curve, 1 edge-over-time, 2 bets-placed.
+    void cycleGraphScope(std::size_t index);          // toggle one graph's view (per-graph click)
+    void setAllGraphScope(bool session);               // apply a whole-window view to every graph ('G' bulk switch)
+
+    // Test accessor mirroring the *ForTest() convention: is this graph currently showing its session view?
+    bool graphScopeIsSessionForTest(std::size_t index) const;
+
+    // The series each pane plots right now, i.e. the view selection (per-shoe vs session) drawCharts() applies. drawCharts()
+    // draws from these, and the layout tests assert on them, so a test cannot drift away from what is rendered: a scope flag
+    // alone does not prove a pane plots the matching dataset. Named without a ForTest suffix because production draws them.
+    const std::vector<float>& activeBankrollSeries() const { return m_bankrollScopeSession ? m_sessionBankrollSeries : m_bankrollSeries; }
+    const std::vector<double>& activeEdgeSeries() const { return m_edgeScopeSession ? m_sessionEdgeSeries : m_edgeSeries; }
+    const std::vector<int>& activeBetHistogram() const { return m_betsScopeSession ? m_sessionBetHistogram : m_betHistogram; }
+    int activeBetBucketWidth() const { return m_betsScopeSession ? m_sessionBetBucketWidth : m_betBucketWidth; }
+    int activeBetAxisLo() const { return m_betsScopeSession ? m_sessionBetAxisLo : m_betAxisLo; }
 
     // Bets Placed histogram bucketing. The raw distribution holds one column per distinct wager
     // bar per unique bet size and is unreadable. Bets are folded into `bucketCount` evenly spaced ranges spanning
@@ -109,12 +129,22 @@ public:
     const std::vector<StatBox*>& bottomPanelStatBoxes() const;
 
 private:
-    bool m_showLeft = true;
-    bool m_showRight = true;
+    // U12 part 1: per-graph view state. Each graph has its own shoe/session scope, toggled independently by a click or as
+    // a whole window via setAllGraphScope(); default is per-shoe. Transient UI state for the play window - only changed by
+    // those two methods, never recomputed in update(), so a click survives every frame until cycled again.
+    bool m_bankrollScopeSession = false;   // bankroll-curve view: session (spanning shoes) when true, per-shoe when false
+    bool m_edgeScopeSession = false;       // edge-over-time view: same toggle
+    bool m_betsScopeSession = false;       // bets-placed histogram view: same toggle
 
-    // U12 session view: which side-panel charts are active (per-shoe default or per-session), remembered from update() so
-    // drawCharts() can label them and the player sees which window they are looking at.
-    HUDState::GraphViewMode m_graphView = HUDState::GraphViewMode::Shoe;
+    // Parallel per-session backing data. update() fills these only while at least one graph is showing its session view
+    // (it runs every frame, and the session series grow for the whole play window), so drawCharts() can swap any graph to
+    // its session view at draw time without touching the default per-shoe path's cost. Empty while no session exists yet,
+    // which makes an unpopulated session chart show its intentional empty frame rather than stale shoe data.
+    std::vector<float> m_sessionBankrollSeries;
+    std::vector<double> m_sessionEdgeSeries;
+    std::vector<int> m_sessionBetHistogram;
+    int m_sessionBetBucketWidth = 0;
+    int m_sessionBetAxisLo = 10; // == Constants::MINIMUM_BET: axis always starts at the minimum bet
 
     HudPanel m_leftPanel;
     HudPanel m_rightPanel;

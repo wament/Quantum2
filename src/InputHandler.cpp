@@ -577,17 +577,31 @@ void InputHandler::processGameEvents(const sf::Event& event)
     if (auto clicked = event.getIf<sf::Event::MouseButtonPressed>())
     {
         // Clicking the count-style label ("Count (Hi-Lo)") toggles which counting system is shown. Both
-        // systems are counted in the background
+        // systems are counted in the background.
         //
-        // This is the only clickable HUD element. The left-panel charts are display-only: their click-to-swap
-        // secondary "overlay" views are gone (each one hid the primary series it was drawn over without adding
-        // anything legible), so the graph panes no longer take clicks and need no hit-testing here.
+        // The left-panel charts are clickable again, but now per-graph rather than as an all-at-once overlay: clicking a
+        // graph toggles ONLY that graph between its per-shoe view and its session view (U12 part 1). A click anywhere else
+        // on the table lands outside every chart pane, so it is ignored. Handled before the key auto-play gate below, so
+        // viewing/toggling never has to coincide with taking a hand action.
         if (clicked->button == sf::Mouse::Button::Left)
         {
             sf::Vector2f world = game.window.mapPixelToCoords(sf::Mouse::getPosition(game.window));
             if (game.hud.countTitleBounds().contains(world))
             {
                 game.toggleCountingStyle();
+            }
+
+            // chartPaneBounds() returns the three panes in draw order: bankroll-curve, edge-over-time, bets-placed.
+            // Taken once, not per iteration: it builds a fresh vector on every call.
+            const std::vector<sf::Rect<float>> panes = game.hud.chartPaneBounds();
+            for (std::size_t i = 0; i < panes.size(); ++i)
+            {
+                if (panes[i].contains(world))
+                {
+                    game.hud.cycleGraphScope(i);
+                    Logger::info() << "Side-panel graph view toggled: graph " << i << ".";
+                    break;   // a click lands in exactly one pane
+                }
             }
         }
     }

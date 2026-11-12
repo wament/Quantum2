@@ -276,41 +276,21 @@ void HUD::update(const HUDState& hudState)
     m_longestLoseStreak = hudState.longestLosingStreak;
     m_edgePercent = hudState.edgePercent;
 
-    m_graphView = hudState.graphView;   // U12 session view: remember for drawCharts() title labelling
-    const HUDState::GraphViewMode mode = hudState.graphView;
-    const SessionAnalytics* session = hudState.sessionAnalytics;
-    if (mode == HUDState::GraphViewMode::Session && session)
+    // Per-shoe backing data: always the current shoe, refreshed every frame. This is the default view for every graph;
+    // Game resets ShoeAnalytics at each boundary so these hold only this shoe and start from baseline. The bankroll curve
+    // is the human seat's net alone: NPC results never move it. (The old HUD-side "clear on shoe change" guard here was
+    // dead code, superseded by Game owning the per-shoe reset.)
+    m_bankrollSeries = hudState.bankrollSeries;
+    m_edgeSeries = hudState.edgeSeries;
     {
-        m_bankrollSeries = session->bankrollSeries;
-        m_edgeSeries = session->edgeSeries;
-        // Bets Placed chart: fold the session's wager distribution into evenly spaced ranges. Like the per-shoe chart,
-        // one bar per distinct size is unreadable; the axis grows to the largest placed wager (capped at MAXIMUM_BET).
-        m_betHistogram.clear();
-        m_betBucketWidth = 0;
-        if (!session->betDistribution.empty())
-        {
-            const int maxWager = session->betDistribution.rbegin()->first;
-            m_betAxisLo = Constants::MINIMUM_BET;
-            const int axisHi = HUD::computeAxisMax(maxWager);
-            m_betHistogram = bucketBetDistribution(session->betDistribution,
-                                                   Constants::BET_BUCKET_COUNT, m_betAxisLo, axisHi);
-            m_betBucketWidth = (axisHi - m_betAxisLo) / Constants::BET_BUCKET_COUNT;
-        }
-    }
-    else
-    {
-        m_bankrollSeries = hudState.bankrollSeries;
-        m_edgeSeries = hudState.edgeSeries;
-
-        // Bets Placed chart: fold the raw per-wager distribution into evenly spaced ranges. One bar per distinct bet
-        // size is unreadable as soon as a player varies their wager, and the ranges stay put as bets come in. The
-        // distribution is this shoe's (Game::shoe_)
+        // Bets Placed chart: fold this shoe's per-wager distribution into evenly spaced ranges. One bar per distinct size
+        // is unreadable as soon as a player varies their wager, so the sizes are bucketed and the ranges stay put. The
+        // axis grows to the largest placed wager (capped at MAXIMUM_BET) so low wagers spread across the chart instead of
+        // collapsing into the first bucket.
         m_betHistogram.clear();
         m_betBucketWidth = 0;
         if (hudState.shoeAnalytics && !hudState.shoeAnalytics->betDistribution.empty())
         {
-            // Axis starts at the minimum bet and grows to the largest wager placed this shoe as it exceeds 100, capped
-            // hard at MAXIMUM_BET. That spreads low wagers across the chart instead of collapsing them into bucket 0.
             const int maxWager = hudState.shoeAnalytics->betDistribution.rbegin()->first;
             m_betAxisLo = Constants::MINIMUM_BET;
             const int axisHi = HUD::computeAxisMax(maxWager);
@@ -319,15 +299,42 @@ void HUD::update(const HUDState& hudState)
             m_betBucketWidth = (axisHi - m_betAxisLo) / Constants::BET_BUCKET_COUNT;
         }
     }
+
+    // Parallel per-session backing data: spans every shoe in this play window. update() runs once per frame (see
+    // GameRenderer), and the session series grow for the whole play window, so this is computed ONLY while at least one
+    // graph is actually showing its session view - a graph in per-shoe view never reads these, so skipping them keeps the
+    // default view's per-frame cost exactly what it was before the session view existed. drawCharts() reads them only under
+    // the matching scope flag, so a skipped frame's stale value is never drawn. Empty session (no settled round yet) yields
+    // empty series, which makes an unpopulated session chart show its intentional empty frame rather than stale shoe data.
+    const bool anySessionScope = m_bankrollScopeSession || m_edgeScopeSession || m_betsScopeSession;
+    if (anySessionScope)
+    {
+        m_sessionBankrollSeries =
+            hudState.sessionAnalytics ? hudState.sessionAnalytics->bankrollSeries : std::vector<float>{};
+        m_sessionEdgeSeries =
+            hudState.sessionAnalytics ? hudState.sessionAnalytics->edgeSeries : std::vector<double>{};
+
+        // Bets Placed chart: fold the session's wager distribution into evenly spaced ranges, same scheme as per-shoe.
+        m_sessionBetHistogram.clear();
+        m_sessionBetBucketWidth = 0;
+        if (hudState.sessionAnalytics && !hudState.sessionAnalytics->betDistribution.empty())
+        {
+            const int maxWager = hudState.sessionAnalytics->betDistribution.rbegin()->first;
+            m_sessionBetAxisLo = Constants::MINIMUM_BET;
+            const int axisHi = HUD::computeAxisMax(maxWager);
+            m_sessionBetHistogram = bucketBetDistribution(hudState.sessionAnalytics->betDistribution,
+                                                          Constants::BET_BUCKET_COUNT, m_sessionBetAxisLo, axisHi);
+            m_sessionBetBucketWidth = (axisHi - m_sessionBetAxisLo) / Constants::BET_BUCKET_COUNT;
+        }
+    }
 }
 
 void HUD::draw(sf::RenderWindow& window)
 {
-    if (m_showLeft)
-        m_leftPanel.draw(window);
-
-    if (m_showRight)
-        m_rightPanel.draw(window);
+    // Both side panels are always shown; the per-graph view toggle changes only what each graph plots, never whether a
+    // panel itself is visible (that ability was removed).
+    m_leftPanel.draw(window);
+    m_rightPanel.draw(window);
 
     // Bottom panel always visible
     m_bottomPanel.draw(window);
@@ -692,36 +699,42 @@ namespace {
 
 void HUD::drawCharts(sf::RenderWindow& window) const
 {
-    // Bankroll Curve: net profit for the CURRENT shoe. Game clears the series at every shoe boundary
-    // always restarts from the baseline and answers "how has this shoe gone?" rather than "how has my whole session
-    // drifted?". The title readout carries the exact figure, which a 176px-wide curve cannot.
+    // Bankroll Curve. Each graph has its own view (U12 part 1): per-shoe by default, or the session that spans every shoe
+    // in this play window, toggled by clicking it. The title names the active view and the readout carries the exact
+    // figure a 176px-wide curve cannot.
     {
-        const double net = m_bankrollSeries.empty() ? 0.0 : static_cast<double>(m_bankrollSeries.back());
+        const std::vector<float>& series = activeBankrollSeries();
+        const char* title = m_bankrollScopeSession ? "Session Bankroll Curve" : "Bankroll Curve";
+        const double net = series.empty() ? 0.0 : static_cast<double>(series.back());
         std::ostringstream bankOss;
         if (net > 0.0)
             bankOss << '+';
         bankOss << compactNumber(net, 0);
-        drawLineChart(window, m_bankrollChartRect, m_bankrollSeries, kBankrollColor, 0, (m_graphView == HUDState::GraphViewMode::Session) ? "Session Bankroll Curve" : "Bankroll Curve", bankOss.str());
+        drawLineChart(window, m_bankrollChartRect, series, kBankrollColor, 0, title, bankOss.str());
     }
 
-    // Edge Over Time: the player's estimated edge at each round of the current shoe. It is a LEVEL, not a running
-    // total - every round re-reads the edge from the count as it stands
-    // baseline (about -0.5%) and stays inside a few percent instead of ramping off the plot the longer the shoe
-    // runs. resetShoeAnalytics() clears the series at every shoe boundary (new game, R at end of shoe, auto-play,
-    // mid-shoe reshuffle), so the plot restarts with the shoe instead of carrying the old shoe's drift.
+    // Edge Over Time: the player's estimated edge at each round. It is a LEVEL, not a running total - every round
+    // re-reads the edge from the count as it stands and stays inside a few percent instead of ramping off the plot. With
+    // the session view it spans every shoe in the play window; with per-shoe it restarts at each boundary.
     {
+        const std::vector<double>& series = activeEdgeSeries();
+        const char* title = m_edgeScopeSession ? "Session Edge Over Time" : "Edge Over Time";
         std::ostringstream edgeOss;
         edgeOss << std::fixed << std::setprecision(2) << m_edgePercent << '%';
-        drawLineChart(window, m_edgeChartRect, m_edgeSeries, kEdgeColor, 1, (m_graphView == HUDState::GraphViewMode::Session) ? "Session Edge Over Time" : "Edge Over Time", edgeOss.str());
+        drawLineChart(window, m_edgeChartRect, series, kEdgeColor, 1, title, edgeOss.str());
     }
 
     // Bets Placed: wagers folded into evenly spaced ranges (see bucketBetDistribution). The readout is the number of
-    // wagers the bars cover, so an all-empty histogram is visibly "no bets yet" rather than a rendering bug.
+    // wagers the bars cover, so an all-empty histogram is visibly "no bets yet" rather than a rendering bug. It names the
+    // window too, so the pane says which view it is in ("6 bets" vs "6 bets (session)"), and counts agree with the noun.
     {
+        const std::vector<int>& buckets = activeBetHistogram();
         int total = 0;
-        for (int count : m_betHistogram)
+        for (int count : buckets)
             total += count;
-        drawHistogram(window, m_betsChartRect, m_betHistogram, m_betBucketWidth, m_betAxisLo, std::to_string(total) + " bets");
+        const std::string readout = std::to_string(total) + (total == 1 ? " bet" : " bets")
+                                  + (m_betsScopeSession ? " (session)" : "");
+        drawHistogram(window, m_betsChartRect, buckets, activeBetBucketWidth(), activeBetAxisLo(), readout);
     }
 }
 
@@ -809,5 +822,38 @@ void HUD::layoutLeftPanels()
     m_bankrollChartRect = charts[0];
     m_edgeChartRect     = charts[1];
     m_betsChartRect     = charts[2];
+}
+
+void HUD::cycleGraphScope(std::size_t index)
+{
+    // U12 part 1: per-graph click. Toggles exactly one graph's view between per-shoe and session; the other two are left
+    // untouched, which is what makes this "locked per graph". An out-of-range index (a stray hit) changes nothing.
+    switch (index)
+    {
+    case 0: m_bankrollScopeSession = !m_bankrollScopeSession; break;
+    case 1: m_edgeScopeSession     = !m_edgeScopeSession;     break;
+    case 2: m_betsScopeSession     = !m_betsScopeSession;     break;
+    default: break;
+    }
+}
+
+void HUD::setAllGraphScope(bool session)
+{
+    // U12 part 1: whole-window view ('G' bulk switch). Applies one scope to every graph at once so the player can flip
+    // all three together; individual clicks still refine any single graph afterwards.
+    m_bankrollScopeSession = session;
+    m_edgeScopeSession = session;
+    m_betsScopeSession = session;
+}
+
+bool HUD::graphScopeIsSessionForTest(std::size_t index) const
+{
+    switch (index)
+    {
+    case 0: return m_bankrollScopeSession;
+    case 1: return m_edgeScopeSession;
+    case 2: return m_betsScopeSession;
+    default: return false;
+    }
 }
 

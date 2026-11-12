@@ -190,3 +190,145 @@ TEST_CASE("Split-hand clamp band stays clear of both side panels", "[HUD][Layout
     REQUIRE(Constants::HANDS_RIGHT_MARGIN <= hud.rightPanelBounds().position.x);
     REQUIRE(Constants::HANDS_LEFT_MARGIN < Constants::HANDS_RIGHT_MARGIN);
 }
+
+TEST_CASE("U12: clicking one graph toggles only that graph between shoe and session", "[HUD][U12]")
+{
+    HUD hud;
+
+    // Every graph defaults to the per-shoe view.
+    CHECK(hud.graphScopeIsSessionForTest(0) == false);
+    CHECK(hud.graphScopeIsSessionForTest(1) == false);
+    CHECK(hud.graphScopeIsSessionForTest(2) == false);
+
+    // Clicking graph 0 makes only it session-scoped; the other two stay per-shoe (locked per graph).
+    hud.cycleGraphScope(0);
+    CHECK(hud.graphScopeIsSessionForTest(0));
+    CHECK(!hud.graphScopeIsSessionForTest(1));
+    CHECK(!hud.graphScopeIsSessionForTest(2));
+
+    // Independent control: toggle 2, then un-toggle 0.
+    hud.cycleGraphScope(2);
+    hud.cycleGraphScope(0);
+    CHECK(!hud.graphScopeIsSessionForTest(0));
+    CHECK(!hud.graphScopeIsSessionForTest(1));
+    CHECK(hud.graphScopeIsSessionForTest(2));
+
+    // Out-of-range indices are ignored rather than crashing or mutating another graph.
+    hud.cycleGraphScope(9);
+    CHECK(hud.graphScopeIsSessionForTest(2));
+}
+
+TEST_CASE("U12: the global view switch applies every graph together", "[HUD][U12]")
+{
+    HUD hud;
+
+    hud.setAllGraphScope(true);
+    CHECK(hud.graphScopeIsSessionForTest(0));
+    CHECK(hud.graphScopeIsSessionForTest(1));
+    CHECK(hud.graphScopeIsSessionForTest(2));
+
+    hud.setAllGraphScope(false);
+    CHECK(!hud.graphScopeIsSessionForTest(0));
+    CHECK(!hud.graphScopeIsSessionForTest(1));
+    CHECK(!hud.graphScopeIsSessionForTest(2));
+}
+
+// The scope flags above prove a click is recorded; they do NOT prove a pane then plots the matching dataset. This asserts
+// the selection itself, through the same accessors drawCharts() draws from, so a test cannot drift from what is rendered.
+// The per-shoe and per-session series are deliberately DIFFERENT SIZES so a wrong selection is visible, and the session
+// distribution contains a wager above the 10-100 base so the per-graph axis is observable too.
+TEST_CASE("U12: a graph's view selects the matching dataset, per graph", "[HUD][U12]")
+{
+    ShoeAnalytics shoe;
+    shoe.betDistribution = {{10, 2}};                       // two $10 wagers -> axis stays at the [10,100] base
+
+    SessionAnalytics session;
+    session.bankrollSeries = {10.f, 20.f, 30.f, 40.f};      // spans shoes, so it is longer than the shoe's
+    session.edgeSeries = {0.5, 0.6, 0.7, 0.8};
+    session.betDistribution = {{10, 5}, {250, 1}};          // 6 wagers; $250 grows the axis past 100
+
+    HUDState st;
+    st.shoeAnalytics = &shoe;
+    st.sessionAnalytics = &session;
+    // The per-shoe curves reach the HUD through these HUDState fields (Game copies them out of ShoeAnalytics), not
+    // through the shoeAnalytics pointer, which carries only the wager distribution here.
+    st.bankrollSeries = {10.f, 20.f};
+    st.edgeSeries = {0.5};
+
+    HUD hud;
+    hud.initialize(testFont());
+
+    auto wagered = [&hud]() { int t = 0; for (int b : hud.activeBetHistogram()) t += b; return t; };
+
+    // Default: every pane plots its per-shoe dataset, on the base axis.
+    hud.update(st);
+    REQUIRE(hud.activeBankrollSeries().size() == 2u);
+    REQUIRE(hud.activeEdgeSeries().size() == 1u);
+    CHECK(wagered() == 2);
+    CHECK(hud.activeBetAxisLo() == Constants::MINIMUM_BET);
+    CHECK(hud.activeBetBucketWidth() ==
+          (HUD::computeAxisMax(10) - Constants::MINIMUM_BET) / Constants::BET_BUCKET_COUNT);
+
+    // Clicking the bankroll pane moves ONLY that pane onto the session dataset.
+    hud.cycleGraphScope(0);
+    hud.update(st);
+    REQUIRE(hud.activeBankrollSeries().size() == 4u);   // session
+    REQUIRE(hud.activeEdgeSeries().size() == 1u);       // edge untouched
+    CHECK(wagered() == 2);                              // bets pane still per-shoe
+
+    // The bets pane carries its own dataset AND its own axis: the session's $250 wager grows it.
+    hud.cycleGraphScope(2);
+    hud.update(st);
+    CHECK(wagered() == 6);
+    CHECK(hud.activeBetBucketWidth() ==
+          (HUD::computeAxisMax(250) - Constants::MINIMUM_BET) / Constants::BET_BUCKET_COUNT);
+    REQUIRE(hud.activeBankrollSeries().size() == 4u);   // bankroll still session
+    REQUIRE(hud.activeEdgeSeries().size() == 1u);       // edge still per-shoe
+
+    // 'G' moves every pane onto the session dataset at once.
+    hud.setAllGraphScope(true);
+    hud.update(st);
+    REQUIRE(hud.activeEdgeSeries().size() == 4u);
+    REQUIRE(hud.activeBankrollSeries().size() == 4u);
+    CHECK(wagered() == 6);
+
+    // And back to per-shoe for all three.
+    hud.setAllGraphScope(false);
+    hud.update(st);
+    REQUIRE(hud.activeBankrollSeries().size() == 2u);
+    REQUIRE(hud.activeEdgeSeries().size() == 1u);
+    CHECK(wagered() == 2);
+}
+
+// Session backing data is computed in update(), which runs every frame, so it is gated on at least one pane actually
+// showing its session view. A pane toggled on must therefore see CURRENT session data, not a value left over from the
+// last frame any pane was in session view: grow the session between updates and require the pane follow it.
+TEST_CASE("U12: a pane toggled to session view sees current session data, not stale", "[HUD][U12]")
+{
+    ShoeAnalytics shoe;
+    SessionAnalytics session;
+    session.bankrollSeries = {5.f};
+
+    HUDState st;
+    st.shoeAnalytics = &shoe;
+    st.sessionAnalytics = &session;
+
+    HUD hud;
+    hud.initialize(testFont());
+
+    // No pane is in session view: the session backing data is never populated, and every pane plots per-shoe.
+    hud.update(st);
+    CHECK(hud.activeBankrollSeries().empty());   // shoe has no series yet
+
+    // Grow the session while nothing is showing it, then toggle a pane on: it must show the grown session, not a stale
+    // empty snapshot taken before the gate opened.
+    session.bankrollSeries = {5.f, 7.f, 9.f};
+    session.edgeSeries = {0.1, 0.2, 0.3};
+    session.betDistribution = {{20, 3}};
+
+    hud.cycleGraphScope(0);
+    hud.update(st);
+    REQUIRE(hud.activeBankrollSeries().size() == 3u);
+    CHECK(hud.activeBankrollSeries().back() == Approx(9.f));
+}
+
