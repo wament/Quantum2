@@ -171,6 +171,8 @@ inline void to_json(json& j, const ShoeRecord& s)
     j = {
         {"shoeDecks", s.shoeDecks},
         {"shuffleSeed", s.shuffleSeed},
+        {"shoeCardCount", s.shoeCardCount},
+        {"isContinuation", s.isContinuation},
         {"rounds", s.rounds},
         {"completed", s.completed},
         {"bankrollAtShoeEnd", s.bankrollAtShoeEnd}
@@ -184,6 +186,10 @@ inline void from_json(const json& j, ShoeRecord& s)
     // the pre-T1 "initialDeck" array is gone, and history was reset with the schema change.
     s.shoeDecks = j.value("shoeDecks", Constants::NUM_DECKS);
     s.shuffleSeed = j.value("shuffleSeed", 0ull);
+    s.shoeCardCount = j.value("shoeCardCount", 0);
+    // B22: this was declared and set in Game.cpp but never serialized, so a saved continuation shoe came back
+    // marked as an ordinary one. It is the only marker of the seed-reconstruction boundary, so it has to persist.
+    s.isContinuation = j.value("isContinuation", false);
     if (j.contains("completed"))
         j.at("completed").get_to(s.completed);
     // additive: absent "completed" keeps its default (true).

@@ -155,13 +155,15 @@ Replay::buildSteps(const ShoeRecord &shoe)
     std::vector<ReplayInternals::ReplayStep> result;
     int shoeProfit = 0;
     int runningCount = 0; // track count incrementally
-    // B21: the shoe is rebuilt from the record's own seed rather than stored inside it. The record carries the
-    // number of decks it was built from and the seed that shuffle used, which reproduce the shoe exactly --
-    // including the cut card, which is why the count is 313 for a 6-deck shoe and drives cardsRemaining/trueCount.
+    // B21: the shoe is rebuilt from the record's own seed rather than stored inside it. For a FRESH shoe the seed
+    // reproduces it exactly, cut card included (313 for 6 decks), and that is what drives cardsRemaining/trueCount.
+    // A CONTINUATION shoe is a shuffle of the full deck MINUS everything already dealt, so the seed rebuilds a full
+    // shoe that was never dealt -- there, the stored count is authoritative. See the [Continuation] test in
+    // tests/test_deck.cpp, which locks that boundary.
     Deck shoeDeck;
     shoeDeck.create(shoe.shoeDecks);
     shoeDeck.shuffleWithSeed(shoe.shuffleSeed);
-    int totalCards = static_cast<int>(shoeDeck.size());
+    int totalCards = shoe.shoeCardCount > 0 ? shoe.shoeCardCount : static_cast<int>(shoeDeck.size());
     int cardsDealtSoFar = 0;
 
     // Helper to add a step and update count after a card is dealt

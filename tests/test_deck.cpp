@@ -1,6 +1,8 @@
 #include <catch2/catch_all.hpp>
 #include <Deck.hpp>
 #include "Constants.hpp"
+#include "GameRecord.hpp"
+#include "Serialization.hpp"
 
 TEST_CASE("Deck is empty when created", "[Deck]")
 {
@@ -250,4 +252,39 @@ TEST_CASE("B21: reshuffleWithRemaining() records a seed that reproduces the cont
     // record captured rebuilds the shoe the record describes, which the shuffleWithSeed path above proves.
     CHECK(again.shuffleSeed() != seed);
     CHECK(again.size() == d.size());
+}
+
+// The trap B21 exposed: reshuffleWithRemaining() shuffles the full deck MINUS every card already dealt, so a
+// continuation shoe is a shuffle of a REDUCED set. create(shoeDecks) + shuffleWithSeed(seed) therefore rebuilds a
+// FULL 313-card shoe, not the one that was dealt -- wrong size and wrong order. The pre-B21 schema captured
+// deck.getCards() verbatim and got this right for free; the seed schema has to store the count. This test locks
+// both the fix and the boundary, because #1/#4/#9 (forks, codes, ghosts) all assume "the record describes the shoe".
+TEST_CASE("B21: a continuation shoe is smaller than a fresh shoe and the seed cannot rebuild it", "[Deck][Seed][B21][Continuation]")
+{
+    Deck d;
+    d.create(6);
+    d.shuffle();
+    std::vector<Card> played;
+    for (int i = 0; i < 100; ++i)
+        played.push_back(d.draw());
+    d.reshuffleWithRemaining(played);
+
+    ShoeRecord rec;
+    rec.shoeDecks = d.shoeDecks();
+    rec.shuffleSeed = d.shuffleSeed();
+    rec.shoeCardCount = static_cast<int>(d.size());
+    rec.isContinuation = true;
+
+    CHECK(rec.shoeCardCount < rec.shoeDecks * 52 + 1);        // reduced set, not a full shoe
+    CHECK(rec.shoeCardCount == static_cast<int>(d.size()));
+
+    const ShoeRecord back = json(rec).get<ShoeRecord>();
+    CHECK(back.shoeCardCount == rec.shoeCardCount);           // the count survives the save
+    CHECK(back.isContinuation == true);
+
+    Deck rebuilt;
+    rebuilt.create(back.shoeDecks);
+    rebuilt.shuffleWithSeed(back.shuffleSeed);
+    CHECK(static_cast<int>(rebuilt.size()) == back.shoeDecks * 52 + 1);
+    CHECK_FALSE(sameShoe(rebuilt.getCards(), d.getCards()));  // the seed describes a shoe that was never dealt
 }

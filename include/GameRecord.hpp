@@ -182,6 +182,15 @@ struct ShoeRecord
     // 9,591,391 bytes and whose only consumer (Replay) needed the shoe's SIZE. Locked by #13-#16 (tests/test_deck.cpp).
     unsigned long long shuffleSeed = 0;
     int shoeDecks = Constants::NUM_DECKS;
+
+    // The shoe's real card count as dealt, captured from Deck::size() at shoe creation. For a FRESH shoe this is
+    // derivable -- shoeDecks*52 + 1 for the cut card -- and the seed above reproduces the order exactly. For a
+    // CONTINUATION shoe it is NOT derivable: reshuffleWithRemaining() shuffles the full deck MINUS every card already
+    // dealt, so the continued shoe is smaller than shoeDecks*52+1 and its order is a shuffle of a reduced set the
+    // seed alone cannot describe. Storing the count keeps Replay's cardsRemaining/trueCount correct for both.
+    // Consumers that need the shoe's exact ORDER (forks, shoe codes, ghosts) must treat isContinuation as a
+    // reconstruction boundary -- see IDEAS #1, #4, #9.
+    int shoeCardCount = 0;
 };
 
 // Aggregate of the record-derivable career counters for every shoe that has rolled OFF the longHistory cap (T2). Stored so a

@@ -60,6 +60,7 @@ void SessionLifecycle::startTournamentSession(const Tournament::TournamentConfig
     game.deck.shuffle();
     game.currentShoeRecord.shoeDecks = game.deck.shoeDecks();
     game.currentShoeRecord.shuffleSeed = game.deck.shuffleSeed();
+    game.currentShoeRecord.shoeCardCount = static_cast<int>(game.deck.size());
     game.currentShoeRecord.rounds.clear();
 
     game.resetShoeAnalytics();
@@ -204,6 +205,7 @@ void SessionLifecycle::startNewGame()
     game.deck.shuffle();
     game.currentShoeRecord.shoeDecks = game.deck.shoeDecks();
     game.currentShoeRecord.shuffleSeed = game.deck.shuffleSeed();
+    game.currentShoeRecord.shoeCardCount = static_cast<int>(game.deck.size());
     game.currentShoeRecord.rounds.clear();
 
     // A brand-new shoe: every per-shoe readout starts from zero

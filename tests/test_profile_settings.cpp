@@ -352,7 +352,8 @@ TEST_CASE("T1: storing a shoe as seed + deck count is what shrinks a capped 100-
     const std::size_t bytes = json(arr).dump().size();
 
     // Measured on the real profile: the 100 stored decks alone were 792,200 bytes. Rounds here are one trivial
-    // record per shoe, so anything near that figure means the array crept back into the schema.
-    CHECK(bytes < 20000);
+    // record per shoe, and 100 whole shoes now serialize to ~21 KB -- so anything approaching the old figure means
+    // the deck array crept back into the schema. Bound set at 40 KB: far above real use, far below the regression.
+    CHECK(bytes < 40000);
 }
 
