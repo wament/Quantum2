@@ -899,18 +899,31 @@ stale test IDs; each correction is noted inline.
 - [x] Persistence round-trip + renderer-string extraction tests exist. (#257–#261 cover the shoe-record round trip,
       seed→shoe reconstruction and the compact writer; #13–#16 cover the shuffle-seed property. The ASCII-only
       renderer-string test is #343.)
-- [x] Full suite green — **378/378** (the old text said "currently **277/277**"), at or above baseline and growing as
-      each fix adds its regression test. Verified clean at `-j4` and `-j8` after the B20 fix.
+- [x] Full suite green — **395/395** (the old text said "currently **277/277**", then **378/378**), at or above
+      baseline and growing as each fix adds its regression test. Verified clean at `-j4` and `-j8`, and verified from a
+      **clean configure into a fresh directory** on 2026-11-12 (the incremental build had been hiding a
+      non-compiling header — see §13's sixth round).
 - [x] `.summaries/0.4/CONTEXT.md` §11 status table and §10 decisions updated before handoff. (§10 rows 1–6 were
       missing their Resolved markers, and row 3's stated default of $1,000 contradicted the shipped
       `STARTING_BANKROLL = 10000`; both corrected 2026-11-12.)
 
 **Phase 0.4 is complete.** The B-series, the U-series and T1/T2 are all Resolved; the last Partial (B9) closed once
 its cause was attributed, and B21 closed with the seed wired in both directions. `Constants::BET_BUCKET_WIDTH` is
-deleted. Nothing in §11 is Open. Three rows were added on 2026-11-12 after the storage work: **B22** (a shoe field
-never read and never serialized, which also caught a B21 regression), **B23** (the player's displayed name was
-hard-coded and never synced from the profile), and the shuffle-portability fix in §5. **Read §13's third and fourth
-entries before touching `ShoeRecord` or `Deck`'s shuffle** — both changed the meaning of persisted data.
+deleted. Nothing in §11 is Open. Rows added after the original close-out: **B22** (a shoe field never read and never
+serialized, which also caught a B21 regression), **B23** (the player's displayed name was hard-coded and never synced
+from the profile), the Daily Challenge (B24/B25), and on 2026-11-12 **MS1** (per-mode shoe history — the §10 #1(b)
+follow-up) and **B26** (the B24 nested-read guard at the `ShoeRecord` site was dead code). **Read §13's third, fourth
+and sixth entries before touching `ShoeRecord`, `Deck`'s shuffle, or `Serialization.hpp`** — all three changed the
+meaning of persisted data.
+
+**Opening phase 0.5 (the ideas phase).** 0.4 is defect removal; 0.5 is feature work, so the guardrails change:
+`IDEAS.md` stops being "do not read" and becomes the backlog, and each picked feature gets its own `NEXT_STEPS.md`
+section with the same fix/test/done-when structure the defects used. Start from `IDEAS-REVIEWED.md` §E (build order)
+and §G (decisions handed back). Three things carry forward as hard constraints, not suggestions:
+**`persistsProgress()` is still unbuilt** and blocks #1/#2/#4/#8/#10 (§B.3); **any surface that reads shoe history
+must now say which mode it reads** (§A's new row — `getLongHistory()` alone silently omits Daily and tournament
+play); and **§F's `file:line` citations have a half-life of one feature** — eight of them had drifted in a single
+day, one of them flatly false, so re-verify against source before building on any of them.
 
 **Reading these documents:** inserting tests renumbers every later ID, and the shift is not uniform across citations
 made on different dates (the U12 session test is #179 today, cited as #175; B17's isolation test is #344, cited as

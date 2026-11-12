@@ -64,17 +64,20 @@ Why these resist tests: every one needs an SDL window context and a screenshot/X
 
 ## Step 0 — this iteration
 Branch:            3.1   <- edit if different
-Focus this round:  <e.g. "U-series vision-critical (U3 reflow)" / "the B9 crash">
-Already done:      <e.g. "nothing" / "B15 landed">
-Anything I should know: <optional>
+Focus this round:  <phase 0.5 opens. Pick the flagship: "#6 Bankroll Chart" / "persistsProgress()" / "#3 Leak Report" / "#1 Decision Fork">
+Already done:      0.4 is closed. HEAD cfdf718, suite 395/395, clean configure verified, MS1 + B26 landed.
+Anything I should know: IDEAS-REVIEWED.md was re-verified against source on 2026-11-12 — 8 of §F's citations had
+  drifted and one was false. Re-check any file:line before building on it. persistsProgress() is still unbuilt.
+  Any surface reading shoe history must now state WHICH MODE it reads.
 
 ## Step 1 — read these, in this order, before touching code
-All three live in `.summaries/0.4/` on branch `3.1`. (`master` is a frozen checkpoint at 380da26 and does NOT contain them — if they're missing, you are on the wrong branch.)
+All live in `.summaries/0.4/` on branch `3.1`. (`master` is a frozen checkpoint at 380da26 and does NOT contain them — if they're missing, you are on the wrong branch.)
 
-1. `.summaries/0.4/CONTEXT.md` **§13 (Document audit log)** — what has actually been verified, and how. Read first; it tells you which claims in these docs are load-bearing and which were inherited from a playtest.
-2. `.summaries/0.4/CONTEXT.md` — the rest, fully. Background, evidence, guardrails.
-3. `.summaries/0.4/NEXT_STEPS.md` — the actionable ledger.
-4. `.summaries/0.4/IDEAS.md` — DO NOT read or implement unless I explicitly ask this round. Not a plan.
+1. `.summaries/0.4/CONTEXT.md` **§13 (Document audit log)** — what has actually been verified, and how. Read first; it tells you which claims in these docs are load-bearing and which were inherited from a playtest. **The sixth-round entry is the newest and describes the per-mode history split.**
+2. `.summaries/0.4/CONTEXT.md` — the rest, fully. Background, evidence, guardrails. §5 (persistence + data model) is the one a feature work touches most.
+3. `.summaries/0.4/NEXT_STEPS.md` — the actionable ledger, and its new **"Opening phase 0.5"** paragraph.
+4. `.summaries/0.4/IDEAS-REVIEWED.md` — **the review layer over `IDEAS.md`, and the entry point for feature work.** §E is the build order, §G the decisions handed back, §F the verified reference table, §B.3 the one unbuilt prerequisite.
+5. `.summaries/0.4/IDEAS.md` — the proposal record, untouched. Read it *after* the review, so its premises arrive pre-checked. (In 0.4 this file was "do not read"; in 0.5 it is the backlog.)
 
 Key sections: CONTEXT §3 testing blind spot · §4 architecture map · §5 persistence & data model · §6 evidence log (§6.9 "cleared — not bugs", §6.10 B13 proof) · §7 conventions · §8 environment (incl. the `-M` trap) · §10 open decisions · §11 status tracker. NEXT_STEPS: Verification gate · Triage table · Phases 0–5 · Testing strategy · Definition of done · Explicitly out of scope.
 
@@ -116,10 +119,17 @@ Wait for my go-ahead.
 - Tell me: what landed, what's still open, what you'd do next — and, for any vision-critical U-item, how you verified it on screen (`tools/visual_check/`, Xvfb/screenshot). A screenshot tells you *what* is broken, not *why*: test a suspected cause against the artifact (font cmap, library header) before writing it into §5.
 
 ## Hard guardrails
-- No new features. IDEAS.md is not a plan.
+**Phase 0.4's "no new features" is lifted — 0.5 IS the feature phase.** What does not lift is the discipline: one
+feature per `NEXT_STEPS.md` section, test written first and confirmed red, full suite re-run after every step, never
+finish with a lower test count than you started, and the same verification gate (headless first; `tools/visual_check/`
+for anything that only shows up on screen).
 - Do not revive Feature 6 (KO / Wong Halves / Omega II counting).
 - Do not widen `GameRules` beyond exposing `maxSplitHands` (B10); U12's "session view" is a NEW dataset, not a GameRules change.
 - Do not change the `AppMode` enum except by adding a value with its own state machine.
 - Do not "fix" the `handActions` indexing — it is correct; see CONTEXT §6.9.
 - Do not re-litigate anything already cleared in §6.9.
-- Do not break the additive-JSON contract: every new field optional, with a default.
+- **Schema:** write new fields unconditionally, read them with a default (`j.value(key, default)` / the `jsonOr*` helpers). The old "every field optional" phrasing is superseded by §5's policy of 2026-11-12. Two live traps: `j.value()` does **not** cover a wrong-typed key, and **nested reads are still strict** — `from_json(RoundRecord&)` and `from_json(HandOutcome&)` use `j.at()` for every field, and a throw there relocates the whole profile (B24's stated limitation, B26's dead guard). A guard placed *after* the statement it guards is not a guard.
+- **Any new surface that reads shoe history must state which mode it reads.** Career `longHistory` is Regular-only; Daily/tournament shoes are in their own capped vectors, so `getLongHistory()` alone silently omits them. Reuse `include/HistoryBrowser.hpp` rather than inventing a second source model.
+- **A feature that runs on the live `Game` and must not touch the career profile needs `persistsProgress()`** (§B.3). `setPersistable(false)` is a blanket gate for a seat that builds its own table; the narrow commit (`commitDailyResult` / `commitTournamentShoe`) is for recording exactly one thing. Neither is the predicate.
+- **A test that crosses a shoe boundary must re-seed the deck afterwards** (B18/B20), and any test driving a real `Game`/`Player` must run under `test_support::IsolatedHome` (B17). Never add a per-test HOME guard — the process-scope guard covers everything.
+- **A `file:line` citation in these docs has a half-life of one feature.** Eight of `IDEAS-REVIEWED.md` §F's rows had drifted within a day and one was flatly false. Re-verify against source before building on any of them.

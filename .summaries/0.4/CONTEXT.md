@@ -1432,3 +1432,42 @@ unrelated screen. That is B24's *stated* limitation (the `jsonOr*` guards cover 
 + narrow commit), and it is still owed to the features that run on the *live* `Game` (in-game drills, sim,
 fork, tutorial).
 
+### 2026-11-12 (wrap-up) — `IDEAS-REVIEWED.md` re-verified for the ideas phase; eight stale citations corrected, one of them false
+
+Phase 0.4 closed and the ledgers were prepared for feature work. The rule this phase keeps enforcing — *re-verify, do
+not trust the table* — was applied to the ideas ledger itself, and it failed exactly as the rule predicts.
+
+**Eight of `IDEAS-REVIEWED.md` §F's rows were stale; one was flatly false.**
+
+- **`Player("William")` hard-coded — "four sites"** was listed as live with specific line numbers. `grep -rn
+  'Player("William")' src include` returns **zero matches**: B23 removed all of them on 2026-11-12, and the sites now
+  pass `Constants::DEFAULT_PLAYER_NAME`. The dependent claim in §C #10 — "the player has never had a name entry path",
+  plus the advice to "split the name-entry half out as an S" — was downstream of the same stale row, and is now spent
+  work, not available work. **A stale table row propagated into a build-order recommendation.**
+- The `GameRecord.hpp`, `Serialization.hpp`, `Game.cpp`, `SessionLifecycle.cpp` and `Deck.cpp` citations had all
+  drifted under the Daily-Challenge and MS1 edits (e.g. seed fields `178-193` → `202-210`; `Deck.cpp:34` is now a
+  closing brace). Every one was re-derived from source, not adjusted by arithmetic.
+- Two rows were imprecise rather than wrong: the shoe-creation sites are **five** (four fresh + the continuation), not
+  two; and the continuation-reseed row now cites `Deck.cpp:139-141`, which **confirms §B.2** — a continuation shoe's
+  order is not described by the recorded seed.
+
+**New content recorded for the ideas phase.** §A gained a row for **mode** (nothing in `IDEAS.md` anticipates it:
+every history-reading idea reads one list as if it were the whole history). §B.3 now distinguishes the two persistence
+gates MS1 proved — blanket `setPersistable(false)` vs the narrow commit — and states that `persistsProgress()` is the
+generalisation of the first, owed to features running on the *live* `Game`. §C #6/#7/#9/#10 and §E updated for MS1's
+effect. §G item 3 ("is the Daily wanted?") is closed — it shipped and immediately surfaced B24 and B25 as a test
+surface — and a **new §G item 6** is opened: U12's "session" means *one open play window* (§10 #9a) while MS1's
+per-mode history means *a capped list across windows*. Both are now in the product; a chart tab offering "session" and
+"Daily" as sibling options is offering two incommensurable things. **Decide that vocabulary before building #6.**
+
+**Ledger state for the next round.** `NEXT_STEPS.md` carries a new **"Opening phase 0.5"** paragraph; the
+handoff prompt's Step 0 is pre-filled for the ideas round, its reading order now puts `IDEAS-REVIEWED.md` ahead of
+`IDEAS.md`, and its guardrails replace "no new features" with the feature-phase discipline while keeping every
+technical guardrail (schema policy, mode-awareness, `persistsProgress()`, B17/B18 test rules). Suite **395/395**;
+HEAD `cfdf718`.
+
+**The lesson, stated for the next phase:** a `file:line` citation in these documents has a **half-life of one
+feature** — eight rows drifted in a single day. Prefer naming the function over the line, and re-verify before
+building on any citation, especially one that appears in a recommendation rather than a defect report.
+
+

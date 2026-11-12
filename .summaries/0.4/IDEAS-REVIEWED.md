@@ -5,6 +5,15 @@ it: it re-verifies every premise and `file:line` reference against the tree at H
 records what the T1/B21/B9 work did to each idea, and develops the ideas on the new footing. `IDEAS.md`'s own closing
 line asks for exactly this — "re-verify every file:line reference above against the tree at that time."
 
+> **Re-verified 2026-11-12 at HEAD `cfdf718` (suite 395/395).** §F's citations were re-checked against source and
+> **eight rows were stale** — the `Player("William")` row was flatly false (B23 removed all four sites), and the
+> `GameRecord.hpp` / `Serialization.hpp` / `Game.cpp` / `SessionLifecycle.cpp` / `Deck.cpp` line numbers had all
+> drifted under the Daily-Challenge and per-mode-history (MS1) work. §F is now corrected and carries the MS1 rows.
+> **MS1 is the change this review had not absorbed:** career `longHistory` is now Regular-only, with Daily/tournament
+> shoes in their own capped vectors and `ShoeRecord::mode` as the router key. Read §B.3, §C #6/#7/#9/#10 and §E for
+> its effect before picking a feature — the headline is that **any surface reading shoe history now has to say which
+> mode it is reading**, because `getLongHistory()` alone silently omits Daily and tournament play.
+
 **Headline: the ideas got cheaper, and one of them is half-built.** B21 shipped the seed plumbing that #4 lists as
 its implementation work; #1's hardest component (exact deck reconstruction) now exists **and is tested**; and every
 hard dependency the document lists — B1, B2, B4, B5, B8, B13, B14, B15, B16, U3, U5, U7, T2 — is **Resolved**. The
@@ -28,6 +37,7 @@ dependency columns are effectively cleared. What still blocks the big features i
 | 6 | `HUDState::bankrollSeries` / `edgeSeries` are single series | U12 added **scope switching**: `activeBankrollSeries()` / `activeEdgeSeries()` return session **or** per-shoe series (`HUD.hpp:96-100`) | #6 gains a real feature free of charge — a session-spanning career curve already exists as data |
 | 9 | "`ShoeRecord` already contains a complete, replayable game" | True, **because of the seed**, not the deck array | Premise survives; the mechanism changed |
 | all | "additive, defaults" for every new profile field | The additive contract was **deliberately broken** by the developer on 2026-11-12 | New fields may now be **required**. Freedom gained — and a policy decision (§G.1) |
+| — (new since this review) | Nothing in `IDEAS.md` anticipates **mode**: history is one list, and every idea reads it as if it were the whole history | **MS1, 2026-11-12:** career `longHistory` is Regular-only; Daily/tournament shoes live in their own capped vectors (`PlayerProfile.hpp:72-87`), tagged by `ShoeRecord::mode`, routed by `addShoeRecord()` | **Every history-reading idea gains a mandatory mode choice**: #6 (chart), #3 (leak report), #9 (ghost fixture), #7 (challenges over per-mode aggregates), #4 (a shoe code that should name its mode). Reuse `include/HistoryBrowser.hpp` rather than inventing a second source model |
 | all | Test IDs cited throughout | Inserting tests renumbers later IDs, **non-uniformly** | Provenance, not addresses. Search by test **name** |
 
 **Found during this review — two defects, both fixed today (suite 345/345):**
@@ -98,6 +108,22 @@ This is the highest-leverage prerequisite in the document and it is small: one p
 save path, the achievements path and the stats path. Build it once, before the first of those five, and all five
 inherit the hardest correctness rule for free. Every one of those five features should carry the same test: **a run
 leaves the saved profile byte-identical.**
+
+**MS1 (2026-11-12) shipped the sibling seam, and it is the half of this the codebase now has.** Two mechanisms exist
+and neither is the predicate:
+- **`setPersistable(false)`** on the seat — a *blanket* gate on `saveProfile()`. It is what makes the Daily and
+  tournament safe, and it is coarse: it turns off ALL writes, so a session that wants to persist *one* thing cannot
+  use it alone.
+- **The narrow commit** — `commitDailyResult()` / `commitTournamentShoe()` (`SessionLifecycle.cpp:400-437`): read the
+  career file, touch one slice, write it back. Deliberately not a seat save. This is the "record exactly one thing and
+  nothing else" pattern, and it is now proven in both directions by #314 and the `[Daily]` suite.
+
+`persistsProgress()` is the generalisation of the first, and the features that need it are the ones running on the
+**live** `Game` (in-game drills, sim, fork, tutorial) — sessions that build no table of their own, so an ephemeral
+seat is not available to them. That is why the Daily did not need it and why it is still the top prerequisite. When it
+is built, the byte-identical test is the one to write first, and note the trap MS1 exposed: the profile's own
+`currentHistory` is the *career's* in-progress shoe, so a non-career session must never let it into its records
+(that is why `addModeShoe` takes the caller's rounds verbatim while `addCareerShoe` overwrites them).
 
 ---
 
@@ -201,6 +227,12 @@ Two upgrades the doc could not have known about:
   inherit the toggle rather than invent a third scope concept.
 - **`bankrollSeries` resets at shoe boundaries** — the doc's sawtooth warning is still exactly right, and U12's
   session series is the existing answer to it.
+- **MS1 added a third axis: mode.** Career, Daily and tournament shoes now live in **separate vectors**
+  (`PlayerProfile.hpp:72-87`), so a chart over `getLongHistory()` alone silently shows only ordinary play. A mode
+  selector is now required, not optional. Do not invent one: `include/HistoryBrowser.hpp` is the pure, tested
+  source-switch model (Career / Daily / Tournament, empty-skipping, labelled) and `Replay` already consumes it —
+  reuse it and the chart and the browser cannot drift apart. Decide explicitly whether Daily shoes join the career
+  curve (they are excluded from career stats by construction, so a merged curve needs its own derivation).
 
 Effort **S**, risk now near zero, and the chart primitives are still the shared win for #2/#5/#9. **Build this first.**
 
@@ -214,26 +246,45 @@ its consumers behaves: silently wrong, discovered late.
 
 The additive-schema note in this idea is superseded (§A, last row): new profile fields may now be required.
 
+**MS1 just created a batch of challenge-able facts that did not exist as data a day ago**, all persisted and read:
+per-mode `ModeStats` (`shoesPlayed`, `bestBankroll`, `mostHandsWon`, `bestFinish`), `tournamentsCompleted`, and
+`handsWonInShoe(shoe)` as a record-derived per-shoe measure. That is the raw material for "win N hands in one shoe",
+"finish a tournament", "reach stage N", "play N Daily shoes" — and the streak (`dailyStreak`) is already a working
+streak implementation to model challenges on. Two constraints MS1 also demonstrates: the per-mode vectors are **capped**
+(30 / 20 / 20), so a challenge measured over history must be evaluated at the moment the shoe is booked, not scanned
+from the window later; and the aggregates are maintained **incrementally** precisely so a peak survives eviction.
+
 ### #8 Count-Only Drill Mode — unchanged, and B4 is Resolved
 
 The doc's dependency ("the seed must be right or the drill teaches wrong") is satisfied — B4 is Resolved. The mask-over-
 `HUDState` design is confirmed sound: every displayed number is a separate field. Still **S**, still the cheapest real
 feature, and it needs `persistsProgress()` (§B.3) for the "drills never touch career stats" rule.
 
-### #9 Ghost Rival — premise survives; add the continuation guard
+### #9 Ghost Rival — premise survives; add the continuation guard, and the Daily now supplies the fixture
 
 "ShoeRecord already contains a complete, replayable game" is now true via the seed. Add: refuse continuation shoes
 (§B.2), and note that a ghost shared with a friend inherits §B.1's portability question. `playerBankrolls` exists as
 the doc says. Effort **M**, dependencies (#4, #2's policies, #6's primitives) unchanged.
 
-### #10 Onboarding Campaign + name entry — unchanged, and the defect it closes is still open
+**MS1 changes the fixture story, and closes half of #4's "comparison" gap.** A Daily shoe is now *recorded* —
+`dailyShoes` keeps the full round records, mode-tagged, with the date-derived `shuffleSeed` — so "race the recorded
+result of today's Daily" now has stored data behind it. What §11 called the Daily's missing comparison half needed a
+ghost to race; the ghost is the remaining half, not the recording. Note the cap: `dailyShoes` holds 30 shoes
+(~27 KB each with rounds), so a ghost fixture must be captured, not assumed to still be on disk a year later.
 
-Verified: `Player("William")` is hard-coded at **four** sites — `SessionLifecycle.cpp:39`, `:190`, `Game.cpp:112`,
-`Game.cpp:782`. The player has never had a name entry path. `StrategyTrainer::startSession(deckCount,
-secondsPerSession)` exists with a deterministic variant, and `Deck::setCards()` installs an exact order — both premises
-confirmed. B4 and U5 being settled removes the doc's "teaching a number that's about to change" risk.
+### #10 Onboarding Campaign + name entry — **the defect it closed is now CLOSED; the campaign is what remains**
 
-Effort **L**. The name-entry half is an **S** on its own and closes a shipped cosmetic defect; it is worth splitting out.
+**This row was stale and is corrected 2026-11-12.** It used to read "Verified: `Player(\"William\")` is hard-coded at
+**four** sites … the player has never had a name entry path." Both halves are now done: **U7** shipped the name-entry
+screen, and **B23** removed the hard-coding — `grep -rn 'Player("William")' src include` returns **zero** matches, and
+the five construction sites pass `Constants::DEFAULT_PLAYER_NAME` with the loading constructor adopting the persisted
+name. The "split out the name-entry half as an S" advice is therefore spent: that S is spent, not available.
+
+What remains is the campaign itself. `StrategyTrainer::startSession(deckCount, secondsPerSession)` exists with a
+deterministic variant, and `Deck::setCards()` installs an exact order — both premises still confirmed. B4 and U5 being
+settled removes the doc's "teaching a number that's about to change" risk. Effort **L**, and it now needs
+`persistsProgress()` (§B.3): a tutorial that runs on the live `Game` and writes to the career profile is the exact
+failure B1 was, and a scripted tutorial will fire the autosave cadence repeatedly.
 
 ---
 
@@ -265,11 +316,16 @@ second feature, because both are cheap today and expensive tomorrow:
 | 1 | **#6 Bankroll Chart** | S | Cheapest real feature; its only trap is gone; the chart primitives are reused by #2, #5 and #9 |
 | 2 | **`Game::persistsProgress()`** | S | Not in the list, and it unblocks #1, #2, #4, #8, #10 (§B.3). Build it before the first of them. **The Daily did not need it** — an ephemeral seat covers a session that builds its own table; the predicate is owed to features that run on the *live* `Game` |
 | 3 | ~~**Fixed Fisher-Yates in `Deck`**~~ **DONE 2026-11-12** | S | §B.1 shipped the same day, while history was empty. Locked by #18 `[Golden]` |
-| 4 | ~~**#4 Daily: date→seed, streak, gate, menu entry**~~ **DONE 2026-11-12** | S–M | Shipped with the main-menu row. Found **B24** (one wrong-typed save field destroyed the whole profile) and made menu navigation index-driven. Left: `ShoeCode` encode/decode + checksum, and the comparison half (needs #9) |
-| 5 | **#4 Shoe Codes** | S | Encode/decode + checksum only. A Daily needs no code — the date *is* the seed |
+| 4 | ~~**#4 Daily: date→seed, streak, gate, menu entry**~~ **DONE 2026-11-12** | S–M | Shipped with the main-menu row. Found **B24** (one wrong-typed save field destroyed the whole profile) and made menu navigation index-driven. **MS1 (2026-11-12) then shipped the recording half**: Daily shoes are stored, mode-tagged, with their rounds and the date seed, and are browsable in Replay. Left: `ShoeCode` encode/decode + checksum, and the comparison half (needs #9 — and #9's fixture now exists) |
+| 5 | **#4 Shoe Codes** | S | Encode/decode + checksum only. A Daily needs no code — the date *is* the seed. Note: `mode` is now part of a shoe's identity, so a code that claims to describe a shoe should say which mode produced it (a Daily shoe and an ordinary shoe can share a seed) |
 | 6 | **#3 Leak Report** | M | Unblocked, self-contained, makes existing tracking legible |
 | 7 | **#1 Decision Fork** | L | The riskiest third is already built and tested |
-| 8 | **#2 Sim Lab** → **#5**, **#9**, **#8**, **#7**, **#10** | | #8 and #10's name-entry half are each an S and can be lifted out early |
+| 8 | **#2 Sim Lab** → **#5**, **#9**, **#8**, **#7**, **#10** | | **#10's name-entry half is DONE** (U7 + B23) — that lift-out is spent, not available. **#8** is the remaining S lift-out, and it is the cheapest test of `persistsProgress()` |
+
+**MS1's net effect on this table:** it does not reorder anything, but it *lowers* #9 (the ghost's fixture is now
+recorded data), *raises* #7 (per-mode `ModeStats` + `tournamentsCompleted` are new challenge-able facts), and makes a
+mode selector **mandatory** in #6 and any other history-reading surface — a view over `getLongHistory()` alone now
+silently omits Daily and tournament play. `persistsProgress()` stays at 2 and is still the only unbuilt prerequisite.
 
 ---
 
@@ -277,24 +333,26 @@ second feature, because both are cheap today and expensive tomorrow:
 
 | `IDEAS.md` cites | Current tree |
 |---|---|
-| `ShoeRecord::initialDeck` (`GameRecord.hpp:166`) | **Removed.** Seed fields at `GameRecord.hpp:178-193` |
-| `Serialization.hpp:170 / 174 / 185` (shoe record) | `include/Serialization.hpp:169-192` |
-| `src/Game.cpp:276`, `:1349` (deck capture) | `Game.cpp:407-409`, `:1544-1546` (seed + deck count + card count) |
-| `src/SessionLifecycle.cpp:55`, `:198` | `SessionLifecycle.cpp:61-63`, `:206-208` |
-| `src/Deck.cpp:38-41` (reseed) | `Deck.cpp:34` |
-| `src/Deck.cpp:94-97` (continuation reseed) | `Deck.cpp:109-111` |
-| `src/Deck.cpp:126-132` (cut card consumes an extra card) | `Deck.cpp:143-152` — **confirmed real** |
+| `ShoeRecord::initialDeck` (`GameRecord.hpp:166`) | **Removed.** Seed fields at `GameRecord.hpp:202-210` (`shuffleSeed` / `shoeDecks` / `shoeCardCount`); `mode` at `:197`, `isContinuation` at `:191`, `completed` at `:199`, `bankrollAtShoeEnd` at `:200` |
+| — (new since this review) | `enum class ShoeMode { Regular, DailyChallenge, Tournament, Multiplayer }` at `GameRecord.hpp:171-185`; `ShoeRecord::mode` is the **router key** — `PlayerProfile::addShoeRecord()` dispatches on it (`src/PlayerProfile.cpp:95-112`), career goes to `addCareerShoe` (`:116-130`), every other mode to `addModeShoe` (`:140-153`) |
+| — (new) | Per-mode history + aggregates: `PlayerProfile.hpp:72-87` (`dailyShoes` / `tournamentShoes` / `multiplayerShoes`, `dailyStats` / `tournamentStats` / `multiplayerStats`, `tournamentsCompleted`); `ModeStats` at `GameRecord.hpp` (shoesPlayed / bestBankroll / mostHandsWon / bestFinish); caps `Constants::Daily::MAX_HISTORY_SHOES` = 30, `TournamentHistory`/`MultiplayerHistory` = 20 |
+| `Serialization.hpp:170 / 174 / 185` (shoe record) | `include/Serialization.hpp:169-210` (shoe record, now including `"mode"`); per-mode keys written at `:363-372`, read at `:420-430` |
+| `src/Game.cpp:276`, `:1349` (deck capture) | Five shoe-creation sites, each stamping seed + deck count + card count + **mode**: `Game.cpp:456` (ordinary), `Game.cpp:1609` (continuation), `SessionLifecycle.cpp:67` (tournament), `:231` (new game), `:368` (Daily) |
+| `src/SessionLifecycle.cpp:55`, `:198` | `SessionLifecycle.cpp:67` and `:231` (see above); the Daily/tournament narrow commits are at `:400-417` (`commitDailyResult`) and `:420-437` (`commitTournamentShoe`) |
+| `src/Deck.cpp:38-41` (reseed) | `Deck.cpp:83-85` — `lastShuffleSeed = seed` then the fixed `shuffleShoe()` (`:30-35`), inside the shared shoe builder at `:72-86`; `Deck::shuffleWithSeed` at `:67` |
+| `src/Deck.cpp:94-97` (continuation reseed) | `Deck.cpp:139-141` — `lastShuffleSeed = std::random_device{}()` inside `reshuffleWithRemaining()` (`:101`). **Confirms §B.2: a continuation shoe's order is not described by the recorded seed.** |
+| `src/Deck.cpp:126-132` (cut card consumes an extra card) | `Deck.cpp:145-152` (continuation) and `:90-96` (fresh shoe) — **confirmed real** |
 | `HandEvaluator.cpp:297` (`saveProfile()` every round) | `HandEvaluator.cpp:302-308` — now **gated** by `AUTO_SAVE_EVERY_HANDS` |
 | `Constants.hpp:184` | unchanged |
 | `recentDeviations` = last 10 | `GameRecord.hpp:56`; cap enforced `Game.cpp:1108-1110`; **cleared** at `HandEvaluator.cpp:194` |
-| `Player("William")` hard-coded | `SessionLifecycle.cpp:39`, `:190`; `Game.cpp:112`, `:782` — **four sites** |
+| `Player("William")` hard-coded — "four sites" | **STALE — zero sites remain.** B23 closed it 2026-11-12: the construction sites pass `Constants::DEFAULT_PLAYER_NAME` (`SessionLifecycle.cpp:44`, `:214`, `:359`; `Game.cpp:112`, `:834`), and the loading constructor adopts the persisted name. Verified by `grep -rn 'Player("William")' src include` → **no matches** |
 | `StrategyTrainer::startSession(deck, seconds)` | `StrategyTrainer.hpp:51`, plus a deterministic variant |
 | `calculateKellyBet` / `calculateRekoBet` / `estimateEdgePercent` | `BasicStrategy.hpp:22` / `:39` / `:53` |
-| `HUDState::bankrollSeries` / `edgeSeries` | `HUD.hpp:175-176`; **scoped** accessors at `:96-100` |
-| `Tab` = Overview / Hands / Profits | `StatsDashboard.hpp:19-23` |
+| `HUDState::bankrollSeries` / `edgeSeries` | `HUD.hpp:175-176`; **scoped** accessors at `:96-97` |
+| `Tab` = Overview / Hands / Profits | `StatsDashboard.hpp:19-23`. **Note:** `Tab` is now ALSO the history-browser source switch inside `Replay`'s history list (`src/Replay.cpp`, `HistoryBrowser.hpp`) — the two do not collide (different AppModes), but a new `Tab` binding must check both |
 | `reconstructDeckAtRound()` (B16, "delete it") | **Already deleted** — zero references |
 | "two live copies of `Serialization.hpp`" | **False** — `src/` copy deleted by B15 |
-| `Game::persistsProgress()` (the shared seam) | **Does not exist** — zero hits |
+| `Game::persistsProgress()` (the shared seam) | **Still does not exist** — re-verified 2026-11-12: `grep -rn persistsProgress include src` → **0 hits**. MS1 did NOT build it (the Daily and tournament are covered by the ephemeral seat + a narrow commit) |
 
 ---
 
@@ -306,18 +364,32 @@ second feature, because both are cheap today and expensive tomorrow:
    **meaning** changes rather than adding a translation branch. Every idea that adds a field (#4, #5, #7, #8, #10) can
    proceed on that basis.
 2. ~~**Do the shuffle-portability fix now?**~~ **DONE 2026-11-12**, same day — see §B.1 and #18 `[Golden]`.
-3. **Is the Daily wanted at all?** `IDEAS.md` calls its own justification the weakest in the document. The **code**
-   half is unambiguously valuable and is now nearly free; the Daily is a separate product decision.
+3. ~~**Is the Daily wanted at all?**~~ **ANSWERED 2026-11-12 — it shipped, and it earned its keep.** The Daily landed
+   the same day with the seeded shoe, the gate, the streak and the menu row, and it immediately paid for itself as a
+   *test* surface: writing it found **B24** (one wrong-typed save field destroyed the whole profile) and **B25** (a
+   session-kind flag set on entry and cleared by nothing). Its recording half — the part this review called missing —
+   shipped with MS1. The remaining Daily work is the shoe code and the comparison half, both of which are now cheaper.
 4. ~~**Lift name entry out of #10?**~~ **DONE 2026-11-12, and it was a defect, not a feature.** The name-entry screen
    already existed (U7) and worked; the four hard-coded `"William"` sites were what suppressed the identity on screen.
    Removing them exposed **B23** — the loading constructor never synced the seat's display name from the profile, so
    the entered name was persisted but never shown. Fixed; #10 is now purely the scripted tutorial.
-5. **Which feature is the phase 0.5 flagship?** The list's own answer (#1, the fork) is now better positioned than when
-   it was written, because the hardest part of it shipped as a side effect of closing a storage bug.
+5. **Which feature is the phase 0.5 flagship?** — **STILL OPEN, and it is the decision the next round should start
+   with.** The list's own answer (#1, the fork) is better positioned than when it was written, because the hardest
+   part of it shipped as a side effect of closing a storage bug. The two cheap openers are unchanged: **#6 Bankroll
+   Chart** (S, and MS1 made its mode selector mandatory — reuse `HistoryBrowser.hpp`) and
+   **`persistsProgress()`** (S, unblocks #1/#2/#4/#8/#10). #3 Leak Report remains the best value-to-effort that needs
+   no prerequisite.
+6. **Does a "session" mean the same thing in the chart and the history browser?** — **NEW, opened by MS1.** U12's
+   session view is *one open play window* (§10 #9a); MS1's per-mode history is *a capped list across windows*. They
+   are different axes and both are now in the product. A chart tab that offers "session" and "Daily" as sibling
+   options is offering two incommensurable things. Decide the vocabulary before building #6.
 
 ---
 
 *This document reviews `IDEAS.md`; it does not schedule anything. If an idea is picked up, give it its own section in
 the next phase's `NEXT_STEPS.md` with the same fix/test/done-when structure the defects use, and re-verify the
-references in §F again at that time — they were true at HEAD `25cd750`+ with the suite at 345/345.*
+references in §F again at that time — they were re-checked against source on **2026-11-12 at HEAD `cfdf718`, suite
+395/395**, and eight of them had drifted since the original 345/345 pass. The drift rate is the lesson: **a `file:line`
+citation in these documents has a half-life of one feature**, so re-verify rather than trust, and prefer naming the
+function over the line.*
 
