@@ -825,16 +825,12 @@ most every N seconds — while keeping the forced writes at shoe boundary, pause
 save, compounding T1. *Fix:* cap it (last N shoes) or roll older shoes into aggregate counters, keeping the schema
 additive.
 
-**B16 — `reconstructDeckAtRound()` is dead code, and wrong.** 🟡
-`include/GameRecord.hpp:307-329` is the only occurrence of the symbol in the whole tree — no caller, no test. It
-rebuilds a shoe by popping the **front** of a deque built from `initialDeck`, but `Deck::draw()`
-(`src/Deck.cpp:123-137`) deals from the **back** (`cards.back()` / `pop_back()`), and `initialDeck` is stored as
-`deck.getCards()` verbatim (`src/Game.cpp:299`, `1393`; `src/SessionLifecycle.cpp:55`, `:198`). So it removes
-cards that have *not* been dealt. It also ignores the cut card's extra draw and mid-shoe reshuffles.
-
-No runtime impact today because nothing calls it. It is a landmine for anyone building replay analysis, decision
-forking, or "what if" features — it looks like the right tool and is not. *Fix:* delete it, or rewrite it to pop
-from the back, account for the cut card, and cover it with a test that reconstructs a known shoe.
+**B16 — `reconstructDeckAtRound()` was dead code, and wrong.** 🟡 **Resolved 2026-11-07 (`5f81d48`): removed.**
+It was the only occurrence of the symbol in the tree (no caller, no test). It rebuilt a shoe by popping the **front**
+of a deque built from `initialDeck`, while `Deck::draw()` deals from the **back**, so it would have removed cards that
+had *not* been dealt and ignored the cut card's extra draw and mid-shoe reshuffles. No runtime impact today because
+nothing called it — but a landmine for any replay analysis, decision-forking or "what if" work (it looks like the right
+tool and is not. Deleted cleanly; no schema migration needed since nothing referenced it.
 
 ---
 

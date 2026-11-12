@@ -381,13 +381,15 @@ after the phase-0.4 changes:
 | 5 | Should the console control banner survive at all? | keep trimmed / replace with in-game Controls screen | B11, U4 |
 | 6 | Is a name-entry screen in scope for 0.4, or deferred? | in scope / defer with a tracking note | U7 |
 | 7 | How long should the achievement toast show? | suggested 4s | B2 | **Resolved** — chose 4s, implemented in B2 (`f3aeb1f`) |
-| 8 | What bounds should the **Bets Placed** histogram use? (U12's axis half) | (a) fixed 10–100 that grows up to `MAXIMUM_BET`; (b) log-scale buckets; (c) keep `[0, MAXIMUM_BET]` and fix the docs | U12 (axis) | **Open** — deferred with U12 on 2026-11-09 |
-| 9 | Is a **session** a new dataset, or a view over existing per-shoe accumulators? (U12's session-view half) | (a) new session-scoped accumulator reset at session end; (b) derive from `currentHistory` + completed shoes in the session | U12 (session view) | **Open** — the user flagged this must be distinct from `longHistory` |
+| 8 | What bounds should the **Bets Placed** histogram use? (U12's axis half) | (a) fixed 10–100 that grows up to `MAXIMUM_BET`; (b) log-scale buckets; (c) keep `[0, MAXIMUM_BET]` and fix the docs | U12 (axis) | **Decided 2026-11-11** — option (a). Axis bounds are [10, 100] by default; if any wager placed since the view window began exceeds 100, that wager becomes the new soft max and the axis grows to match it. Hard cap: MAXIMUM_BET = 1000. Implemented in U12 (axis half). |
+| 9 | Is a **session** a new dataset, or a view over existing per-shoe accumulators? (U12's session-view half) | (a) new session-scoped accumulator reset at session end; (b) derive from `currentHistory` + completed shoes in the session | U12 (session view) | **Decided 2026-11-11** — option (a). A session = one play window, from when the user opens the game to when it closes; it may span multiple complete shoes or an incomplete shoe. The accumulator accumulates across those shoes and resets only on open/close, distinct from career longHistory and per-shoe ShoeAnalytics. Implemented in U12 (session-view half). |
 
 Defaults if nobody answers: 1(a), 2(a), 3 = $1,000 everywhere, 4 = expose, 5 = keep trimmed + add Controls,
 6 = defer, 7 = 4s (resolved: implemented as `ACHIEVEMENT_TOAST_SECONDS` = 4.0 in B2, `f3aeb1f`), **8 = (a) 10–100 growing to
 `MAXIMUM_BET`** (it is what the docs already promise), **9 = (a) a new session-scoped accumulator** (the user stated the session
 view must be distinct from `longhistory`). Record the final choice in §5's decision list.
+
+> **2026-11-11:** #8 and #9 are now decided (see their rows); #9's definition refined to "one open play window". They remain listed as defaults only because each default happens to equal the chosen value.
 
 ## 11. Status tracker
 
@@ -477,6 +479,19 @@ next window trusts it.
 These documents are load-bearing, so they get audited like code. Each entry records what was checked, against
 what, and what changed. If you correct something, add a bullet here — a silent edit is how the next window ends up
 trusting a stale claim again.
+
+### 2026-11-11 — U12 decisions #8/#9 recorded; B16 doc drift corrected; Card::getSuitSymbol removed
+
+- **§10 #8 (U12 axis half) decided = option (a):** the Bets Placed histogram axis is [10, 100] by default. If any
+  wager placed since the view window began exceeds 100, that wager becomes the new soft max and the axis grows to match
+  it; it never crosses a hard cap of `MAXIMUM_BET` = 1000. Implementation lives in U12 (axis half).
+- **§10 #9 (U12 session-view half) decided = option (a):** a "session" is one open play window — from when the user
+  launches the game to when it closes. It may span multiple complete shoes or an incomplete shoe; its accumulator runs
+  across those shoes and resets only on open/close, distinct from career `longHistory` and per-shoe `ShoeAnalytics`.
+- **B16 doc drift:** `NEXT_STEPS.md` PHASE 5 still described `reconstructDeckAtRound()` as pending; it was already
+  removed in `5f81d48` (2026-11-07) and recorded Resolved in §11. Corrected the ledger to mark it Resolved.
+- **Card::getSuitSymbol** dead code removed (`667cd16`). It returned a single truncated char that could never be a suit
+  glyph; zero callers across `src/` + `include/`.
 
 ### 2026-11-09 — B17 was NOT complete: the suite was still rewriting the developer's real career profile
 
