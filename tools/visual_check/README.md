@@ -17,6 +17,7 @@ Xvfb :97 -screen 0 1600x1024x24 >/dev/null 2>&1 &     # if no X server is runnin
 DISPLAY=:97 python3 tools/visual_check/harness.py     # menu, hover, resize, achievements, pause
 DISPLAY=:97 python3 tools/visual_check/check_u6.py    # deal -> hit fan -> settled totals
 DISPLAY=:97 python3 tools/visual_check/check_menu.py  # hover marker glyph at two window sizes
+DISPLAY=:97 python3 tools/visual_check/check_u12_click.py  # per-graph click toggle + 'G' bulk switch (prints PASS/FAIL)
 ```
 
 Screenshots land in `tools/visual_check/shots/` (git-ignored). Override with `BJ_SHOTS`, `BJ_REPO`, `BJ_BIN`.
@@ -28,6 +29,24 @@ Screenshots land in `tools/visual_check/shots/` (git-ignored). Override with `BJ
 | `harness.py` | **U1** selected ≠ hovered; **U11** hover follows the *drawn* row after a resize (and the old pixel position highlights nothing); **U3** Achievements list vs. footer at 900×560 and 1600×900; **U2** pause panel at both sizes |
 | `check_u6.py` | **U6** 3+ card fan is centred on the seat and shows more than a sliver of each card; hand totals sit on dark pills that stay legible over the felt |
 | `check_menu.py` | The hover marker glyph actually renders (see the font rule below) at 1600×900 and 900×560 |
+| `check_u12_click.py` | **U12 part 1** per-graph view toggle: one click on the Bankroll pane changes **only** that pane's title strip (measured AE 947 / 0 / 0), and `G` changes the two still-per-shoe panes while leaving the already-session pane at 0. Proves the pane hit-test and the per-pane draw selection, not just the flag |
+
+## Measuring pixels, not just looking at them
+
+`check_u12_click.py` diffs a region with `compare -metric AE`. Three traps it hit while being written, each of which
+makes a broken check look like a passing one:
+
+1. **`compare` prints the metric on stderr and exits 1 when the images differ.** Parsing stdout yields nothing, and
+   `check=True` throws on a legitimate difference. Parse `stderr`, do not check the return code.
+2. **Derive crop regions from the layout constants; never guess them from a screenshot.** Rows guessed by eye put
+   pane 0's crop on the bottom edge of its title (so it did change) and panes 1 and 2 into **blank panel background**,
+   where they compared **0 forever** — "unchanged", the exact result the assertion wants. The rows are now computed
+   from the same `Constants::Hud` values `HUD::leftPanelCharts()` uses.
+3. **Prove a crop can go non-zero before trusting that it goes to zero.** A check that has only ever reported 0 is
+   indistinguishable from a check pointed at empty space.
+
+Also: standing settles a round but leaves it in `Cleanup` — **`R` is required to reach the next round.** A round loop
+without `R` runs exactly one round, so the graphs stay near-empty and a data-dependent assertion is silently vacuous.
 
 ## Four lessons that cost time — read before writing a new scenario
 
