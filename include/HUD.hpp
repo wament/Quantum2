@@ -81,9 +81,14 @@ public:
 
     // Bets Placed histogram bucketing. The raw distribution holds one column per distinct wager
     // bar per unique bet size and is unreadable. Bets are folded into `bucketCount` evenly spaced ranges spanning
-    // [0, maxBet], so the chart always shows the same number of evenly spaced bars no matter which sizes were
-    // wagered. Pure and static so it can be unit-tested directly.
-    static std::vector<int> bucketBetDistribution(const std::map<int, int>& distribution, int bucketCount, int maxBet);
+    // [axisLo, axisHi], so the chart always shows the same number of evenly spaced bars no matter which sizes were
+    // wagered. Pure and static so it can be unit-tested directly. The axis adapts to the data (see computeAxisMax): a
+    // flat [10, 100] window that grows to the largest placed wager as bets exceed 100, capped hard at MAXIMUM_BET.
+    static std::vector<int> bucketBetDistribution(const std::map<int, int>& distribution, int bucketCount, int axisLo, int axisHi);
+
+    // Upper bound of the Bets Placed x-axis from the largest wager seen in the active window. Base is [10, 100]; if a
+    // wager above 100 was placed it becomes the soft max and grows to match it, capped hard at MAXIMUM_BET (1000).
+    static int computeAxisMax(int maxWagerSeenInWindow);
 
     // Screen-space bounds of the three HUD panels. Exposed
     // panels (asserting the side panels stay symmetric and that content stays inside its panel) rather than
@@ -140,10 +145,11 @@ private:
     int m_longestLoseStreak = 0;           // longest losing streak, session-long
     double m_edgePercent = 0.0;            // current estimated edge (%), live off the count
 
-    // Bets Placed histogram, pre-bucketed into Constants::Hud::BET_BUCKET_COUNT evenly spaced wager ranges by
-    // bucketBetDistribution(). m_betBucketWidth is the width of one range in chips, used for the x-axis labels.
+    // Bets Placed histogram, pre-bucketed into Constants::BET_BUCKET_COUNT evenly spaced wager ranges by
+    // bucketBetDistribution(). m_betBucketWidth is the width of one range in chips; m_betAxisLo its lower label.
     std::vector<int> m_betHistogram;
     int m_betBucketWidth = 0;
+    int m_betAxisLo = 10; // == Constants::MINIMUM_BET: axis always starts at the minimum bet
 
     // Per-shoe graph reset is owned by Game (Game::resetShoeAnalytics zeroes the whole ShoeAnalytics struct at
     // every shoe boundary), so the series copied in above are already per-shoe and the HUD keeps no shoe

@@ -279,11 +279,16 @@ void HUD::update(const HUDState& hudState)
     // distribution is this shoe's (Game::shoe_)
     m_betHistogram.clear();
     m_betBucketWidth = 0;
-    if (hudState.shoeAnalytics)
+    if (hudState.shoeAnalytics && !hudState.shoeAnalytics->betDistribution.empty())
     {
+        // Axis starts at the minimum bet and grows to the largest wager placed this shoe as it exceeds 100, capped
+        // hard at MAXIMUM_BET. That spreads low wagers across the chart instead of collapsing them into bucket 0.
+        const int maxWager = hudState.shoeAnalytics->betDistribution.rbegin()->first;
+        m_betAxisLo = Constants::MINIMUM_BET;
+        const int axisHi = HUD::computeAxisMax(maxWager);
         m_betHistogram = bucketBetDistribution(hudState.shoeAnalytics->betDistribution,
-                                               Constants::BET_BUCKET_COUNT, Constants::MAXIMUM_BET);
-        m_betBucketWidth = Constants::BET_BUCKET_WIDTH;
+                                               Constants::BET_BUCKET_COUNT, m_betAxisLo, axisHi);
+        m_betBucketWidth = (axisHi - m_betAxisLo) / Constants::BET_BUCKET_COUNT;
     }
 }
 
@@ -581,10 +586,10 @@ namespace {
     }
 
 
-    // Bets Placed: one bar per wager range (see HUD::bucketBetDistribution)
-    // scale from 0 to the table maximum no matter which sizes were actually wagered.
+    // Bets Placed: one bar per wager range (see HUD::bucketBetDistribution). The x-axis labels run from m_betAxisLo
+    // (the minimum bet) up to the adaptive upper bound, spaced by bucketWidth chips.
     void drawHistogram(sf::RenderWindow& window, const sf::Rect<float>& rect, const std::vector<int>& buckets,
-                       int bucketWidth, const std::string& readout)
+                       int bucketWidth, int axisBase, const std::string& readout)
     {
         drawChartFrame(window, rect, "Bets Placed", readout, kBetsColor);
 
@@ -614,7 +619,7 @@ namespace {
             window.draw(bar);
         }
 
-        // X axis: a tick at every range boundary (0, bucketWidth, 2*bucketWidth, ... up to the table max)
+        // X axis: a tick at every range boundary (axisBase, axisBase+bucketWidth, ... up to the adaptive upper bound)
         // evenly spaced bars read against the wager scale, but text only at 0 / the midpoint / the table maximum.
         // Ten ranges across a ~176px plot is ~17px per bar
         // top of each other -- the single most illegible thing about the old chart.
@@ -634,7 +639,7 @@ namespace {
                 continue;
 
             std::ostringstream oss;
-            oss << i * bucketWidth;
+            oss << axisBase + i * bucketWidth;
             sf::Text label(FontManager::get(), oss.str(), kLabelFont);
             label.setFillColor(sf::Color(160, 160, 160));
             sf::FloatRect lb = label.getLocalBounds();
@@ -687,7 +692,7 @@ void HUD::drawCharts(sf::RenderWindow& window) const
         int total = 0;
         for (int count : m_betHistogram)
             total += count;
-        drawHistogram(window, m_betsChartRect, m_betHistogram, m_betBucketWidth, std::to_string(total) + " bets");
+        drawHistogram(window, m_betsChartRect, m_betHistogram, m_betBucketWidth, m_betAxisLo, std::to_string(total) + " bets");
     }
 }
 
@@ -697,27 +702,43 @@ std::vector<sf::Rect<float>> HUD::chartPaneBounds() const
     return {m_bankrollChartRect, m_edgeChartRect, m_betsChartRect};
 }
 
-// Folds the raw per-wager distribution into `bucketCount` evenly spaced ranges spanning [0, maxBet]: bucket i covers
-// [i * width, (i + 1) * width). Wagers at or above maxBet land in the last bucket
-// move once the table limit is set.
-std::vector<int> HUD::bucketBetDistribution(const std::map<int, int>& distribution, int bucketCount, int maxBet)
+// Folds the raw per-wager distribution into `bucketCount` evenly spaced ranges spanning [axisLo, axisHi]: bucket i
+// covers [axisLo + i*width, axisLo + (i+1)*width). Wagers below axisLo land in the first bucket; wagers at or above
+// axisHi clamp into the last. See computeAxisMax for how the upper bound grows with the largest placed wager.
+std::vector<int> HUD::bucketBetDistribution(const std::map<int, int>& distribution, int bucketCount, int axisLo, int axisHi)
 {
     const int rangeCount = std::max(1, bucketCount);
-    const int width = std::max(1, maxBet / rangeCount);
+    const double span = std::max(1.0, static_cast<double>(axisHi - axisLo));
+    const double width = span / rangeCount;
     std::vector<int> buckets(static_cast<std::size_t>(rangeCount), 0);
 
     for (const auto& entry : distribution)
     {
-        if (entry.first <= 0)
+        int wager = entry.first;
+        if (wager <= 0)
+            continue;                                // non-positive wagers never reach the chart
+        if (wager < axisLo)
+        {
+            buckets[0] += entry.second;             // below the minimum bet: first bucket only
             continue;
+        }
 
-        int index = entry.first / width;
+        int index = static_cast<int>((wager - axisLo) / width);
         if (index >= rangeCount)
-            index = rangeCount - 1;
+            index = rangeCount - 1;                 // at/above the upper bound: last bucket
         buckets[static_cast<std::size_t>(index)] += entry.second;
     }
 
     return buckets;
+}
+
+// See HUD.hpp. Base is [10, 100]; a placed wager above 100 becomes the soft max and grows the axis to match it, capped
+// hard at MAXIMUM_BET (1000). No data yet still reports the flat default so the chart keeps its scale.
+int HUD::computeAxisMax(int maxWagerSeenInWindow)
+{
+    const int base = 100;
+    const int hi = (maxWagerSeenInWindow > base) ? maxWagerSeenInWindow : base;
+    return std::min(hi, Constants::MAXIMUM_BET);
 }
 
 // One lookup of all three panel bounds; left/right/bottomPanelBounds delegate to it

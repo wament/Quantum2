@@ -830,59 +830,85 @@ TEST_CASE("A whole shoe of ordinary rounds keeps the edge inside the expected ba
 
 // ---------------------------------------------------------------------------
 // Bets Placed histogram bucketing. One bar per distinct wager is unreadable as
-// soon as the player varies their bet, and the bar set shifts as new sizes come
-// in. bucketBetDistribution() folds everything into a fixed number of evenly
-// spaced ranges spanning [0, MAXIMUM_BET].
+// soon as the player varies their bet. bucketBetDistribution() folds everything into a fixed
+// number of evenly spaced ranges spanning [axisLo, axisHi]; the upper bound adapts to the data
+// (see computeAxisMax): a flat [10, 100] window that grows to the largest placed wager as bets
+// exceed 100, capped hard at MAXIMUM_BET.
 // ---------------------------------------------------------------------------
 
-TEST_CASE("Bet distribution folds into a fixed count of evenly spaced ranges", "[Feature3][Analytics][Histogram]")
+TEST_CASE("Bets Placed axis is [10,100] by default and grows to the largest placed wager, capped at MAXIMUM_BET", "[Feature3][Analytics][Histogram]")
 {
-    // Deliberately scattered bet sizes: one bar per value would yield seven wildly-different-width bars.
-    std::map<int, int> bets = {{10, 3}, {25, 1}, {50, 2}, {100, 4}, {500, 1}, {995, 2}, {1000, 5}};
+    // Flat default window when no bet exceeds 100.
+    REQUIRE(HUD::computeAxisMax(0) == 100);      // no data yet -> default top of 100
+    REQUIRE(HUD::computeAxisMax(50) == 100);     // below base stays at 100
+    REQUIRE(HUD::computeAxisMax(100) == 100);    // exactly the base
+    // Soft max grows to the placed wager once it exceeds 100...
+    REQUIRE(HUD::computeAxisMax(250) == 250);
+    REQUIRE(HUD::computeAxisMax(999) == 999);
+    // ...capped hard at MAXIMUM_BET.
+    REQUIRE(HUD::computeAxisMax(Constants::MAXIMUM_BET) == Constants::MAXIMUM_BET);
+    REQUIRE(HUD::computeAxisMax(5000) == Constants::MAXIMUM_BET);
+}
+
+TEST_CASE("Low wagers spread across the [10,100] window rather than collapsing into one bar", "[Feature3][Analytics][Histogram]")
+{
+    std::map<int, int> bets = {{10, 1}, {25, 1}, {40, 1}, {60, 1}, {80, 1}, {100, 1}};
 
     const std::vector<int> buckets =
-        HUD::bucketBetDistribution(bets, Constants::BET_BUCKET_COUNT, Constants::MAXIMUM_BET);
+        HUD::bucketBetDistribution(bets, Constants::BET_BUCKET_COUNT, Constants::MINIMUM_BET, HUD::computeAxisMax(100));
 
-    // Always exactly bucketCount bars, whatever was wagered -- the chart's scale never moves.
     REQUIRE(buckets.size() == static_cast<std::size_t>(Constants::BET_BUCKET_COUNT));
-    CHECK(Constants::BET_BUCKET_WIDTH == Constants::MAXIMUM_BET / Constants::BET_BUCKET_COUNT);
+    CHECK(buckets[0] == 1);   // the minimum bet itself
+    CHECK(buckets[1] == 1);   // 25
+    CHECK(buckets[3] == 1);   // 40
+    CHECK(buckets[5] == 1);   // 60
+    CHECK(buckets[7] == 1);   // 80
+    CHECK(buckets[9] == 1);   // the base cap (100) lands in the last range
 
-    // Bucket i covers [i*width, (i+1)*width).
-    CHECK(buckets[0] == 3 + 1 + 2);   // 10, 25 and 50 all land in [0, 100)
-    CHECK(buckets[1] == 4);           // 100 lands in [100, 200)
-    CHECK(buckets[5] == 1);           // 500 lands in [500, 600)
-    CHECK(buckets[9] == 2 + 5);       // 995 and the table max 1000 share the top range
+    int placed = 0;
+    for (int b : buckets)
+        placed += b;
+    CHECK(placed == 6);   // every wager counted exactly once
+}
 
-    // Nothing is dropped or double counted.
+TEST_CASE("Oversized wagers clamp to the top range; a wager below the minimum bet enters the first bucket", "[Feature3][Analytics][Histogram]")
+{
+    std::map<int, int> bets = {{5, 3}, {1000, 1}, {5000, 2}};   // max wager 5000 -> axis clamps to MAXIMUM_BET=1000
+
+    const std::vector<int> buckets =
+        HUD::bucketBetDistribution(bets, Constants::BET_BUCKET_COUNT, Constants::MINIMUM_BET, HUD::computeAxisMax(5000));
+
+    REQUIRE(buckets.size() == static_cast<std::size_t>(Constants::BET_BUCKET_COUNT));
+    CHECK(buckets[0] == 3);                 // a wager below the minimum bet lands in the first bucket
+    CHECK(buckets[9] == 1 + 2);             // everything at/above MAXIMUM_BET clamps into the last bar
+}
+
+TEST_CASE("A scattered set of wagers folds conservatively: nothing dropped or double counted", "[Feature3][Analytics][Histogram]")
+{
+    std::map<int, int> bets = {{10, 3}, {25, 1}, {50, 2}, {100, 4}, {250, 1}, {900, 2}};   // max wager 900 -> axis grows to 900
+
+    const std::vector<int> buckets =
+        HUD::bucketBetDistribution(bets, Constants::BET_BUCKET_COUNT, Constants::MINIMUM_BET, HUD::computeAxisMax(900));
+
+    REQUIRE(buckets.size() == static_cast<std::size_t>(Constants::BET_BUCKET_COUNT));
+    CHECK(buckets[0] == 3 + 1 + 2);   // 10, 25 and 50 cluster at the low end once the axis has grown
+    CHECK(buckets[1] == 4);           // 100
+    CHECK(buckets[2] == 1);           // 250
+    CHECK(buckets[9] == 2);           // 900 lands in the last range
+
     int placed = 0;
     for (int b : buckets)
         placed += b;
     int wagered = 0;
     for (const auto& e : bets)
         wagered += e.second;
-    CHECK(placed == wagered);
+    CHECK(placed == wagered);         // every wager counted exactly once
 }
 
-// Wagers at or above the table maximum clamp into the last range rather than growing the axis.
-// non-positive entries must not create a phantom bar.
-TEST_CASE("Oversized wagers clamp to the top range; zero/negative wagers are ignored", "[Feature3][Analytics][Histogram]")
-{
-    std::map<int, int> bets = {{0, 7}, {-50, 3}, {1000, 1}, {5000, 2}, {100000, 1}};
-
-    const std::vector<int> buckets =
-        HUD::bucketBetDistribution(bets, Constants::BET_BUCKET_COUNT, Constants::MAXIMUM_BET);
-
-    REQUIRE(buckets.size() == static_cast<std::size_t>(Constants::BET_BUCKET_COUNT));
-    CHECK(buckets[0] == 0);                       // 0 and -50 never reach the chart
-    CHECK(buckets[9] == 1 + 2 + 1);               // everything at/above the max clamps into the last bar
-}
-
-// An empty session still produces the full set of empty bars, keeping the evenly spaced scale intact.
-// instead of collapsing or blanking out between shoes.
 TEST_CASE("Empty bet distribution still yields the full set of bars", "[Feature3][Analytics][Histogram]")
 {
     const std::vector<int> buckets =
-        HUD::bucketBetDistribution({}, Constants::BET_BUCKET_COUNT, Constants::MAXIMUM_BET);
+        HUD::bucketBetDistribution({}, Constants::BET_BUCKET_COUNT, Constants::MINIMUM_BET, HUD::computeAxisMax(0));
 
     REQUIRE(buckets.size() == static_cast<std::size_t>(Constants::BET_BUCKET_COUNT));
     for (int b : buckets)
