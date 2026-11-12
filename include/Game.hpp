@@ -159,7 +159,7 @@ class Game
     // Drives the Daily shoe boundary directly. The full path (deal to the cut card) needs a whole shoe
     // dealt through the round machine, which is what the B18 seeded tests do at length; this hook lets
     // the Daily's OWN behaviour -- book the result, deal no further shoe -- be asserted on its own.
-    void finishDailyShoeForTest(bool shoeWasContinuation) { finishDailyShoe(shoeWasContinuation); }
+    void finishDailyShoeForTest(const ShoeRecord& finishedShoe) { finishDailyShoe(finishedShoe); }
     // Deterministic variant (B18): builds the shoe exactly as startNewShoe() does — create + shuffle + shoe record +
     // resetShoeAnalytics — but shuffles from `seed` instead of the OS RNG. For tests that need a REAL shuffled shoe
     // (not an injected card list) with a reproducible order; production never calls it.
@@ -295,8 +295,9 @@ class Game
     int dailyNet() const; // chips over Daily::kStartingBankroll, valid once complete
     // Books a finished Daily on the REAL career file. Deliberately a read-modify-write of the profile
     // on disk rather than a save of the seat: the seat is ephemeral and cannot write, and this path
-    // touches the Daily fields only.
-    void commitDailyResult(const Daily::DailyResult& result);
+    // touches the Daily fields only. `shoe` is the finished record, which carries its own mode,
+    // isContinuation and rounds -- the router sends it to the Daily history, never to the career one.
+    void commitDailyResult(const Daily::DailyResult& result, const ShoeRecord& shoe);
 
     // Name-entry screen (U7): editing state + commit/gate. m_nameBuffer_ holds the text currently being typed; append/backspace
     // mutate it with a hard max-length clamp so both headless tests and InputHandler share one source of truth, and GameRenderer
@@ -535,13 +536,13 @@ class Game
     // Tournament-only shoe boundary: advance to the next stage (reshuffling a fresh four-deck shoe and re-opening betting at
     // the higher stage minimum) when another remains, or mark the tournament complete once the final stage has run out. Called
     // from dealerTurn() after the last hand of a stage's shoe while tournamentActive_. Private; Game.cpp owns the logic.
-    void finishTournamentShoe();
+    void finishTournamentShoe(const ShoeRecord& finishedShoe);
 
-    // Daily-only shoe boundary: book the run (net over the fixed starting bankroll, plus whether the
-    // shoe continued on deck exhaustion) and stop. Unlike ordinary play this does NOT open a new shoe:
-    // one shoe per day is the whole feature. `shoeWasContinuation` must be captured by the caller
-    // BEFORE currentShoeRecord is reset, because the reset erases the flag.
-    void finishDailyShoe(bool shoeWasContinuation);
+    // Daily-only shoe boundary: book the run (net over the fixed starting bankroll) and stop. Unlike
+    // ordinary play this does NOT open a new shoe: one shoe per day is the whole feature. `finishedShoe`
+    // is the record captured by the caller BEFORE currentShoeRecord is reset, because the reset erases
+    // it -- it carries the mode, the continuation flag and the rounds.
+    void finishDailyShoe(const ShoeRecord& finishedShoe);
 
     void deal();
 

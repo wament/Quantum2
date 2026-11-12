@@ -139,10 +139,29 @@ constexpr const char* WINDOW_TITLE = "Blackjack";
 // Daily Challenge. The Daily keeps a capped, newest-first list of results so the save file cannot
 // grow without bound the way an uncapped history would (same reasoning as the 100-shoe longHistory
 // cap). Streak fields themselves are scalars and never grow.
+//
+// MAX_HISTORY_SHOES bounds the Daily's SHOE records, which carry their full round records: a shoe with
+// ~40 rounds is ~27 KB of compact JSON, so this cap is a disk-size decision as much as a history
+// decision. Measured, not guessed -- the real profile was 9,591,391 bytes at 100 shoes.
 namespace Daily
 {
 constexpr int MAX_HISTORY_RESULTS = 30;
+constexpr std::size_t MAX_HISTORY_SHOES = 30;
 } // namespace Daily
+
+// Tournament: one entry per completed stage shoe. A run is a handful of stages, so 20 keeps several
+// runs of history without the per-shoe round records growing the save file without bound.
+namespace TournamentHistory
+{
+constexpr std::size_t MAX_HISTORY_SHOES = 20;
+} // namespace TournamentHistory
+
+// Multiplayer: reserved. The cap exists so the router has a real bound to use the day a multiplayer
+// producer lands, rather than an uncapped vector discovered later.
+namespace MultiplayerHistory
+{
+constexpr std::size_t MAX_HISTORY_SHOES = 20;
+} // namespace MultiplayerHistory
 
 // Panel layout
 constexpr float PANEL_MARGIN = 18.f;

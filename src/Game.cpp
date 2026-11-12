@@ -297,9 +297,9 @@ void Game::startDailySession(const std::string& dateKey, bool practice)
     sessionLifecycle_.startDailySession(dateKey, practice);
 }
 
-void Game::commitDailyResult(const Daily::DailyResult& result)
+void Game::commitDailyResult(const Daily::DailyResult& result, const ShoeRecord& shoe)
 {
-    sessionLifecycle_.commitDailyResult(result);
+    sessionLifecycle_.commitDailyResult(result, shoe);
 }
 
 bool Game::dailyActive() const { return dailyActive_; }
@@ -309,19 +309,20 @@ const std::string& Game::dailyDateKey() const { return dailyDateKey_; }
 int Game::dailyNet() const { return dailyNet_; }
 
 // The Daily shoe boundary: book the run and STOP. Ordinary play opens a new shoe at this point; the
-// Daily must not, because one shoe per day is the feature. The result is written to the career file
-// by commitDailyResult, which is the Daily's only durable write.
-void Game::finishDailyShoe(bool shoeWasContinuation)
+// Daily must not, because one shoe per day is the feature. The result and the shoe record are written
+// to the career file by commitDailyResult, which is the Daily's only durable write; the router sends
+// the record to the Daily history, so it never touches career stats.
+void Game::finishDailyShoe(const ShoeRecord& finishedShoe)
 {
     dailyNet_ = players.empty() ? 0 : players[0].getBankroll() - Daily::kStartingBankroll;
 
     Daily::DailyResult result;
     result.dateKey = dailyDateKey_;
     result.net = dailyNet_;
-    result.isContinuation = shoeWasContinuation;
+    result.isContinuation = finishedShoe.isContinuation;
     result.practice = dailyPractice_;
 
-    commitDailyResult(result);
+    commitDailyResult(result, finishedShoe);
 
     // Sync the seat from the career file. The seat's in-memory profile was loaded BEFORE this booking,
     // and the main-menu row reads the streak off the seat -- without this the menu shows the streak
@@ -333,7 +334,7 @@ void Game::finishDailyShoe(bool shoeWasContinuation)
 
     dailyComplete_ = true;
     Logger::info() << "Daily " << dailyDateKey_ << " complete: net " << dailyNet_
-                   << (shoeWasContinuation ? " (continued shoe)" : "") << ". No further shoe.";
+                   << (finishedShoe.isContinuation ? " (continued shoe)" : "") << ". No further shoe.";
 }
 
 void Game::startNewGame()
@@ -452,6 +453,10 @@ void Game::startNewShoeWith(std::optional<unsigned long long> seed)
     currentShoeRecord.shoeDecks = deck.shoeDecks();
     currentShoeRecord.shuffleSeed = deck.shuffleSeed();
     currentShoeRecord.shoeCardCount = static_cast<int>(deck.size());
+    // Stamped explicitly rather than left to the struct default: this is the shared shoe boundary for
+    // ordinary play, and PlayerProfile::addShoeRecord() routes the record on this value into the
+    // career history. A default that silently does the routing is a default that will one day mis-route.
+    currentShoeRecord.mode = ShoeMode::Regular;
     resetShoeAnalytics();
 }
 
@@ -1469,7 +1474,7 @@ void Game::npcTakeTurn()
 // Tournament shoe boundary (called from dealerTurn() after the last hand of a stage's shoe). Advances to the next stage by
 // reshuffling a fresh four-deck shoe and re-opening betting at the higher stage minimum, or marks the tournament complete once
 // the final stage has run out. Bankrolls carry across stages so the run is decided purely by who ends with the most chips.
-void Game::finishTournamentShoe()
+void Game::finishTournamentShoe(const ShoeRecord& finishedShoe)
 {
     // Surface the live leaderboard ordering (by bankroll) so the HUD can rank seats and name this stage's leader.
     std::vector<std::string> names;
@@ -1482,8 +1487,14 @@ void Game::finishTournamentShoe()
         chips.push_back(p.getBankroll());
     }
 
+    const int finishedStage = tournament ? tournament->currentStage() : 0;
     bool anotherStage = tournament->advanceStage();
     const int stage = tournament->currentStage();
+
+    // Record this stage's shoe on the career file. The tournament seat is ephemeral, so this narrow
+    // commit is the only durable write the run makes, and the router puts the record in the tournament
+    // history -- career stats are derived from longHistory and stay untouched by a tournament.
+    sessionLifecycle_.commitTournamentShoe(finishedShoe, finishedStage, /*completed=*/!anotherStage);
 
     if (!anotherStage)
     {
@@ -1504,6 +1515,7 @@ void Game::finishTournamentShoe()
     deck.create(tournament->decksPerShoe());
     deck.shuffle();
     currentShoeRecord = {};
+    currentShoeRecord.mode = ShoeMode::Tournament;   // every stage shoe routes to the tournament history
     nextRound(); // begins the new betting round at the stage minimum bet
 }
 
@@ -1584,12 +1596,18 @@ void Game::handleEmptyDeck()
     // Rebuild the shoe (full NUM_DECKS set minus what's been dealt) and continue dealing from it.
     deck.reshuffleWithRemaining(tableCards);
 
+    // The continuation belongs to the SAME session as the shoe it continues, so its mode has to be
+    // carried across the reset -- a Daily that runs out mid-shoe must keep recording into the Daily's
+    // history, not the career one. Captured before the reset because the reset erases it.
+    const ShoeMode continuingMode = currentShoeRecord.mode;
+
     // Start fresh shoe record, marked as continuation
     currentShoeRecord = {};
     currentShoeRecord.shoeDecks = deck.shoeDecks();
     currentShoeRecord.shuffleSeed = deck.shuffleSeed();
     currentShoeRecord.shoeCardCount = static_cast<int>(deck.size());
     currentShoeRecord.isContinuation = true;
+    currentShoeRecord.mode = continuingMode;
 
     // A reshuffled continuation is a new shoe: same reset the other boundaries use
     // flat baseline instead of accumulating drift across the reshuffle.
@@ -1742,9 +1760,9 @@ void Game::dealerTurn()
         players[0].updateProfile(profile);
         players[0].saveProfile();
 
-        // Captured BEFORE the reset below erases it: the Daily records whether this shoe continued on
-        // deck exhaustion, so comparing two Daily results stays honest about what was actually dealt.
-        const bool shoeWasContinuation = currentShoeRecord.isContinuation;
+        // Captured BEFORE the reset below erases it: the record carries the mode, the continuation flag
+        // and the rounds, and both the Daily and the tournament boundary need all three.
+        const ShoeRecord finishedShoe = currentShoeRecord;
 
         currentShoeRecord = {};
 
@@ -1752,13 +1770,13 @@ void Game::dealerTurn()
         {
             // One shoe per day: book the run and stop. No new shoe and no auto-play continuation --
             // that is the whole feature, and it is why this branch precedes the ordinary-play path.
-            finishDailyShoe(shoeWasContinuation);
+            finishDailyShoe(finishedShoe);
         }
         else if (tournamentActive_)
         {
             // A tournament stage's shoe has finished: advance to the next stage (fresh 4-deck shoe, higher minimum bet) or,
             // once the final stage has run out, mark the tournament complete so the leaderboard + winner are shown instead.
-            finishTournamentShoe();
+            finishTournamentShoe(finishedShoe);
         }
         else
         {

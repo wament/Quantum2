@@ -63,6 +63,29 @@ class PlayerProfile
     unsigned long long dailyActiveSeed = 0;       // seed of the active (unfinished) shoe, so a quit resumes it
     std::vector<Daily::DailyResult> dailyHistory; // newest-first, capped at Constants::Daily::MAX_HISTORY_RESULTS
 
+    // ---- Per-mode shoe history ------------------------------------------------
+    // Daily and tournament shoes are RECORDED (round records and shoe records included) but kept out of
+    // the career history entirely, because career stats are derived from longHistory: a shoe that lives
+    // there counts as career progress by construction. addShoeRecord() routes on ShoeRecord::mode, so
+    // a non-Regular shoe cannot reach longHistory -- the separation is structural, not a convention.
+    //
+    // Each vector is capped, and the matching ModeStats is maintained INCREMENTALLY so a rolled-off
+    // shoe's peaks survive the cap (the same reasoning as the career rollup carry, at a smaller scale).
+    std::vector<ShoeRecord> dailyShoes;
+    std::vector<ShoeRecord> tournamentShoes;
+    std::vector<ShoeRecord> multiplayerShoes;   // no producer yet; see the router note in PlayerProfile.cpp
+    ModeStats dailyStats;
+    ModeStats tournamentStats;
+    ModeStats multiplayerStats;
+    int tournamentsCompleted = 0;               // runs that reached the final stage
+
+    const std::vector<ShoeRecord>& getDailyShoes() const;
+    const std::vector<ShoeRecord>& getTournamentShoes() const;
+    const std::vector<ShoeRecord>& getMultiplayerShoes() const;
+    const ModeStats& dailyModeStats() const;
+    const ModeStats& tournamentModeStats() const;
+    const ModeStats& multiplayerModeStats() const;
+
     // True while a Daily shoe is in progress and unfinished. The one-attempt gate keys on the day the
     // shoe STARTED, not the day it finished, so a player who crosses midnight mid-shoe finishes the
     // shoe they started instead of being handed a new one.
@@ -113,6 +136,11 @@ class PlayerProfile
 
     // T2 (100-shoe history cap): record-derivable career counters of shoes past the cap, aggregated so totals survive exactly.
     RollupCarry rollup;
+
+    // The career branch of the addShoeRecord router, and the shared non-career branch. See the router's
+    // note in PlayerProfile.cpp for why every mode is routed explicitly.
+    void addCareerShoe(const ShoeRecord& record);
+    void addModeShoe(std::vector<ShoeRecord>& shoes, ModeStats& stats, const ShoeRecord& record, std::size_t cap);
 
     // Allow JSON serialization/deserialization
     friend void to_json(json& j, const PlayerProfile& p);

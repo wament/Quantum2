@@ -423,6 +423,32 @@ static bool sameShoe(const std::vector<Card>& a, const std::vector<Card>& b)
     return true;
 }
 
+// A shoe record with a known number of human-seat hands won, so the per-mode aggregates
+// (mostHandsWon, bestBankroll) can be asserted against a value the test controls.
+static ShoeRecord makeShoe(ShoeMode mode, int bankrollAtShoeEnd, int handsWon, bool isContinuation = false)
+{
+    ShoeRecord shoe;
+    shoe.mode = mode;
+    shoe.bankrollAtShoeEnd = bankrollAtShoeEnd;
+    shoe.isContinuation = isContinuation;
+    shoe.completed = true;
+    if (handsWon > 0)
+    {
+        RoundRecord round;
+        for (int i = 0; i < handsWon; ++i)
+        {
+            HandOutcome hand;
+            hand.playerIndex = 0;
+            hand.won = true;
+            hand.wager = 10;
+            hand.payout = 20;
+            round.playerHands.push_back(hand);
+        }
+        shoe.rounds.push_back(round);
+    }
+    return shoe;
+}
+
 TEST_CASE("The Daily session deals the same shoe for the same date, through the real path", "[Daily][Session]")
 {
     test_support::IsolatedHome home("daily");
@@ -500,7 +526,8 @@ TEST_CASE("A completed Daily books its result on the career file and reports its
 
     // Win 300 over the fixed start, on a shoe that continued on deck exhaustion.
     game.playersForTest()[0].setBankroll(Daily::kStartingBankroll + 300);
-    game.finishDailyShoeForTest(/*shoeWasContinuation=*/true);
+    game.finishDailyShoeForTest(makeShoe(ShoeMode::DailyChallenge, Daily::kStartingBankroll + 300, 18,
+                                         /*isContinuation=*/true));
 
     CHECK(game.dailyComplete());
     CHECK(game.dailyNet() == 300);
@@ -514,8 +541,23 @@ TEST_CASE("A completed Daily books its result on the career file and reports its
     CHECK(after.dailyHistory[0].net == 300);
     CHECK(after.dailyHistory[0].isContinuation == true);
 
-    // The career file's own progress is untouched by the run.
+    // The shoe record is RECORDED for the Daily -- round records included -- and its aggregates land in
+    // the Daily's own ModeStats, not in career stats.
+    REQUIRE(after.getDailyShoes().size() == 1);
+    CHECK(after.getDailyShoes()[0].mode == ShoeMode::DailyChallenge);
+    CHECK(after.getDailyShoes()[0].isContinuation == true);
+    REQUIRE(after.getDailyShoes()[0].rounds.size() == 1);
+    CHECK(handsWonInShoe(after.getDailyShoes()[0]) == 18);
+    CHECK(after.dailyModeStats().shoesPlayed == 1);
+    CHECK(after.dailyModeStats().bestBankroll == Daily::kStartingBankroll + 300);
+    CHECK(after.dailyModeStats().mostHandsWon == 18);
+
+    // The career file's own progress is untouched by the run: no career shoe was recorded, and the
+    // derived career stats stayed zero. This is the whole point of the mode split.
     CHECK(after.getBankroll() == 7777);
+    CHECK(after.getLongHistory().empty());
+    CHECK(after.careerStatsFromHistory().handsFinished == 0);
+    CHECK(after.applyRollup().handsFinished == 0);
 
     // And the SEAT must show the booked streak, not the one it loaded at startup. The main-menu row
     // reads Player::dailyStreak(); a seat left unsynced shows the pre-run value -- B23's shape.
@@ -529,7 +571,7 @@ TEST_CASE("A practice Daily is recorded but never moves the streak", "[Daily][Se
     Game game(true);
     game.startDailySession("2026-11-05", /*practice=*/true);
     game.playersForTest()[0].setBankroll(Daily::kStartingBankroll + 999);
-    game.finishDailyShoeForTest(false);
+    game.finishDailyShoeForTest(makeShoe(ShoeMode::DailyChallenge, Daily::kStartingBankroll + 999, 5));
 
     const PlayerProfile after = PlayerProfile::load(home.profilePath().string());
     CHECK(after.dailyStreak == 0);
@@ -538,6 +580,10 @@ TEST_CASE("A practice Daily is recorded but never moves the streak", "[Daily][Se
     REQUIRE(after.dailyHistory.size() == 1);
     CHECK(after.dailyHistory[0].practice == true);
     CHECK(after.dailyHistory[0].net == 999);
+    // Practice shoes are recorded too -- they are history, they are just not streak-bearing.
+    CHECK(after.getDailyShoes().size() == 1);
+    CHECK(after.dailyModeStats().shoesPlayed == 1);
+    CHECK(after.getLongHistory().empty());
 }
 
 TEST_CASE("Starting a Daily marks the shoe active on disk so a quit resumes the same one", "[Daily][Session]")

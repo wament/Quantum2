@@ -67,6 +67,7 @@ void SessionLifecycle::startTournamentSession(const Tournament::TournamentConfig
     game.currentShoeRecord.shuffleSeed = game.deck.shuffleSeed();
     game.currentShoeRecord.shoeCardCount = static_cast<int>(game.deck.size());
     game.currentShoeRecord.rounds.clear();
+    game.currentShoeRecord.mode = ShoeMode::Tournament;
 
     game.resetShoeAnalytics();
     game.sessionCumulativeWinLoss = 0;
@@ -230,6 +231,7 @@ void SessionLifecycle::startNewGame()
     game.currentShoeRecord.shuffleSeed = game.deck.shuffleSeed();
     game.currentShoeRecord.shoeCardCount = static_cast<int>(game.deck.size());
     game.currentShoeRecord.rounds.clear();
+    game.currentShoeRecord.mode = ShoeMode::Regular;   // ordinary play: the only mode that feeds career stats
 
     // A brand-new shoe: every per-shoe readout starts from zero
     // reflect only this shoe. (The bankroll itself is deliberately kept: it is the one value that persists.)
@@ -366,6 +368,7 @@ void SessionLifecycle::startDailySession(const std::string& dateKey, bool practi
     game.currentShoeRecord.shuffleSeed = game.deck.shuffleSeed();
     game.currentShoeRecord.shoeCardCount = static_cast<int>(game.deck.size());
     game.currentShoeRecord.rounds.clear();
+    game.currentShoeRecord.mode = ShoeMode::DailyChallenge;
 
     game.resetShoeAnalytics();
     game.sessionCumulativeWinLoss = 0;
@@ -394,7 +397,7 @@ void SessionLifecycle::startDailySession(const std::string& dateKey, bool practi
                    << Daily::kStartingBankroll << " chips.";
 }
 
-void SessionLifecycle::commitDailyResult(const Daily::DailyResult& result)
+void SessionLifecycle::commitDailyResult(const Daily::DailyResult& result, const ShoeRecord& shoe)
 {
     // Read-modify-write of the career file. Deliberately NOT a seat save: the Daily seat is ephemeral
     // and cannot write, and this path touches the Daily fields only -- career bankroll, stats, history
@@ -402,9 +405,33 @@ void SessionLifecycle::commitDailyResult(const Daily::DailyResult& result)
     const std::string path = Player::savePath();
     PlayerProfile career = PlayerProfile::load(path);
     career.commitDailyResult(result, dailyNowEpochSeconds());
+    // The record carries mode == DailyChallenge, so addShoeRecord() routes it to the Daily history and
+    // it can never reach longHistory, which is what career stats are derived from.
+    career.addShoeRecord(shoe);
     career.save(path);
 
+    const ModeStats& stats = career.dailyModeStats();
     Logger::info() << "Daily " << result.dateKey << (result.practice ? " (practice)" : "") << " booked: net "
-                   << result.net << ", streak " << career.dailyStreak << ", best " << career.dailyBest << ".";
+                   << result.net << ", streak " << career.dailyStreak << ", best " << career.dailyBest
+                   << "; shoes " << stats.shoesPlayed << ", best bankroll " << stats.bestBankroll
+                   << ", most hands won " << stats.mostHandsWon << ".";
+}
+
+void SessionLifecycle::commitTournamentShoe(const ShoeRecord& shoe, int finishedStage, bool completed)
+{
+    const std::string path = Player::savePath();
+    PlayerProfile career = PlayerProfile::load(path);
+    career.addShoeRecord(shoe);   // mode == Tournament -> tournament history, never career stats
+    career.tournamentStats.bestFinish = std::max(career.tournamentStats.bestFinish, finishedStage);
+    if (completed)
+        career.tournamentsCompleted += 1;
+    career.save(path);
+
+    const ModeStats& stats = career.tournamentModeStats();
+    Logger::info() << "Tournament stage " << finishedStage << " shoe recorded"
+                   << (completed ? " (run complete)" : "") << ": shoes " << stats.shoesPlayed
+                   << ", best bankroll " << stats.bestBankroll << ", most hands won " << stats.mostHandsWon
+                   << ", best finish " << stats.bestFinish << ", runs completed "
+                   << career.tournamentsCompleted << ".";
 }
 

@@ -87,7 +87,33 @@ void accumulateIntoRollup(RollupCarry& carry, const RollupCarry& shoe)
 
 }  // namespace
 
+// The router. Career stats are DERIVED from longHistory (careerStatsFromHistory + applyRollup), so the
+// only way to record a Daily/tournament shoe WITHOUT it counting as career progress is to keep it out
+// of that vector. Routing here makes that structural: every ShoeMode has an explicit case, so a mode
+// cannot fall through into the career history by omission. Multiplayer has no producer yet and is
+// routed to its own vector for exactly that reason -- adding it later must not silently pollute stats.
 void PlayerProfile::addShoeRecord(const ShoeRecord& record)
+{
+    switch (record.mode)
+    {
+    case ShoeMode::DailyChallenge:
+        addModeShoe(dailyShoes, dailyStats, record, Constants::Daily::MAX_HISTORY_SHOES);
+        return;
+    case ShoeMode::Tournament:
+        addModeShoe(tournamentShoes, tournamentStats, record, Constants::TournamentHistory::MAX_HISTORY_SHOES);
+        return;
+    case ShoeMode::Multiplayer:
+        addModeShoe(multiplayerShoes, multiplayerStats, record, Constants::MultiplayerHistory::MAX_HISTORY_SHOES);
+        return;
+    case ShoeMode::Regular:
+        break;
+    }
+    addCareerShoe(record);
+}
+
+// Ordinary play. The shoe's rounds live in currentHistory (each settled round appends there), so the
+// record is completed from it and the mirror is cleared -- the existing career behaviour, unchanged.
+void PlayerProfile::addCareerShoe(const ShoeRecord& record)
 {
     ShoeRecord shoe = record;
     shoe.rounds = currentHistory;
@@ -101,6 +127,29 @@ void PlayerProfile::addShoeRecord(const ShoeRecord& record)
         accumulateIntoRollup(rollup, rollupForShoe(longHistory.front()));
         longHistory.erase(longHistory.begin());
     }
+}
+
+// A non-career mode's shoe. The caller supplies a COMPLETE record including its rounds: this path must
+// never fill rounds from currentHistory, because on the explicit-commit path (read the career file,
+// append, write it back) currentHistory is the CAREER's in-progress shoe, not this session's. Filling
+// it here would attach the wrong hands to the record -- the kind of corruption a round-trip test
+// catches and a comment alone does not.
+//
+// The aggregates are maintained here, incrementally, so a peak set by a shoe that later rolls off the
+// cap survives -- the same reasoning as the career rollup carry, at a smaller scale.
+void PlayerProfile::addModeShoe(std::vector<ShoeRecord>& shoes, ModeStats& stats, const ShoeRecord& record,
+                                std::size_t cap)
+{
+    ShoeRecord shoe = record;
+    shoes.push_back(shoe);
+
+    stats.shoesPlayed += 1;
+    stats.bestBankroll = std::max(stats.bestBankroll, shoe.bankrollAtShoeEnd);
+    stats.mostHandsWon = std::max(stats.mostHandsWon, handsWonInShoe(shoe));
+
+    // Front-erase keeps the vector chronological, matching longHistory's convention.
+    while (shoes.size() > cap)
+        shoes.erase(shoes.begin());
 }
 
 PlayerProfile PlayerProfile::load(const std::string& filename)
@@ -199,6 +248,13 @@ void PlayerProfile::save(const std::string& filename) const
 }
 
 const std::vector<ShoeRecord>& PlayerProfile::getLongHistory() const { return longHistory; }
+
+const std::vector<ShoeRecord>& PlayerProfile::getDailyShoes() const { return dailyShoes; }
+const std::vector<ShoeRecord>& PlayerProfile::getTournamentShoes() const { return tournamentShoes; }
+const std::vector<ShoeRecord>& PlayerProfile::getMultiplayerShoes() const { return multiplayerShoes; }
+const ModeStats& PlayerProfile::dailyModeStats() const { return dailyStats; }
+const ModeStats& PlayerProfile::tournamentModeStats() const { return tournamentStats; }
+const ModeStats& PlayerProfile::multiplayerModeStats() const { return multiplayerStats; }
 
 PlayerStats PlayerProfile::careerStatsFromHistory() const
 {

@@ -12,6 +12,11 @@
 // reference is held here, so the complete type is needed solely in SessionLifecycle.cpp.
 class Game;
 
+// Passed by const reference only, so the complete type is needed solely in SessionLifecycle.cpp -- the
+// same minimal-dependency shape as `class Game;` above. ShoeRecord is the record both narrow commits
+// append to the career profile; PlayerProfile::addShoeRecord() routes it on its `mode` field.
+struct ShoeRecord;
+
 class SessionLifecycle
 {
   public:
@@ -51,10 +56,16 @@ class SessionLifecycle
     // overwrite the player's CUSTOM rules with the Daily's fixed ones.
     void startDailySession(const std::string& dateKey, bool practice);
 
-    // Book a finished Daily on the career profile ON DISK: load it, commit the result, save it. This is
-    // a read-modify-write of the real file, deliberately not a seat save -- the seat cannot write, and
-    // this path touches the Daily fields and nothing else.
-    void commitDailyResult(const Daily::DailyResult& result);
+    // Book a finished Daily on the career profile ON DISK: load it, commit the result, append the shoe
+    // record, save it. This is a read-modify-write of the real file, deliberately not a seat save --
+    // the seat is ephemeral and cannot write, and this path touches the Daily fields and nothing else.
+    // addShoeRecord() routes the record to the Daily history on its mode, so career stats are untouched.
+    void commitDailyResult(const Daily::DailyResult& result, const ShoeRecord& shoe);
+
+    // Record one finished tournament stage shoe on the career profile, same narrow read-modify-write.
+    // `finishedStage` is the stage that just ran out (the tournament's bestFinish is a max over it),
+    // and `completed` marks the run as finished once the final stage has.
+    void commitTournamentShoe(const ShoeRecord& shoe, int finishedStage, bool completed);
 
     // Restore saved table settings (player count / speed / counting style + custom rules) from the human seat's profile onto live state.
     void applySavedTableSettings();

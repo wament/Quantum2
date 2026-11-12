@@ -173,6 +173,7 @@ inline void to_json(json& j, const ShoeRecord& s)
         {"shuffleSeed", s.shuffleSeed},
         {"shoeCardCount", s.shoeCardCount},
         {"isContinuation", s.isContinuation},
+        {"mode", static_cast<int>(s.mode)},
         {"rounds", s.rounds},
         {"completed", s.completed},
         {"bankrollAtShoeEnd", s.bankrollAtShoeEnd}
@@ -181,7 +182,13 @@ inline void to_json(json& j, const ShoeRecord& s)
 
 inline void from_json(const json& j, ShoeRecord& s)
 {
-    j.at("rounds").get_to(s.rounds);
+    // B24's nested-read hazard, closed at this site: j.at() THROWS on a missing key, and the load
+    // path's recovery for a throw is "relocate the whole profile, start fresh". A shoe record with no
+    // "rounds" key used to be able to destroy the profile over one field. The unguarded
+    // j.at("rounds").get_to(...) that used to sit above this guard is what threw; the guard replaces it
+    // rather than following it, so a missing or mistyped "rounds" now loads an empty shoe.
+    if (j.contains("rounds") && j.at("rounds").is_array())
+        j.at("rounds").get_to(s.rounds);
     // Defaults keep a hand-edited or partially written file from throwing; they are not legacy-schema support --
     // the pre-T1 "initialDeck" array is gone, and history was reset with the schema change.
     s.shoeDecks = j.value("shoeDecks", Constants::NUM_DECKS);
@@ -190,6 +197,12 @@ inline void from_json(const json& j, ShoeRecord& s)
     // B22: this was declared and set in Game.cpp but never serialized, so a saved continuation shoe came back
     // marked as an ordinary one. It is the only marker of the seed-reconstruction boundary, so it has to persist.
     s.isContinuation = j.value("isContinuation", false);
+    // The session kind. Read as a bounded int: an out-of-range value falls back to Regular rather than
+    // producing a mode no producer writes, which would silently route a shoe into the wrong history.
+    const int modeValue = j.value("mode", static_cast<int>(ShoeMode::Regular));
+    s.mode = (modeValue >= static_cast<int>(ShoeMode::Regular) && modeValue <= static_cast<int>(ShoeMode::Multiplayer))
+                 ? static_cast<ShoeMode>(modeValue)
+                 : ShoeMode::Regular;
     if (j.contains("completed"))
         j.at("completed").get_to(s.completed);
     // additive: absent "completed" keeps its default (true).
@@ -198,6 +211,25 @@ inline void from_json(const json& j, ShoeRecord& s)
 }
 
 // Rolled-out-shoe carry (T2): additive schema, all fields optional with zero defaults so legacy saves without "rollup" load fine.
+// Per-mode aggregates: written unconditionally, read with zero defaults (schema policy).
+inline void to_json(json& j, const ModeStats& m)
+{
+    j = {
+        {"shoesPlayed", m.shoesPlayed},
+        {"bestBankroll", m.bestBankroll},
+        {"mostHandsWon", m.mostHandsWon},
+        {"bestFinish", m.bestFinish}
+    };
+}
+
+inline void from_json(const json& j, ModeStats& m)
+{
+    m.shoesPlayed = j.value("shoesPlayed", 0);
+    m.bestBankroll = j.value("bestBankroll", 0);
+    m.mostHandsWon = j.value("mostHandsWon", 0);
+    m.bestFinish = j.value("bestFinish", 0);
+}
+
 inline void to_json(json& j, const RollupCarry& r)
 {
     j = {
@@ -330,6 +362,16 @@ inline void to_json(json& j, const PlayerProfile& p)
     j["dailyActiveDateKey"] = p.dailyActiveDateKey;
     j["dailyActiveSeed"] = p.dailyActiveSeed;
     j["dailyHistory"] = p.dailyHistory;
+    // Per-mode shoe history + aggregates. Written unconditionally per the schema policy; a profile
+    // saved before per-mode history existed loads with empty vectors and zero aggregates, so the
+    // career derivation and the T2 rollup behave exactly as before.
+    j["dailyShoes"] = p.dailyShoes;
+    j["tournamentShoes"] = p.tournamentShoes;
+    j["multiplayerShoes"] = p.multiplayerShoes;
+    j["dailyStats"] = p.dailyStats;
+    j["tournamentStats"] = p.tournamentStats;
+    j["multiplayerStats"] = p.multiplayerStats;
+    j["tournamentsCompleted"] = p.tournamentsCompleted;
     // additive schema: persist unlocked ids only when non-empty
     if (!p.unlockedAchievementIds.empty())
         j["unlockedAchievementIds"] = p.unlockedAchievementIds;
@@ -377,4 +419,14 @@ inline void from_json(const json& j, PlayerProfile& p)
     p.dailyActiveDateKey = jsonOrString(j, "dailyActiveDateKey", std::string{});
     p.dailyActiveSeed = jsonOrUnsignedLongLong(j, "dailyActiveSeed", 0);
     p.dailyHistory = jsonOrArray<Daily::DailyResult>(j, "dailyHistory", std::vector<Daily::DailyResult>{});
+    p.dailyShoes = jsonOrArray<ShoeRecord>(j, "dailyShoes", std::vector<ShoeRecord>{});
+    p.tournamentShoes = jsonOrArray<ShoeRecord>(j, "tournamentShoes", std::vector<ShoeRecord>{});
+    p.multiplayerShoes = jsonOrArray<ShoeRecord>(j, "multiplayerShoes", std::vector<ShoeRecord>{});
+    if (j.is_object() && j.contains("dailyStats") && j.at("dailyStats").is_object())
+        j.at("dailyStats").get_to(p.dailyStats);
+    if (j.is_object() && j.contains("tournamentStats") && j.at("tournamentStats").is_object())
+        j.at("tournamentStats").get_to(p.tournamentStats);
+    if (j.is_object() && j.contains("multiplayerStats") && j.at("multiplayerStats").is_object())
+        j.at("multiplayerStats").get_to(p.multiplayerStats);
+    p.tournamentsCompleted = jsonOrInt(j, "tournamentsCompleted", 0);
 }

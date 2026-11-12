@@ -167,11 +167,35 @@ struct RoundRecord
     bool overallWin() const;
 };
 
+// What KIND of session produced a shoe. The profile's career stats are DERIVED from the recorded
+// shoes (PlayerProfile::careerStatsFromHistory + applyRollup), so "record this shoe" and "do not let
+// it count as career progress" cannot both be satisfied inside one history vector: a shoe that lives
+// in longHistory counts, by construction. This tag is the discriminator, and PlayerProfile's
+// addShoeRecord() ROUTES on it -- a Daily shoe cannot reach longHistory because the router sends it
+// elsewhere, so the invariant is structural rather than a convention a test polices.
+//
+// Multiplayer is declared and unused: the value exists so a saved record's meaning cannot shift when
+// the mode is added, and so an out-of-range read is unambiguous.
+enum class ShoeMode
+{
+    Regular = 0,       // ordinary play -- the only mode that contributes to career stats
+    DailyChallenge,    // the day's seeded shoe
+    Tournament,        // one stage of a tournament run
+    Multiplayer        // reserved; no producer exists yet
+};
+
 struct ShoeRecord
 {
     std::vector<RoundRecord> rounds;
     
     bool isContinuation = false; // true if this shoe was created due to deck exhaustion mid-hand
+
+    // The session kind that produced this shoe. Stamped where the shoe is CREATED (not where it is
+    // recorded), and preserved across a mid-shoe continuation, which continues the same session.
+    // PlayerProfile::addShoeRecord() routes on this, so a Daily/tournament shoe cannot reach the
+    // career history that career stats are derived from.
+    ShoeMode mode = ShoeMode::Regular;
+
     bool completed = true; // true if cut card reached, false if player quit mid-shoe
     int bankrollAtShoeEnd = 0; // player's bankroll when the shoe record was finalized (backs the lifetime bankroll progression)
 
@@ -215,6 +239,33 @@ struct RollupCarry
     int carriedGreatestSessionWin = 0;
     int carriedGreatestSessionLoss = 0;
 };
+
+// Per-mode aggregates for the session kinds that keep their own history (Daily, Tournament) and must
+// NOT feed career stats. Deliberately separate from PlayerStats: the career numbers are derived from
+// longHistory, and these are maintained INCREMENTALLY on the mode's own capped vector, because a
+// rolled-off shoe's peak has to survive the cap exactly like the career rollup does.
+//
+// bestFinish is Tournament-only (the furthest stage reached); the Daily has no stage to rank, and the
+// field is left at zero there rather than duplicating the struct per mode.
+struct ModeStats
+{
+    int shoesPlayed = 0;
+    int bestBankroll = 0;   // highest bankroll at a shoe end in this mode
+    int mostHandsWon = 0;   // most hands won in a single shoe in this mode
+    int bestFinish = 0;     // Tournament: furthest stage reached; unused by the Daily
+};
+
+// Hands won by the human seat (index 0) across a whole shoe. Record-derived, so it cannot drift from
+// what was stored.
+inline int handsWonInShoe(const ShoeRecord& shoe)
+{
+    int won = 0;
+    for (const auto& round : shoe.rounds)
+        for (const auto& hand : round.playerHands)
+            if (hand.playerIndex == 0 && hand.won)
+                ++won;
+    return won;
+}
 
 // Inline implementations for RoundRecord computed methods
 inline int RoundRecord::totalWager() const
