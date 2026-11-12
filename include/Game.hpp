@@ -154,6 +154,10 @@ class Game
     // kind/wager/payout without reaching into private state.
     const RoundRecord& currentRoundRecordForTest() const { return currentRoundRecord; }
     int shoeGenerationForTest() const { return shoeGeneration; }
+    // The per-hand action log, whose flat indexing (getGlobalHandIndexForPlayer) must stay in step with
+    // the seat vectors. Exposed so a test can prove an action call lands INSIDE the vector: an index past
+    // the end is UB that ASan sees and a green suite does not.
+    std::size_t handActionsSizeForTest() const { return handActions.size(); }
     // Drive the real shoe boundary (the same path the R key and auto-play advance take) from a test.
     void startNewShoeForTest() { startNewShoe(); }
     // Drives the Daily shoe boundary directly. The full path (deal to the cut card) needs a whole shoe
@@ -269,6 +273,43 @@ class Game
     // instead of only on the window-close path (before B7 an Escape exit dropped everything). Pure Game state: no SFML
     // window required, which is what makes it headless-testable. Called from InputHandler::returnToMainMenu().
     void persistOnExit();
+
+    // ---- The shared "this session does not persist progress" seam (IDEAS-REVIEWED §B.3) ----------
+    // True for ordinary career play (the default). Features that run on the LIVE Game and must leave
+    // the career profile exactly as they found it -- in-game drills, the simulation lab, a decision
+    // fork, the scripted tutorial -- set it false for the duration of the session.
+    //
+    // It is NOT a mirror of Player::setPersistable(false), and the two gates compose:
+    //   * setPersistable(false) is a BLANKET write-off for a seat that builds its own table (the
+    //     Daily, the tournament, every NPC). It turns off every write for that seat, so a session
+    //     that wants to persist exactly ONE thing cannot use it, and a seat rebuilt mid-session drops
+    //     the flag.
+    //   * the narrow commit (commitDailyResult / commitTournamentShoe) is the opposite shape: read the
+    //     career file, touch one slice, write it back.
+    // This predicate is the generalisation of the first, and it gates THREE paths, because gating the
+    // write alone is not enough:
+    //   1. the write path        -- routed through saveProgress()
+    //   2. the history path      -- addRoundRecord / addShoeRecord mutate the seat's IN-MEMORY profile,
+    //                               so the NEXT ordinary save would write this session's rounds.
+    //   3. the achievement path  -- the manager unlocks live and its set is stamped onto every save.
+    // Every feature that uses it should carry the same test: a run leaves the saved profile
+    // byte-identical (tests/test_persists_progress.cpp).
+    bool persistsProgress() const { return persistsProgress_; }
+    void setPersistsProgress(bool value) { persistsProgress_ = value; }
+
+    // The ONE write path for the human seat's career progress. Every seat-save site routes through
+    // here, so both gates live in one place: the seat's own persistable flag (NPCs, the Daily seat,
+    // the tournament seat) AND this session predicate. B1's hazard was that the save sites were
+    // enumerated by hand and a seventh appeared; a write that goes through one function cannot be
+    // missed the way seven call sites can.
+    void saveProgress();
+
+    // The ONE shoe-boundary booking path: stamp the finished shoe into the seat's profile (and, at
+    // the two exit sites, the unlocked-achievement set) and save. Used by persistOnExit, the pause
+    // Restart / Quit-to-Menu options, the mid-shoe reshuffle and the end-of-shoe path. A session that
+    // does not persist progress books nothing -- no history append, no write.
+    void bookShoeProgress(bool stampUnlockedAchievements);
+
 
     // Click the count-style label ("Count (Hi-Lo)") to toggle between counting systems. Both are always
     // counted in the background; this swaps which buffer drives the active count and flips the style.
@@ -491,6 +532,11 @@ class Game
     // the HUD via HUDState::currentShoeId as the per-shoe recalibration signal. Every boundary that bumps it also
     // zeroes shoe_ and re-seeds both running counts (see resetShoeAnalytics).
     int shoeGeneration = 0;
+
+    // The shared non-persisting-session predicate (see persistsProgress() above). True by default:
+    // ordinary play persists. Set false by a drill / sim / fork / tutorial running on this Game.
+    bool persistsProgress_ = true;
+
 
   public:
     // owns the pure-logic achievement engine. Constructed as a plain value in both the

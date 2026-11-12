@@ -140,26 +140,15 @@ void InputHandler::activatePauseOption(Game &game, PauseOption option)
         game.appMode = AppMode::Playing;
         break;
     case PauseOption::Restart:
-    {
-        PlayerProfile profile = game.players[0].getProfile();
-        profile.addShoeRecord(game.currentShoeRecord);
-        game.players[0].updateProfile(profile);
-        game.players[0].saveProfile();
+        game.bookShoeProgress(false);
         game.startNewGame();
         break;
-    }
     case PauseOption::QuitToMenu:
     {
         // Stamp the current table settings first: this is the last save on the way out
         // the player count / speed / counting style survive to the next launch.
         game.rememberTableSettings();
-
-        PlayerProfile profile = game.players[0].getProfile();
-        profile.addShoeRecord(game.currentShoeRecord);
-        // stamp the current unlocked-achievement ids onto the profile too
-        game.achievementManager_.persistUnlockedTo(profile.unlockedAchievementIds);
-        game.players[0].updateProfile(profile);
-        game.players[0].saveProfile();
+        game.bookShoeProgress(true);
         game.appMode = AppMode::MainMenu;
         game.menuSelection = MenuOption::PlayGame;
         break;
@@ -280,7 +269,7 @@ void InputHandler::processEvents()
             // stamp the current unlocked-achievement ids before saving on exit.
             game.achievementManager_.persistUnlockedTo(closeProfile.unlockedAchievementIds);
             game.players[0].updateProfile(closeProfile);
-            game.players[0].saveProfile();
+            game.saveProgress();
             game.window.close();
             return;
         }

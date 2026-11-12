@@ -294,18 +294,24 @@ void HandEvaluator::evaluateHands()
     // before persisting. Persistence stays additive: the manager's unlocked set rides along on the same profile save path.
     game.recordHandAchievements(game.currentRoundRecord);
 
-    PlayerProfile profile = game.players[0].getProfile();
-    // stamp the current unlocked-achievement ids onto the profile
-    game.achievementManager_.persistUnlockedTo(profile.unlockedAchievementIds);
-    profile.addRoundRecord(game.currentRoundRecord);
-    game.players[0].updateProfile(profile);
+    // §B.3: a non-persisting session appends NOTHING to the seat's profile. The append is gated, not
+    // just the write -- an appended round stays in the seat's in-memory profile, and the NEXT ordinary
+    // save would write it, so gating only the write leaks a drill's hands into the career history.
+    if (game.persistsProgress())
+    {
+        PlayerProfile profile = game.players[0].getProfile();
+        // stamp the current unlocked-achievement ids onto the profile
+        game.achievementManager_.persistUnlockedTo(profile.unlockedAchievementIds);
+        profile.addRoundRecord(game.currentRoundRecord);
+        game.players[0].updateProfile(profile);
+    }
     // T1 (auto-save cadence): gate the round-end autosave to AUTO_SAVE_EVERY_HANDS human hands instead of firing every settled round,
     // reducing save amplification. Feed the human-seat hand count this round (splits/doubles are several hands), then save + reset when
     // the cadence is reached. Forced writes at shoe boundary, pause-quit and exit are unchanged (the other saveProfile sites).
     game.players[0].addAutosaveHand(static_cast<int>(game.players[0].hands.size()));
     if (game.players[0].shouldAutosave())
     {
-        game.players[0].saveProfile();
+        game.saveProgress();
         game.players[0].resetAutosaveCounter();
     }
 

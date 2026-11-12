@@ -105,6 +105,11 @@ class Player
     // cannot clobber the career file.
     void setPersistable(bool value) { persistable = value; }
 
+    // Read side of the same flag, so a caller can tell a blanket seat write-off apart from the
+    // session-level Game::persistsProgress() gate. The two compose (a write happens only when both
+    // allow it) and the Daily / tournament own this one, so the seam must never mirror it.
+    bool isPersistable() const { return persistable; }
+
     // The Daily streak straight off the seat's profile. A cheap accessor, deliberately: the main-menu
     // row shows the streak, and getProfile() returns the profile BY VALUE -- copying a capped 100-shoe
     // history every rendered frame to read one int is not acceptable in a draw loop.

@@ -259,10 +259,35 @@ void Game::persistOnExit()
     // style survive to the next launch.
     rememberTableSettings();
 
+    // The shoe record + unlocked-achievement stamp + write, all in the one boundary choke point.
+    bookShoeProgress(true);
+}
+
+// The ONE write path for the human seat's career progress. Both gates live here, so no save site can
+// miss one: the seat's own persistable flag (NPCs, the Daily seat, the tournament seat -- B1) and the
+// session-level predicate (drills, the sim, a fork, the tutorial -- §B.3). A session that opts out
+// leaves the file untouched, byte for byte.
+void Game::saveProgress()
+{
+    if (!persistsProgress_ || players.empty())
+        return;
+    players[0].saveProfile();
+}
+
+// The ONE shoe-boundary booking path. Every boundary (exit, pause Restart / Quit-to-Menu, the mid-shoe
+// reshuffle, the end of a shoe) appends the finished shoe and writes through here, so the history path
+// is gated in one place too -- gating only the write would leave the rounds in the seat's in-memory
+// profile for the NEXT ordinary save to write.
+void Game::bookShoeProgress(bool stampUnlockedAchievements)
+{
+    if (!persistsProgress_ || players.empty())
+        return;
+
     PlayerProfile profile = players[0].getProfile();
     profile.addShoeRecord(currentShoeRecord);
     // stamp the current unlocked-achievement ids onto the profile too
-    achievementManager_.persistUnlockedTo(profile.unlockedAchievementIds);
+    if (stampUnlockedAchievements)
+        achievementManager_.persistUnlockedTo(profile.unlockedAchievementIds);
     players[0].updateProfile(profile);
     players[0].saveProfile();
 }
@@ -380,7 +405,7 @@ void Game::commitPlayerName(const std::string& name)
     PlayerProfile profile = players[0].getProfile();
     profile.setName(name);
     players[0].updateProfile(profile);
-    players[0].saveProfile();
+    saveProgress();
 }
 
 void Game::applySavedTableSettings()
@@ -430,8 +455,10 @@ void Game::resetShoeAnalytics()
     gameState = GameState::Started;
 
     // a new shoe begins: resolve the finished shoe's end-of-shoe achievements (Deviation Free / Comeback King /
-    // Perfect Shoe / Kelly Master) via onNewShoe()
-    achievementFeeder_.surfaceNewlyUnlocked(achievementManager_.onNewShoe());
+    // Perfect Shoe / Kelly Master) via onNewShoe(). Gated with the rest of the achievement path (§B.3): a
+    // non-persisting session resolves no shoe-end unlock.
+    if (persistsProgress_)
+        achievementFeeder_.surfaceNewlyUnlocked(achievementManager_.onNewShoe());
 }
 
 void Game::startNewShoe()
@@ -467,6 +494,12 @@ void Game::startNewShoeWith(std::optional<unsigned long long> seed)
 // the achievement engine; all mutable state stays in Game.
 void Game::recordHandAchievements(const RoundRecord& round)
 {
+    // §B.3 gate: a non-persisting session must not earn career achievements. The unlocked set is
+    // stamped onto the profile at every write site, so an unlock here reaches disk even if this round
+    // never appends a record. Gating the feed (not just the stamp) also keeps the manager's own
+    // per-shoe counters clean, so the shoe-end resolve at the next boundary sees nothing from the drill.
+    if (!persistsProgress_)
+        return;
     achievementFeeder_.recordHandAchievements(round);
 }
 
@@ -1590,10 +1623,7 @@ void Game::handleEmptyDeck()
     // Save the current (incomplete) shoe record to the profile before reshuffling
     currentShoeRecord.completed = false;
     currentShoeRecord.bankrollAtShoeEnd = players[0].getBankroll();
-    PlayerProfile profile = players[0].getProfile();
-    profile.addShoeRecord(currentShoeRecord);
-    players[0].updateProfile(profile);
-    players[0].saveProfile();
+    bookShoeProgress(false);
 
     // Rebuild the shoe (full NUM_DECKS set minus what's been dealt) and continue dealing from it.
     deck.reshuffleWithRemaining(tableCards);
@@ -1755,12 +1785,8 @@ void Game::dealerTurn()
         getStats().shoesFinished++;
         shoeCumulativeWinLoss = 0; // reset for next shoe
 
-        PlayerProfile profile = players[0].getProfile();
-
         currentShoeRecord.bankrollAtShoeEnd = players[0].getBankroll();
-        profile.addShoeRecord(currentShoeRecord);
-        players[0].updateProfile(profile);
-        players[0].saveProfile();
+        bookShoeProgress(false);
 
         // Captured BEFORE the reset below erases it: the record carries the mode, the continuation flag
         // and the rounds, and both the Daily and the tournament boundary need all three.

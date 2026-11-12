@@ -319,7 +319,7 @@ void SessionLifecycle::rememberTableSettings()
     // every existing save point (no extra I/O). Additive schema: unchanged for profiles saved before custom rules.
     profile.gameRules = game.gameRules_;
     game.players[0].updateProfile(profile);
-    game.players[0].saveProfile();
+    game.saveProgress();
 }
 
 // =============================================================================
