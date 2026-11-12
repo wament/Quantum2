@@ -345,6 +345,15 @@ void Game::rememberTableSettings()
     sessionLifecycle_.rememberTableSettings();
 }
 
+// U12 session view: switch the side-panel charts between per-shoe and per-session accumulation. The choice persists for
+// the whole play window until cycled again; neither view is persisted to the profile.
+void Game::cycleGraphView()
+{
+    hudState.graphView = (hudState.graphView == HUDState::GraphViewMode::Session)
+        ? HUDState::GraphViewMode::Shoe
+        : HUDState::GraphViewMode::Session;
+}
+
 void Game::resetShoeAnalytics()
 {
     // The single shoe-boundary reset. Bumping shoeGeneration is the HUD's recalibration signal (HUDState::
@@ -702,6 +711,9 @@ void Game::syncShoeAnalytics()
 
     hudState.currentShoe = &currentShoeRecord;
     hudState.currentShoeId = shoeGeneration;
+    // U12 session view: expose the live-session accumulator so HUD can render per-shoe or per-session. The active view
+    // (hudState.graphView) persists across shoes for the whole play window until the user cycles it.
+    hudState.sessionAnalytics = &session_;
 }
 
 // Test support: headless construction + deterministic deck injection.
@@ -1185,6 +1197,9 @@ void Game::confirmBet()
     // histogram shows this shoe's wagering spread rather than everything ever bet.
     stats.betDistribution[currentBet]++;
     shoe_.betDistribution[currentBet]++;
+    // U12 session view: also record this wager into the live-session distribution so the per-session Bets Placed chart
+    // spans every shoe in this play window (unlike shoe_, which resets at each shoe boundary).
+    session_.betDistribution[currentBet]++;
 
     Logger::info() << players[0].getName() << " bets " << players[0].hands[players[0].currentHand].getBet() << ". Remaining bankroll: " << players[0].getBankroll() << ". Running count: " << runningCount << ".";
 

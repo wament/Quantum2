@@ -157,6 +157,12 @@ class Game
     void updateHUDStateForTest() { updateHUDState(); }
     double edgePercentForTest() const { return hudState.edgePercent; }
 
+    // U12 session view: the live session accumulators across every shoe in this play window (distinct from per-shoe).
+    const std::vector<float>& sessionBankrollSeriesForTest() const { return session_.bankrollSeries; }
+    const std::vector<double>& sessionEdgeSeriesForTest() const { return session_.edgeSeries; }
+    const std::map<int, int>& sessionBetDistributionForTest() const { return session_.betDistribution; }
+    HUDState::GraphViewMode graphViewForTest() const { return hudState.graphView; }
+
     // Table settings as they stand after the profile was applied at launch.
     int playerCountForTest() const { return playerCount; }
     int gameSpeedForTest() const { return static_cast<int>(gameSpeed); }
@@ -430,6 +436,9 @@ class Game
     // the hand-to-hand and round-to-round streaks, strategy accuracy, the bet distribution and both graph series.
     // resetShoeAnalytics() zeroes the whole struct
     ShoeAnalytics shoe_;
+    // U12 session view: accumulates across every shoe in this open play window, resetting only on a fresh Game. See
+    // SessionAnalytics; distinct from per-shoe shoe_ and from the persisted career longHistory.
+    SessionAnalytics session_;
 
     // Bumped every time a new shoe begins (new game, R at end of shoe, auto-play, mid-shoe reshuffle). Exposed to
     // the HUD via HUDState::currentShoeId as the per-shoe recalibration signal. Every boundary that bumps it also
@@ -456,6 +465,9 @@ class Game
     // ---------------- Setup ----------------
 
     void startNewGame();
+
+    // U12 session view: cycle the side-panel graph between per-shoe and per-session accumulation.
+    void cycleGraphView();
 
     // Table settings persistence. applySavedTableSettings() seeds playerCount / gameSpeed / countingStyle
     // from the profile loaded at launch

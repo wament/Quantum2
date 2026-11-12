@@ -37,6 +37,14 @@ struct HUDState
     // this shoe's data instead of drifting persistently upward across shoes/sessions.
     int currentShoeId = 0;
 
+    // U12 session view: which accumulation the side-panel charts display -- per-shoe (default) or per-session. A session
+    // spans every shoe in one open play window and resets only on relaunch, distinct from career longHistory.
+    enum class GraphViewMode { Shoe, Session };
+    GraphViewMode graphView = GraphViewMode::Shoe;
+
+    // U12 session view: the live session analytics, set by Game::syncShoeAnalytics so HUD can render either view.
+    const SessionAnalytics* sessionAnalytics = nullptr;
+
     // Internal
     int cardsRemaining = 0;
     int decksRemaining = 0;

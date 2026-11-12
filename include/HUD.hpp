@@ -112,6 +112,10 @@ private:
     bool m_showLeft = true;
     bool m_showRight = true;
 
+    // U12 session view: which side-panel charts are active (per-shoe default or per-session), remembered from update() so
+    // drawCharts() can label them and the player sees which window they are looking at.
+    HUDState::GraphViewMode m_graphView = HUDState::GraphViewMode::Shoe;
+
     HudPanel m_leftPanel;
     HudPanel m_rightPanel;
     HudPanel m_bottomPanel;

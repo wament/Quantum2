@@ -914,3 +914,74 @@ TEST_CASE("Empty bet distribution still yields the full set of bars", "[Feature3
     for (int b : buckets)
         CHECK(b == 0);
 }
+
+// U12 session view: the live-session accumulator mirrors every settled round AND spans shoe boundaries, unlike the
+// per-shoe analytics which reset each shoe. cycleGraphView() toggles which accumulation the side panel shows.
+TEST_CASE("U12: the session accumulator spans shoes while per-shoe analytics reset", "[Feature3][Analytics][Session]")
+{
+    Game game(true);
+
+    // Default view is per-shoe; cycling switches between the two modes and never leaves an undefined state.
+    CHECK(game.graphViewForTest() == HUDState::GraphViewMode::Shoe);
+    game.cycleGraphView();
+    CHECK(game.graphViewForTest() == HUDState::GraphViewMode::Session);
+    game.cycleGraphView();
+    CHECK(game.graphViewForTest() == HUDState::GraphViewMode::Shoe);
+
+    // Shoe 1: settle three losing hands so the bankroll curve actually moves. startTestRound begins the first hand,
+    // nextRoundForTest advances between the rest (the same path R takes within a shoe).
+    // A large neutral deck so draw() never runs dry; card values are irrelevant here -- we only settle rounds and count
+    // accumulated points, not outcomes. Shoe 2 gets its own freshly shuffled shoe from startNewShoeForTest().
+    std::vector<Card> deck;
+    for (int i = 0; i < 300; ++i)
+    {
+        Card c;
+        c.value = 8;   // neutral in both Reko and Hi-Lo, so it never perturbs a count
+        c.suit = Suit::Clubs;
+        deck.push_back(c);
+    }
+    test_support::seed_deck(game, deck);
+    game.startTestRound();
+    for (int round = 0; round < 3; ++round)
+    {
+        if (round > 0)
+            game.nextRoundForTest();
+        game.confirmBet();
+        game.stand();
+        test_support::settleRound(game);
+    }
+
+    // The session mirrors the per-round points as they accumulate across the three hands.
+    REQUIRE(game.sessionBankrollSeriesForTest().size() == 3u);
+    REQUIRE(game.sessionEdgeSeriesForTest().size() == 3u);
+    int firstShoeWagers = 0;
+    for (const auto& kv : game.sessionBetDistributionForTest())
+        firstShoeWagers += kv.second;
+    CHECK(firstShoeWagers == 3);
+
+    // A shoe boundary resets the per-shoe series but leaves the session untouched -- this is what makes it a session.
+    game.startNewShoeForTest();
+    CHECK(game.shoeAnalyticsForTest().bankrollSeries.empty());   // per-shoe reset
+    REQUIRE(game.sessionBankrollSeriesForTest().size() == 3u);   // session carried across the boundary
+
+    // Shoe 2: two more hands. Per-shoe holds only these; the session now spans both shoes (3 + 2). startTestRound is the
+    // entry into a fresh shoe just as it was into the first, so the same driving sequence applies.
+    game.startTestRound();
+    for (int round = 0; round < 2; ++round)
+    {
+        if (round > 0)
+            game.nextRoundForTest();
+        game.confirmBet();
+        game.stand();
+        test_support::settleRound(game);
+    }
+
+    CHECK(game.shoeAnalyticsForTest().bankrollSeries.size() == 2u);
+    REQUIRE(game.sessionBankrollSeriesForTest().size() == 5u);   // spans both shoes
+    REQUIRE(game.sessionEdgeSeriesForTest().size() == 5u);       // spans both shoes
+
+    int sessionWagerCount = 0;
+    for (const auto& kv : game.sessionBetDistributionForTest())
+        sessionWagerCount += kv.second;
+    CHECK(sessionWagerCount == 5);                              // every wager this session, across both shoes
+}

@@ -267,28 +267,57 @@ void HUD::update(const HUDState& hudState)
     // readout start at baseline. The bankroll curve is the human seat's net alone: NPC results never move it.
     // (An earlier HUD-side "clear on shoe change" guard here was dead code
     // assignments below on the very same frame, so it could never have reset anything.)
-    m_bankrollSeries = hudState.bankrollSeries;
-    m_edgeSeries = hudState.edgeSeries;
+    // Chart backing data. The per-shoe reset is owned by Game: every shoe boundary runs resetShoeAnalytics(), so the
+    // per-shoe series (and the stat boxes below) only ever hold the current shoe. For the U12 session view we instead
+    // read the live-session accumulators, which span every shoe in this play window. Either way the bankroll curve is
+    // the human seat's net alone: NPC results never move it.
     m_analyticsStdDev = hudState.analyticsStdDev;
     m_longestWinStreak = hudState.longestWinningStreak;
     m_longestLoseStreak = hudState.longestLosingStreak;
     m_edgePercent = hudState.edgePercent;
 
-    // Bets Placed chart: fold the raw per-wager distribution into evenly spaced ranges. One bar per distinct bet
-    // size is unreadable as soon as a player varies their wager, and the ranges stay put as bets come in. The
-    // distribution is this shoe's (Game::shoe_)
-    m_betHistogram.clear();
-    m_betBucketWidth = 0;
-    if (hudState.shoeAnalytics && !hudState.shoeAnalytics->betDistribution.empty())
+    m_graphView = hudState.graphView;   // U12 session view: remember for drawCharts() title labelling
+    const HUDState::GraphViewMode mode = hudState.graphView;
+    const SessionAnalytics* session = hudState.sessionAnalytics;
+    if (mode == HUDState::GraphViewMode::Session && session)
     {
-        // Axis starts at the minimum bet and grows to the largest wager placed this shoe as it exceeds 100, capped
-        // hard at MAXIMUM_BET. That spreads low wagers across the chart instead of collapsing them into bucket 0.
-        const int maxWager = hudState.shoeAnalytics->betDistribution.rbegin()->first;
-        m_betAxisLo = Constants::MINIMUM_BET;
-        const int axisHi = HUD::computeAxisMax(maxWager);
-        m_betHistogram = bucketBetDistribution(hudState.shoeAnalytics->betDistribution,
-                                               Constants::BET_BUCKET_COUNT, m_betAxisLo, axisHi);
-        m_betBucketWidth = (axisHi - m_betAxisLo) / Constants::BET_BUCKET_COUNT;
+        m_bankrollSeries = session->bankrollSeries;
+        m_edgeSeries = session->edgeSeries;
+        // Bets Placed chart: fold the session's wager distribution into evenly spaced ranges. Like the per-shoe chart,
+        // one bar per distinct size is unreadable; the axis grows to the largest placed wager (capped at MAXIMUM_BET).
+        m_betHistogram.clear();
+        m_betBucketWidth = 0;
+        if (!session->betDistribution.empty())
+        {
+            const int maxWager = session->betDistribution.rbegin()->first;
+            m_betAxisLo = Constants::MINIMUM_BET;
+            const int axisHi = HUD::computeAxisMax(maxWager);
+            m_betHistogram = bucketBetDistribution(session->betDistribution,
+                                                   Constants::BET_BUCKET_COUNT, m_betAxisLo, axisHi);
+            m_betBucketWidth = (axisHi - m_betAxisLo) / Constants::BET_BUCKET_COUNT;
+        }
+    }
+    else
+    {
+        m_bankrollSeries = hudState.bankrollSeries;
+        m_edgeSeries = hudState.edgeSeries;
+
+        // Bets Placed chart: fold the raw per-wager distribution into evenly spaced ranges. One bar per distinct bet
+        // size is unreadable as soon as a player varies their wager, and the ranges stay put as bets come in. The
+        // distribution is this shoe's (Game::shoe_)
+        m_betHistogram.clear();
+        m_betBucketWidth = 0;
+        if (hudState.shoeAnalytics && !hudState.shoeAnalytics->betDistribution.empty())
+        {
+            // Axis starts at the minimum bet and grows to the largest wager placed this shoe as it exceeds 100, capped
+            // hard at MAXIMUM_BET. That spreads low wagers across the chart instead of collapsing them into bucket 0.
+            const int maxWager = hudState.shoeAnalytics->betDistribution.rbegin()->first;
+            m_betAxisLo = Constants::MINIMUM_BET;
+            const int axisHi = HUD::computeAxisMax(maxWager);
+            m_betHistogram = bucketBetDistribution(hudState.shoeAnalytics->betDistribution,
+                                                   Constants::BET_BUCKET_COUNT, m_betAxisLo, axisHi);
+            m_betBucketWidth = (axisHi - m_betAxisLo) / Constants::BET_BUCKET_COUNT;
+        }
     }
 }
 
@@ -672,7 +701,7 @@ void HUD::drawCharts(sf::RenderWindow& window) const
         if (net > 0.0)
             bankOss << '+';
         bankOss << compactNumber(net, 0);
-        drawLineChart(window, m_bankrollChartRect, m_bankrollSeries, kBankrollColor, 0, "Bankroll Curve", bankOss.str());
+        drawLineChart(window, m_bankrollChartRect, m_bankrollSeries, kBankrollColor, 0, (m_graphView == HUDState::GraphViewMode::Session) ? "Session Bankroll Curve" : "Bankroll Curve", bankOss.str());
     }
 
     // Edge Over Time: the player's estimated edge at each round of the current shoe. It is a LEVEL, not a running
@@ -683,7 +712,7 @@ void HUD::drawCharts(sf::RenderWindow& window) const
     {
         std::ostringstream edgeOss;
         edgeOss << std::fixed << std::setprecision(2) << m_edgePercent << '%';
-        drawLineChart(window, m_edgeChartRect, m_edgeSeries, kEdgeColor, 1, "Edge Over Time", edgeOss.str());
+        drawLineChart(window, m_edgeChartRect, m_edgeSeries, kEdgeColor, 1, (m_graphView == HUDState::GraphViewMode::Session) ? "Session Edge Over Time" : "Edge Over Time", edgeOss.str());
     }
 
     // Bets Placed: wagers folded into evenly spaced ranges (see bucketBetDistribution). The readout is the number of

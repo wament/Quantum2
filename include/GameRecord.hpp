@@ -120,6 +120,18 @@ struct ShoeAnalytics
     std::vector<double> edgeSeries;
 };
 
+// Session-level analytics for U12's per-session graph view (see HUDState.graphViewMode). Like ShoeAnalytics but it
+// does NOT reset at shoe boundaries: it accumulates across every shoe within one open play window and resets only when
+// the game is relaunched (a fresh Game instance). Distinct from career longHistory (persisted, spans relaunches) -- this
+// is the live session only. Minimal on purpose: exactly the three chart series the side panel needs.
+struct SessionAnalytics
+{
+    std::vector<float> bankrollSeries; // cumulative net profit per round across the whole session (human seat)
+    std::vector<double> edgeSeries;    // estimated edge sampled once per round across the whole session
+    std::map<int, int> betDistribution; // every wager placed this session
+};
+
+
 struct HandOutcome
 {
     std::vector<Card> cards;

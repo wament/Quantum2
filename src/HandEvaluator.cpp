@@ -280,6 +280,11 @@ void HandEvaluator::evaluateHands()
         const float lastBank = game.shoe_.bankrollSeries.empty() ? 0.f : game.shoe_.bankrollSeries.back();
         game.shoe_.bankrollSeries.push_back(lastBank + static_cast<float>(humanNet));
         game.shoe_.edgeSeries.push_back(static_cast<double>(BasicStrategy::estimateEdgePercent(game.hiLoTrueCount())));
+        // U12 session view: mirror the same two points into the live-session accumulator, which spans shoes instead of
+        // resetting per shoe. Its running total starts from the session's own last point (or 0 on a fresh session).
+        const float lastSessionBank = game.session_.bankrollSeries.empty() ? 0.f : game.session_.bankrollSeries.back();
+        game.session_.bankrollSeries.push_back(lastSessionBank + static_cast<float>(humanNet));
+        game.session_.edgeSeries.push_back(static_cast<double>(BasicStrategy::estimateEdgePercent(game.hiLoTrueCount())));
     }
 
     Logger::info() << "Round complete. Net: " << (humanNet >= 0 ? "+" : "") << humanNet
