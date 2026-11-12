@@ -292,8 +292,8 @@ SettlementResult Player::settle(const Hand& hand, int dealerValue, bool dealerBu
             return SettlementResult::Push;
         }
 
-        winBet(hand.getBet() * Constants::BLACKJACK_PAYOUT);
-        payout = hand.getBet() * (1 + Constants::BLACKJACK_PAYOUT);
+        winBet(static_cast<int>(hand.getBet() * Constants::BLACKJACK_PAYOUT));
+        payout = static_cast<int>(hand.getBet() * (1 + Constants::BLACKJACK_PAYOUT));
         return SettlementResult::Win;
     }
 

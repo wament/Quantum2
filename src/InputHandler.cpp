@@ -338,7 +338,7 @@ void InputHandler::processTrainerEvents(const sf::Event& event)
         if (clicked->button == sf::Mouse::Button::Left)
         {
             auto pos = sf::Mouse::getPosition(game.window);
-            int idx = game.trainer->buttonIndexAt(pos.x, pos.y,
+            int idx = game.trainer->buttonIndexAt(static_cast<float>(pos.x), static_cast<float>(pos.y),
                                                   static_cast<float>(game.window.getSize().x),
                                                   static_cast<float>(game.window.getSize().y));
             if (idx >= 0)

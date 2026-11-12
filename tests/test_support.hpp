@@ -3,8 +3,13 @@
 #include <vector>
 #include <string>
 #include <filesystem>
-#include <cstdlib>            // getenv/setenv/unsetenv for IsolatedHome
-#include <unistd.h>           // getpid (POSIX; the suite is Linux-only, as is Player::getSavePath's $HOME)
+#include <cstdlib>            // getenv for IsolatedHome; setenv/unsetenv are wrapped in env_set/env_unset below
+#ifdef _WIN32
+#include <process.h>          // _getpid (MSVC)
+#include <stdlib.h>           // _putenv_s (MSVC)
+#else
+#include <unistd.h>           // getpid (POSIX)
+#endif
 #include "Card.hpp"
 #include "Deck.hpp"
 #include "Game.hpp"
@@ -12,6 +17,50 @@
 // Shared test infrastructure for the Blackjack2 unit suite (one TU per feature, but they repeat setup).
 // Header-only + inline so it adds no link units and never triggers ODR issues across translation units.
 namespace test_support {
+
+    // ---- Platform shims. The release workflow builds EVERY target on Windows/MSVC, and this header
+    // is included by ~25 test TUs, so an unguarded <unistd.h> / ::getpid / ::setenv made the whole
+    // Blackjack2Tests target fail to compile on Windows (MSVC C1083) and thereby blocked a release
+    // that never runs a single test. These three wrappers are the entire POSIX surface the suite uses.
+    //
+    // What is NOT fixed, and cannot be by a shim: Player::getSavePath() (src/Player.cpp) resolves
+    // $HOME and falls back to a RELATIVE path when it is unset, which is what happens on Windows.
+    // So the HOME isolation below compiles on Windows but redirects a variable the product never
+    // reads there -- the suite is hermetic on POSIX only, and on Windows the profile-writing tests
+    // write into the build directory. That is why the release jobs build the shipped target only
+    // (see .github/workflows/release.yml) and ctest stays on the Linux job.
+    inline long process_id()
+    {
+#ifdef _WIN32
+        return static_cast<long>(_getpid());
+#else
+        return static_cast<long>(::getpid());
+#endif
+    }
+
+    inline const char* env_get(const char* name)
+    {
+        return std::getenv(name);   // MSVC deprecates the un-prefixed name (C4996); one wrapper, one place to silence
+    }
+
+    inline void env_set(const char* name, const char* value)
+    {
+#ifdef _WIN32
+        _putenv_s(name, value);
+#else
+        ::setenv(name, value, 1);
+#endif
+    }
+
+    inline void env_unset(const char* name)
+    {
+#ifdef _WIN32
+        _putenv_s(name, "");   // MSVC removes the variable when the value is empty
+#else
+        ::unsetenv(name);
+#endif
+    }
+
 
     // A deterministic playing card (value/suit), replacing the identical helper each game-flow file used to define
     // locally as makeCard()/card(). Pure data construction, so behavior is unchanged wherever it's substituted in.
@@ -100,27 +149,27 @@ namespace test_support {
     {
       public:
         explicit IsolatedHome(const std::string& tag = "home")
-            : hadHome_(std::getenv("HOME") != nullptr)
+            : hadHome_(env_get("HOME") != nullptr)
         {
             if (hadHome_)
-                original_ = std::getenv("HOME");
+                original_ = env_get("HOME");
 
             static int counter = 0;   // per-process; disambiguates several guards inside one TEST_CASE
             dir = std::filesystem::temp_directory_path() /
-                  ("bj_" + tag + "_home_" + std::to_string(static_cast<long>(::getpid())) + "_" +
+                  ("bj_" + tag + "_home_" + std::to_string(process_id()) + "_" +
                    std::to_string(counter++));
             std::error_code ec;
             std::filesystem::remove_all(dir, ec);       // never inherit a previous run's profile
             std::filesystem::create_directories(dir, ec);
-            ::setenv("HOME", dir.string().c_str(), 1);
+            env_set("HOME", dir.string().c_str());
         }
 
         ~IsolatedHome()
         {
             if (hadHome_)
-                ::setenv("HOME", original_.c_str(), 1);
+                env_set("HOME", original_.c_str());
             else
-                ::unsetenv("HOME");
+                env_unset("HOME");
             std::error_code ec;
             std::filesystem::remove_all(dir, ec);
         }
@@ -169,11 +218,11 @@ namespace test_support {
         ProcessHomeIsolation()
         {
             dir = std::filesystem::temp_directory_path() /
-                  ("bj_proc_home_" + std::to_string(static_cast<long>(::getpid())));
+                  ("bj_proc_home_" + std::to_string(process_id()));
             std::error_code ec;
             std::filesystem::remove_all(dir, ec);   // never inherit a previous run's profile
             std::filesystem::create_directories(dir, ec);
-            ::setenv("HOME", dir.string().c_str(), 1);
+            env_set("HOME", dir.string().c_str());
         }
 
         ~ProcessHomeIsolation()

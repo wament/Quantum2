@@ -512,7 +512,7 @@ sf::Vector2f GameRenderer::getPlayerPosition(Game& game, size_t playerIndex, siz
     float angleRad = angle * 3.14159f / 180.f;
 
     float x = centerX + radiusX * sin(angleRad);
-    float y = centerY - radiusY * cosh(0.78 * angleRad);
+    float y = static_cast<float>(centerY - radiusY * cosh(0.78 * angleRad));
 
     sf::Vector2f offset = (slot < 6) ? playerOffsets[slot] : sf::Vector2f(0.f, 0.f);
     return {x - Constants::PLAYER_X + offset.x, y - Constants::PLAYER_Y + offset.y};
@@ -806,7 +806,7 @@ void GameRenderer::drawDeck(Game& game)
     if (game.deck.size() == 0)
         return;
 
-    const int show = std::min<int>(game.deck.size(), 6);
+    const int show = std::min<int>(static_cast<int>(game.deck.size()), 6);
     for (int i = 0; i < show; ++i)
     {
         auto back = Graphics::makeCardBackSprite(game.cardTexture);

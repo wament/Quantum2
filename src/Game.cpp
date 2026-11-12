@@ -728,7 +728,7 @@ void Game::syncCounting()
     // Keep the true-count box title in sync so it reflects the active system live (U5): Hi-Lo -> "True Count", Reko -> "Betting Count (Reko)".
     hudState.countingBoxLabel = trueCountStatusLabel();
 
-    hudState.cardsRemaining = deck.size();
+    hudState.cardsRemaining = static_cast<int>(deck.size());
 }
 
 // surface the current sound + music state

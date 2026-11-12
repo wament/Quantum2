@@ -894,7 +894,7 @@ void Replay::processEvents(sf::Event &event)
         const auto* mouseEvent = event.getIf<sf::Event::MouseButtonPressed>();
         if (mouseEvent && mouseEvent->button == sf::Mouse::Button::Left)
         {
-            sf::Vector2f mousePos(mouseEvent->position.x, mouseEvent->position.y);
+            sf::Vector2f mousePos(static_cast<float>(mouseEvent->position.x), static_cast<float>(mouseEvent->position.y));
             if (sliderDragging || sliderBounds.contains(mousePos))
             {
                 sliderDragging = true;
@@ -920,7 +920,7 @@ void Replay::processEvents(sf::Event &event)
         const auto* mouseEvent = event.getIf<sf::Event::MouseMoved>();
         if (mouseEvent)
         {
-            sf::Vector2f mousePos(mouseEvent->position.x, mouseEvent->position.y);
+            sf::Vector2f mousePos(static_cast<float>(mouseEvent->position.x), static_cast<float>(mouseEvent->position.y));
             float frac = (mousePos.x - sliderBounds.position.x) / sliderBounds.size.x;
             frac = std::max(0.0f, std::min(1.0f, frac));
 

@@ -23,8 +23,8 @@ void HandEvaluator::evaluateHands()
 
     game.currentRoundRecord.playerHands.clear();
     game.currentRoundRecord.runningCount = game.runningCount;
-    game.currentRoundRecord.trueCount = BasicStrategy::computeTrueCount(game.runningCount, game.deck.size());
-    game.currentRoundRecord.cardsRemaining = game.deck.size();
+    game.currentRoundRecord.trueCount = BasicStrategy::computeTrueCount(game.runningCount, static_cast<int>(game.deck.size()));
+    game.currentRoundRecord.cardsRemaining = static_cast<int>(game.deck.size());
     game.currentRoundRecord.timestamp = std::chrono::duration_cast<std::chrono::seconds>(
                                            std::chrono::system_clock::now().time_since_epoch())
                                            .count();
@@ -147,7 +147,7 @@ void HandEvaluator::evaluateHands()
                 stats.handProfitSum += net;
                 stats.handProfitSumSq += net * net;
                 if (net < stats.greatestHandLoss)
-                    stats.greatestHandLoss = net;
+                    stats.greatestHandLoss = static_cast<int>(net);   // int field, long long net -- same cast as GameRecord.hpp's roll-up
 
                 // The Std Dev box derives from these per-shoe accumulators
                 // not every hand the profile has ever played.

@@ -40,7 +40,7 @@ class StrategyTrainer
         int currentStreak = 0;
         int bestStreak = 0;
 
-        float accuracyPercent() const { return totalQuestions > 0 ? (100.0 * correctAnswers / totalQuestions) : 0.0f; }
+        float accuracyPercent() const { return totalQuestions > 0 ? static_cast<float>(100.0 * correctAnswers / totalQuestions) : 0.0f; }
         bool isPerfect() const { return totalQuestions > 0 && correctAnswers == totalQuestions; }
     };
 

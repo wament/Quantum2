@@ -24,6 +24,13 @@ DISPLAY=:97 python3 tools/visual_check/check_progress_tab.py  # Progress tab: tw
 
 Screenshots land in `tools/visual_check/shots/` (git-ignored). Override with `BJ_SHOTS`, `BJ_REPO`, `BJ_BIN`.
 
+**Run them ONE AT A TIME.** Every script captures the **root window** (`import -window root`), so it photographs the
+whole display, not its own app. Two scripts launched concurrently each capture the *other's* window: the measured
+regions land on a static frame, so "the title strip changed" reports **AE 0**, the layout strips land on the other
+app's chart and report non-flat, and both scripts fail with a dozen unrelated-looking failures. Reproduced 2026-11-12:
+`check_progress_tab.py` and `check_mode_history.py` run in parallel produced 9 and 3 failures respectively, and each
+passed 100% when re-run alone. A parallel-launcher (or a backgrounded `&`) turns a green tree red.
+
 ## What each script proves
 
 | Script | Proves |

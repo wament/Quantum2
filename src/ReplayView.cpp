@@ -120,7 +120,7 @@ void ReplayView::drawReplayView()
     const auto &state = replay.currentState;
 
     // Background (reuse game's table feel)
-    sf::RectangleShape table(sf::Vector2f(window.getSize().x, window.getSize().y));
+    sf::RectangleShape table(sf::Vector2f(static_cast<float>(window.getSize().x), static_cast<float>(window.getSize().y)));
     table.setFillColor(sf::Color(15, 50, 30));
     window.draw(table);
 

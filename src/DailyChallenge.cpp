@@ -29,7 +29,7 @@ void civilFromDays(long long days, int& year, unsigned& month, unsigned& day)
     const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);             // [0, 365]
     const unsigned mp = (5 * doy + 2) / 153;                                   // [0, 11]
     const unsigned d = doy - (153 * mp + 2) / 5 + 1;                           // [1, 31]
-    const unsigned m = mp + (mp < 10 ? 3 : -9u);                               // [1, 12]
+    const unsigned m = (mp < 10) ? (mp + 3u) : (mp - 9u);                       // [1, 12]
     y += (m <= 2);
     year = static_cast<int>(y);
     month = m;

@@ -63,7 +63,10 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --parallel
+        # The shipped target ONLY. This job packages an .exe and runs no tests, and the test binary
+        # carries POSIX-only infrastructure (tests/test_support.hpp's HOME isolation), so building
+        # every target here let a test-only portability failure block a release.
+        run: cmake --build build --parallel --target Blackjack2
 
       - name: Package macOS (.app -> .zip)
         run: |
@@ -136,7 +139,10 @@ jobs:
           cmake -B build --toolchain $toolchain -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
-        run: cmake --build build --parallel
+        # The shipped target ONLY (see the macOS job's note). This job zips Blackjack2.exe plus the
+        # SFML DLLs and runs no tests, so the test binary -- which is POSIX-only in its HOME-isolation
+        # infrastructure -- has no business being compiled here.
+        run: cmake --build build --parallel --target Blackjack2
 
       - name: Package Windows (locate exe + copy DLLs + zip)
         shell: pwsh

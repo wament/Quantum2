@@ -24,7 +24,7 @@ namespace test_support
 
 TEST_CASE("B17: every test process runs with HOME redirected away from the real profile", "[B17][hermeticity]")
 {
-    const char* home = std::getenv("HOME");
+    const char* home = test_support::env_get("HOME");
     REQUIRE(home != nullptr);
     const std::string h(home);
 
@@ -40,7 +40,7 @@ TEST_CASE("B17: every test process runs with HOME redirected away from the real 
     // to it, so a test that uses IsolatedHome leaves HOME where the process guard put it.
     {
         test_support::IsolatedHome nested("nesting");
-        REQUIRE(std::string(std::getenv("HOME")) == nested.path().string());
+        REQUIRE(std::string(test_support::env_get("HOME")) == nested.path().string());
     }
-    REQUIRE(std::string(std::getenv("HOME")) == h);
+    REQUIRE(std::string(test_support::env_get("HOME")) == h);
 }
