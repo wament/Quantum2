@@ -23,5 +23,4 @@ struct Card
     bool isFaceCard() const;
 
     bool isCutCard() const;
-    char getSuitSymbol() const; // Unicode suit symbol
 };
