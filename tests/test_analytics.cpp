@@ -960,7 +960,15 @@ TEST_CASE("U12: the session accumulator spans shoes while per-shoe analytics res
     CHECK(firstShoeWagers == 3);
 
     // A shoe boundary resets the per-shoe series but leaves the session untouched -- this is what makes it a session.
+    // B20: startNewShoeForTest() shuffles the new shoe from std::random_device, so shoe 2's deal order differed per
+    // process and the rounds driven below (hence the asserted series lengths) varied -- this case failed 12 runs in 120
+    // in isolation. Re-seed the same neutral all-8 deck for shoe 2. NOTE: the B18 remedy of a SEEDED REAL shuffle
+    // (startNewShoeWithSeedForTest) is NOT enough here -- it makes the deal order reproducible, and this case then fails
+    // DETERMINISTICALLY (seed 42 produces a natural that changes the settled-round count). The assertions are exact round
+    // counts, so shoe 2 needs a CONTROLLED deck, not merely a repeatable one: all-8s means no naturals, so no insurance
+    // prompt and no auto-settle can change how many rounds settle.
     game.startNewShoeForTest();
+    test_support::seed_deck(game, deck);
     CHECK(game.shoeAnalyticsForTest().bankrollSeries.empty());   // per-shoe reset
     REQUIRE(game.sessionBankrollSeriesForTest().size() == 3u);   // session carried across the boundary
 
