@@ -425,6 +425,12 @@ stable across the soak. **That profile check was not catching the writer** — s
 compares runs to each other, so a writer that emits identical content every run looks stable from run 1. The gate is
 now md5 **before** and **after** against a baseline captured outside the suite.
 
+The gate has a **false-positive** direction as well, and it has already cost a session: the developer running the real
+app (any playtest with the live `$HOME`) legitimately writes that file, and by md5/mtime alone that is **indistinguishable
+from a suite leak**. Before opening a B17-class investigation, check whether the app was run by hand in the same window —
+and note that a real playtest leaves the career history at full size, whereas the B17 writer truncated 9.3 MB to 1.34 MB,
+so **content size and shape discriminate** where the hash alone does not.
+
 > **The test IDs in the Evidence column drifted again and were re-derived on 2026-11-09** against `ctest -N`:
 > **B13 is #280** (not #273 — #273 is now a Surrender test, exactly the trap §13 warns about), the **B9 overlay pair is
 > #299/#300** (not #296/#297, which are the Logger-flush tests), **B11 is #298** (not #295), **U7 is #289–#291** (not
@@ -530,6 +536,14 @@ trusting a stale claim again.
   one. `shuffleWithSeed` is correct where assertions are bands/spans sampled from a distribution (that is what B18's case
   was); it is not sufficient where a test counts rounds. Picking the wrong one of these turns a flake into a hard failure,
   so check which kind of assertion you are stabilising before choosing the remedy.
+- **False alarm worth recording: a moved profile mtime was the developer playtesting, not a leak.** The real
+  `player_profile.json` mtime moved to 01:53:23 mid-session, which reads as a B17 hermeticity breach. Four candidate paths
+  were probed with md5+mtime captured before and after — the full suite at `-j8`, the real binary with `HOME` redirected,
+  `tools/visual_check/check_u12_click.py`, and a clean configure+build (the `catch_discover_tests` path, which executes the
+  test binary at build time) — and **all four left the file byte-identical**. The cause was a manual play session, which is
+  the app behaving correctly. What actually discriminated: the file stayed **9,591,391 bytes** with `name: "William"` and
+  100 shoes at the T2 cap, whereas the B17 writer had truncated it to **1.34 MB** with test data. Recorded in §11's gate
+  note so the next window checks for a manual run before bisecting.
 - **Dead constant recorded, not removed:** `Constants::BET_BUCKET_WIDTH` (`= MAXIMUM_BET / BET_BUCKET_COUNT` = 100) has
   **zero users** in `src/`, `include/` and `tests/`. It encodes the superseded fixed-axis model, so it is a landmine for
   anyone wiring the histogram up again — `HUD` derives the bucket width per view instead. Left in place; delete it with
