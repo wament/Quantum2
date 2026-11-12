@@ -160,6 +160,10 @@ class Game
     // dealt through the round machine, which is what the B18 seeded tests do at length; this hook lets
     // the Daily's OWN behaviour -- book the result, deal no further shoe -- be asserted on its own.
     void finishDailyShoeForTest(const ShoeRecord& finishedShoe) { finishDailyShoe(finishedShoe); }
+    // The tournament's symmetric hook. A real stage boundary needs a whole shoe dealt through the round
+    // machine; this lets the boundary's OWN durable write -- commitTournamentShoe, the run's only one --
+    // be asserted on its own. `finishedShoe` is what dealerTurn captures before resetting the record.
+    void finishTournamentShoeForTest(const ShoeRecord& finishedShoe) { finishTournamentShoe(finishedShoe); }
     // Deterministic variant (B18): builds the shoe exactly as startNewShoe() does — create + shuffle + shoe record +
     // resetShoeAnalytics — but shuffles from `seed` instead of the OS RNG. For tests that need a REAL shuffled shoe
     // (not an injected card list) with a reproducible order; production never calls it.

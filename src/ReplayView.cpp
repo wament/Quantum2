@@ -20,20 +20,26 @@ ReplayView::ReplayView(sf::RenderWindow &window, sf::Texture &cardTexture, sf::F
 
 void ReplayView::drawHistoryList()
 {
-    sf::Text title(font, "Review History - Select a Shoe", 28);
-    title.setString("Review History - Select a Shoe");
+    // The source rides in the title: the three histories are separate vectors, so a player must be able
+    // to see WHICH one a row came from. Labels are ASCII (U13: SFML decodes std::string as ANSI).
+    const std::string sourceLabel = replay.historySourceLabel();
+    const std::string titleText = "Review History - " + sourceLabel + " - Select a Shoe";
+    sf::Text title(font, titleText, 28);
+    title.setString(titleText);
     title.setPosition({60.f, 30.f});
     window.draw(title);
 
-    sf::Text instructions(font, "Up/Down navigate  *  Enter: replay  *  Esc: exit", 16);
-    instructions.setString("Up/Down navigate  *  Enter: replay  *  Esc: exit");
+    const std::string instructionsText = "Up/Down navigate  *  Enter: replay  *  Tab: switch history  *  Esc: exit";
+    sf::Text instructions(font, instructionsText, 16);
+    instructions.setString(instructionsText);
     instructions.setPosition({60.f, 70.f});
     window.draw(instructions);
 
     if (replay.historyEntries.empty())
     {
-        sf::Text none(font, "No shoes recorded yet.", 20);
-        none.setString("No shoes recorded yet.");
+        const std::string noneText = "No " + sourceLabel + " shoes recorded yet.";
+        sf::Text none(font, noneText, 20);
+        none.setString(noneText);
         none.setPosition({60.f, 120.f});
         window.draw(none);
         return;

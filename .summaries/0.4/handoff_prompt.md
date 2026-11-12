@@ -2,7 +2,7 @@ You are continuing work on Blackjack2 (C++17 game / C++20 tests, SFML 3, CMake, 
 
 ## State right now (read before Step 0)
 
-- Test suite is **378/378 green** (~12s serial; clean at `-j4` and `-j8`), code HEAD `6901070` plus the shuffle-determinism, identity and Daily-Challenge work; configure + build clean (warnings only — the pre-existing implicit-this deprecation in GameRenderer.cpp's modeTable() lambdas).
+- Test suite is **395/395 green** (~15s serial; clean at `-j4` and `-j8`), code HEAD `6901070` plus the shuffle-determinism, identity, Daily-Challenge and per-mode-history (MS1) work; configure + build clean (warnings only — the pre-existing implicit-this deprecation in GameRenderer.cpp's modeTable() lambdas). **A clean configure + build into a fresh directory was verified on 2026-11-12**, and the suite is hermetic (the developer's real profile mtime predates every run).
 - **B20 — the one `-j8` flake is FIXED.** Test **#175** ("U12: the session accumulator spans shoes…") failed 1 of the first 10 `-j8` runs. It passes in isolation, and a clean `HEAD` worktree with no U12 part-1 code showed the **same rate**, so it was **pre-existing, not a U12 regression**. Root cause = the **B18 class**: `startNewShoeForTest()` → `startNewShoe()` throws the test's seeded neutral deck away and shuffles from the **OS RNG**, so the rounds driven after the boundary varied per process. Re-seed after the boundary. **Measured: 120 single-test runs = 12/120 failing before, 0/120 after.** If you add a test that crosses a shoe boundary, it must re-seed the deck afterwards for the same reason.
 - §11 defect count: the **B-series is essentially done**. Only B9 remains, and it is ⚠️ **Partly** — Logger flush + summary-overlay bounds are fixed (#292–#294, #296/#297), but one unreproducible R-time crash still has no test.
 - UI/UX backlog (U1–U13): **CLOSED as of 2026-11-12.** **U12 is Resolved — all three parts** (per-graph view toggle #241–#244, session view #175/#176, axis bounds #301–#304), after §10 #8/#9 were decided on 2026-11-11. Note the accepted semantics: part 1 is a per-graph **view** toggle (click a pane → that pane flips per-shoe ↔ per-session; `G` = all three), **not** the per-series **visibility** toggle the original write-up proposed — see the §5 decision of 2026-11-12. U4/U5/U7/U8/U9/U10 landed earlier; **U1, U2, U3, U6, U11** were fixed on 2026-11-09 (`e7677fe`, tests #317–#325) and **verified on screen**, and **U13** (non-ASCII text reaching SFML → mojibake) was found by that screenshot pass and fixed too (#326).
@@ -11,9 +11,15 @@ You are continuing work on Blackjack2 (C++17 game / C++20 tests, SFML 3, CMake, 
 
 ## What is left — choose Step 0 from here
 
-Phase 0.4 is **complete**: the B-series, the U-series and T1/T2 are all Resolved, and §11 has nothing Open. The suite
+Phase 0.4 is **complete**: the B-series, the U-series and T1/T2 are all Resolved, and §11 has nothing Open. **MS1**
+(per-mode shoe history) and **B26** landed on 2026-11-12 and are both Resolved — see §11 and §5's decision of
+2026-11-12 for the storage shape (career `longHistory` stays Regular-only; Daily/tournament get their own capped
+vectors + `ModeStats`; `ShoeRecord::mode` is the router key; `shoesFinished` is NOT record-derived). The suite
 is hermetic and flake-free. The productive Step 0 options are now: **open phase 0.5**, take a UX refinement that
-resists headless locking (see the visual-check note below), or verify the new save schema on screen.
+resists headless locking (see the visual-check note below), or verify the new save schema on screen. MS1's UI half
+**is** verified on screen — `tools/visual_check/check_mode_history.py` (ALL PASS) covers the Replay source switch and
+the mode rows; its README records a trap that cost real time (a seed profile missing a nested required key makes
+`PlayerProfile::load` relocate the file, so the app opens on the name-entry screen and every crop compares 0).
 
   T1 — **RESOLVED 2026-11-12.** Scoped by measurement, which **overturned the write-up**. The real 9,591,391-byte profile was **64.6% indentation whitespace** (`PlayerProfile.cpp:190` wrote `dump(2)`; 427,145 lines), 31.8% `longHistory` rounds, 8.3% stored deck arrays, and only **0.2% `currentHistory` (22,888 bytes)** — so the per-round `RoundRecord` append at `HandEvaluator.cpp:295` that T1 was written as was **never the cost**, and it was left alone deliberately. Shipped: `dump()` (compact), and a shoe stored as **`shoeDecks` + `shuffleSeed`** — two integers that rebuild it exactly — replacing the 313-card array whose *sole* consumer (`Replay.cpp`) needed only the shoe's size. Real file: **9,591,391 → 2,724,930 bytes (71.6%)**. Locked by **#257–#261**.
 

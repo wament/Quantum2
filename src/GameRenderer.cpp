@@ -2,6 +2,7 @@
 #include "Game.hpp"
 #include "GameRenderer.hpp"
 #include "SideBetLabels.hpp"
+#include "ModeStatsLabels.hpp"  // pure main-menu label builders for the Daily / Tournament mode rows
 #include "Constants.hpp"
 #include "Graphics.hpp"
 #include "Replay.hpp"
@@ -1395,10 +1396,10 @@ void GameRenderer::drawMainMenu(Game& game)
         {
             // The streak rides on the menu row: it is the whole retention hook, and a player who has
             // never played sees the plain label rather than a "streak 0" that reads like a defect.
-            // Player::dailyStreak() is a direct field read, not getProfile()'s by-value copy.
+            // Player::dailyStreak() is a direct field read, not getProfile()'s by-value copy. The label
+            // itself is built by a pure helper so it is locked headlessly (ModeStatsLabels.hpp).
             const int streak = game.players.empty() ? 0 : game.players[0].dailyStreak();
-            label = streak > 0 ? "Daily Challenge   (streak " + std::to_string(streak) + ")"
-                               : std::string("Daily Challenge");
+            label = modestats::dailyMenuLabel(streak);
             break;
         }
         case MenuOption::PlayerCount:
@@ -1438,8 +1439,15 @@ void GameRenderer::drawMainMenu(Game& game)
             label = "Practice Basic Strategy";
             break;
         case MenuOption::Tournament:
-            label = "Tournament Mode";
+        {
+            // The tournament's own aggregates ride on its row, mirroring the Daily streak row above.
+            // Cheap direct reads for the same reason (Player.hpp), plain label until the player has
+            // actually completed a run or reached a recorded stage.
+            const int runs = game.players.empty() ? 0 : game.players[0].tournamentRunsCompleted();
+            const int best = game.players.empty() ? 0 : game.players[0].tournamentBestFinish();
+            label = modestats::tournamentMenuLabel(runs, best);
             break;
+        }
         case MenuOption::Achievements:
             label = "Achievements";
             break;

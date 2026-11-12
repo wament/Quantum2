@@ -110,6 +110,12 @@ class Player
     // history every rendered frame to read one int is not acceptable in a draw loop.
     int dailyStreak() const { return profile.dailyStreak; }
 
+    // The tournament aggregates, straight off the seat's profile -- same cheap-accessor reasoning as
+    // dailyStreak(): the main-menu row shows them, and getProfile() returns the profile BY VALUE, so
+    // reading them through it would copy a capped 100-shoe history every rendered frame.
+    int tournamentRunsCompleted() const { return profile.tournamentsCompleted; }
+    int tournamentBestFinish() const { return profile.tournamentStats.bestFinish; }
+
     // Escrow bookkeeping for the round in progress. getAvailableBankroll() is bankroll minus both committed amounts and is the one
     // predicate every bet clamp + HUD hint reads, so a main bet + side bet can never be double-counted against one bankroll (B5).
     // commit* record what is on the table; clearPendingBets() resets them at each round start.

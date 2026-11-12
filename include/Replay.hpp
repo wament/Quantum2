@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "GameRecord.hpp"
+#include "HistoryBrowser.hpp"  // pure source-switch model for the history list (headlessly testable)
 #include "Hand.hpp"
 #include "Card.hpp"
 
@@ -128,12 +129,28 @@ public:
         Playing      // User is actively replaying a shoe
     };
 
+    // Which recorded history the list is showing. The model (cycling, labels, open-on choice) lives in
+    // HistoryBrowser.hpp so it is headlessly testable; this alias keeps the nested name the call sites
+    // already use.
+    using HistorySource = historybrowser::Source;
+
     explicit Replay(sf::RenderWindow &window,
                     sf::Texture &cardTexture,
                     sf::Font &font);
 
-    // Load all shoe records from the player's history
-    void loadHistory(const std::vector<ShoeRecord> &shoes);
+    // Load all three recorded histories and show `source`. The caller passes the profile's vectors
+    // once; cycleHistorySource() switches between them without going back to the profile.
+    void loadHistory(const std::vector<ShoeRecord> &careerShoes,
+                     const std::vector<ShoeRecord> &dailyShoes,
+                     const std::vector<ShoeRecord> &tournamentShoes,
+                     HistorySource source = HistorySource::Career);
+
+    // Switch the list to the next NON-EMPTY source (Career -> Daily -> Tournament -> Career). Empty
+    // sources are skipped so a player who has never played a Daily never lands on a blank list.
+    void cycleHistorySource();
+    HistorySource historySource() const { return historySource_; }
+    // Display name for the title strip. ASCII only -- it reaches sf::Text (U13).
+    const char *historySourceLabel() const;
 
     // Start replaying a specific shoe from history
     void loadShoe(const ShoeRecord &shoe, int shoeIndex);
@@ -211,7 +228,21 @@ private:
     sf::Font &font;
 
     // --- History list ---
-    std::vector<ShoeRecord> allShoes; // full shoe records for loading
+    std::vector<ShoeRecord> allShoes; // the ACTIVE source's records, for loading a shoe later
+    // All three recorded histories, kept so the browser can switch views without the caller
+    // re-supplying them. Only one is shown at a time (allShoes is a copy of the active one).
+    std::vector<ShoeRecord> careerShoes;
+    std::vector<ShoeRecord> dailyShoes;
+    std::vector<ShoeRecord> tournamentShoes;
+    HistorySource historySource_ = HistorySource::Career;
+
+    // Rebuild historyEntries from allShoes and select the newest shoe. Shared by loadHistory and
+    // cycleHistorySource so switching a view cannot drift from the initial one.
+    void rebuildHistoryEntries();
+    const std::vector<ShoeRecord> &shoesFor(HistorySource source) const;
+    // Which of the three histories currently have shoes (the cycling model's input).
+    historybrowser::Populated sourcePopulated() const;
+
     std::vector<ReplayHistoryEntry> historyEntries;
     int selectedHistoryIndex = 0;
 

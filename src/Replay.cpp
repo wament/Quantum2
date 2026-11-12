@@ -56,11 +56,63 @@ Replay::Replay(sf::RenderWindow &window,
     mode = Mode::HistoryList;
 }
 
-void Replay::loadHistory(const std::vector<ShoeRecord> &shoes)
+void Replay::loadHistory(const std::vector<ShoeRecord> &careerShoesIn,
+                         const std::vector<ShoeRecord> &dailyShoesIn,
+                         const std::vector<ShoeRecord> &tournamentShoesIn,
+                         HistorySource source)
 {
-    allShoes = shoes; // store full records so we can load them later
+    careerShoes = careerShoesIn;
+    dailyShoes = dailyShoesIn;
+    tournamentShoes = tournamentShoesIn;
+
+    // Never land on an empty view: a player who has never played a Daily should open on Career, not on
+    // a blank list.
+    historySource_ = historybrowser::preferredOpen(source, sourcePopulated());
+    allShoes = shoesFor(historySource_);
+    rebuildHistoryEntries();
+}
+
+const std::vector<ShoeRecord> &Replay::shoesFor(HistorySource source) const
+{
+    switch (source)
+    {
+    case HistorySource::Daily:
+        return dailyShoes;
+    case HistorySource::Tournament:
+        return tournamentShoes;
+    case HistorySource::Career:
+        break;
+    }
+    return careerShoes;
+}
+
+const char *Replay::historySourceLabel() const
+{
+    return historybrowser::label(historySource_);
+}
+
+void Replay::cycleHistorySource()
+{
+    const historybrowser::Source next = historybrowser::nextNonEmpty(historySource_, sourcePopulated());
+    if (next == historySource_)
+        return;   // no other source has shoes: cycling is a no-op, not a flicker
+    historySource_ = next;
+    allShoes = shoesFor(historySource_);
+    rebuildHistoryEntries();
+}
+
+// Which of the three recorded histories currently have shoes in them.
+historybrowser::Populated Replay::sourcePopulated() const
+{
+    return {!careerShoes.empty(), !dailyShoes.empty(), !tournamentShoes.empty()};
+}
+
+void Replay::rebuildHistoryEntries()
+{
+    const std::vector<ShoeRecord> &shoes = allShoes;
     historyEntries.clear();
     selectedHistoryIndex = 0;
+    historyScrollOffset = 0;
     mode = Mode::HistoryList;
 
     int runningShoeCount = 0;
@@ -759,6 +811,11 @@ void Replay::processEvents(sf::Event &event)
                     break;
                 case sf::Keyboard::Key::Escape:
                     exitReplay();
+                    break;
+                case sf::Keyboard::Key::Tab:
+                    // Career -> Daily -> Tournament. Tab (not Left/Right) because Right already means
+                    // "replay this shoe" here, and a mode switch must not shadow an existing binding.
+                    cycleHistorySource();
                     break;
                 default:
                     break;

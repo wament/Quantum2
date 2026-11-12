@@ -87,7 +87,8 @@ void InputHandler::activateMainMenuOption(Game &game, MenuOption option)
     {
         Logger::info() << "Entering replay history.";
         auto profile = game.players[0].getProfile();
-        game.replay->loadHistory(profile.getLongHistory());
+        game.replay->loadHistory(profile.getLongHistory(), profile.getDailyShoes(),
+                                 profile.getTournamentShoes());
         game.replay->setStartingBankroll(game.players[0].getBankroll());
         game.appMode = AppMode::ReplayHistory;
         break;

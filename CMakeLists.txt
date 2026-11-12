@@ -203,6 +203,7 @@ add_executable(Blackjack2Tests
     tests/test_presentation_layout.cpp
     tests/test_process_isolation.cpp
     tests/test_shoe_mode.cpp
+    tests/test_history_browser.cpp
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)

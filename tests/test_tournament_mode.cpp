@@ -154,3 +154,101 @@ TEST_CASE("Tournament game: builds an equal-chip table under active tournament r
     // The stage-1 minimum bet is enforced as the betting floor for this run.
     REQUIRE(game.activeMinBet() == 25);
 }
+
+namespace
+{
+    // A finished stage shoe, stamped Tournament -- what dealerTurn captures at the boundary.
+    ShoeRecord makeStageShoe(int bankrollAtShoeEnd, int handsWon, int rounds)
+    {
+        ShoeRecord shoe;
+        shoe.mode = ShoeMode::Tournament;
+        shoe.bankrollAtShoeEnd = bankrollAtShoeEnd;
+        shoe.completed = true;
+        for (int r = 0; r < rounds; ++r)
+        {
+            RoundRecord round;
+            round.timestamp = 1000 + r;
+            for (int i = 0; i < handsWon; ++i)
+            {
+                HandOutcome hand;
+                hand.playerIndex = 0;
+                hand.won = true;
+                hand.wager = 10;
+                hand.payout = 20;
+                round.playerHands.push_back(hand);
+            }
+            shoe.rounds.push_back(round);
+        }
+        return shoe;
+    }
+}
+
+// The tournament's ONLY durable write, and the producer this change adds. The seat is ephemeral
+// (setPersistable(false)), so without commitTournamentShoe a run records nothing at all -- and with a
+// router that falls through, a run would silently rewrite the player's career. Both directions.
+TEST_CASE("Tournament: a stage shoe is recorded on the career file and never touches career stats", "[Tournament][Session]")
+{
+    test_support::IsolatedHome home("tournament_record");   // B17: hermetic HOME
+    const std::string path = Player::savePath();
+
+    // A real career profile to protect: a bankroll and one completed career shoe.
+    {
+        PlayerProfile seed("Career");
+        seed.setBankroll(7777);
+        RoundRecord round;
+        round.timestamp = 1;
+        HandOutcome hand;
+        hand.playerIndex = 0;
+        hand.won = true;
+        hand.wager = 10;
+        hand.payout = 20;
+        round.playerHands.push_back(hand);
+        seed.addRoundRecord(round);
+        ShoeRecord meta;
+        meta.mode = ShoeMode::Regular;
+        meta.bankrollAtShoeEnd = 1500;
+        seed.addShoeRecord(meta);
+        seed.save(path);
+    }
+
+    Game game(true);   // headless
+    Tournament::TournamentConfig cfg;
+    cfg.stages = 2;
+    game.startTournamentSession(cfg);
+
+    // Stage 1 runs out: the shoe is booked on disk and the run advances to stage 2.
+    game.finishTournamentShoeForTest(makeStageShoe(2400, 9, 2));
+
+    {
+        const PlayerProfile after = PlayerProfile::load(path);
+        REQUIRE(after.getTournamentShoes().size() == 1);
+        CHECK(after.getTournamentShoes()[0].mode == ShoeMode::Tournament);
+        CHECK(after.getTournamentShoes()[0].bankrollAtShoeEnd == 2400);
+        CHECK(after.tournamentModeStats().shoesPlayed == 1);
+        CHECK(after.tournamentModeStats().bestBankroll == 2400);
+        CHECK(after.tournamentModeStats().mostHandsWon == 18);   // 2 rounds x 9, per-SHOE total
+        CHECK(after.tournamentModeStats().bestFinish == 1);      // the stage that just ran out
+        CHECK(after.tournamentsCompleted == 0);                  // stage 2 remains
+
+        // THE invariant: the career half is untouched by the run.
+        CHECK(after.getBankroll() == 7777);
+        REQUIRE(after.getLongHistory().size() == 1);
+        CHECK(after.getLongHistory()[0].mode == ShoeMode::Regular);
+        CHECK(after.applyRollup().wins == 1);
+        CHECK(after.getDailyShoes().empty());
+    }
+
+    // The final stage runs out: recorded, the peak from stage 1 survives, and the run counts complete.
+    game.finishTournamentShoeForTest(makeStageShoe(3100, 4, 1));
+
+    const PlayerProfile after = PlayerProfile::load(path);
+    CHECK(after.getTournamentShoes().size() == 2);
+    CHECK(after.tournamentModeStats().shoesPlayed == 2);
+    CHECK(after.tournamentModeStats().bestBankroll == 3100);
+    CHECK(after.tournamentModeStats().mostHandsWon == 18);   // stage 1's peak survived stage 2
+    CHECK(after.tournamentModeStats().bestFinish == 2);
+    CHECK(after.tournamentsCompleted == 1);
+    CHECK(after.getBankroll() == 7777);
+    REQUIRE(after.getLongHistory().size() == 1);
+    CHECK(after.applyRollup().wins == 1);
+}

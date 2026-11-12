@@ -144,7 +144,9 @@ Game::Game()
     // can drive betting decisions through Game's delegators. No SFML dependency.
     betting_ = std::make_unique<BettingHandler>();
     auto profile = players[0].getProfile();
-    replay->loadHistory(profile.getLongHistory());
+    // All three recorded histories, not just career: Daily and tournament shoes live in their own
+    // vectors, so a browser that reads longHistory alone can never show them.
+    replay->loadHistory(profile.getLongHistory(), profile.getDailyShoes(), profile.getTournamentShoes());
     replay->setStartingBankroll(players[0].getBankroll());
     // restore previously-unlocked achievements from the profile (additive: empty for new/legacy profiles).
     achievementManager_.loadUnlockedFrom(profile.unlockedAchievementIds);

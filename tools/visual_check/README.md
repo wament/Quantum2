@@ -18,6 +18,7 @@ DISPLAY=:97 python3 tools/visual_check/harness.py     # menu, hover, resize, ach
 DISPLAY=:97 python3 tools/visual_check/check_u6.py    # deal -> hit fan -> settled totals
 DISPLAY=:97 python3 tools/visual_check/check_menu.py  # hover marker glyph at two window sizes
 DISPLAY=:97 python3 tools/visual_check/check_u12_click.py  # per-graph click toggle + 'G' bulk switch (prints PASS/FAIL)
+DISPLAY=:97 python3 tools/visual_check/check_mode_history.py  # MS1: per-mode history browser + mode rows (prints PASS/FAIL)
 ```
 
 Screenshots land in `tools/visual_check/shots/` (git-ignored). Override with `BJ_SHOTS`, `BJ_REPO`, `BJ_BIN`.
@@ -30,6 +31,23 @@ Screenshots land in `tools/visual_check/shots/` (git-ignored). Override with `BJ
 | `check_u6.py` | **U6** 3+ card fan is centred on the seat and shows more than a sliver of each card; hand totals sit on dark pills that stay legible over the felt |
 | `check_menu.py` | The hover marker glyph actually renders (see the font rule below) at 1600×900 and 900×560 |
 | `check_u12_click.py` | **U12 part 1** per-graph view toggle: one click on the Bankroll pane changes **only** that pane's title strip (measured AE 947 / 0 / 0), and `G` changes the two still-per-shoe panes while leaving the already-session pane at 0. Proves the pane hit-test and the per-pane draw selection, not just the flag |
+| `check_mode_history.py` | **MS1** per-mode history: the main-menu rows carry their aggregates (`Daily Challenge (streak 5)`, `Tournament Mode (2 runs, best stage 4)`), the history-list title strip names the source, and `Tab` switches **which history the list shows** — measured on the title strip: Career→Daily 4101, Daily→Tournament 4391, Tournament→Career 3626, and a no-key re-capture of one state diffs **0** (the stability control that makes those non-zeros mean something). The third `Tab` lands on a frame pixel-identical to the first Career frame, proving the cycle wraps rather than drifting |
+
+## A fifth trap: a hand-authored profile must write EVERY nested required key
+
+`check_mode_history.py` seeds a profile with career + Daily + tournament shoes. Its first version wrote
+round records with only `timestamp` / `runningCount` / `playerHands` / `dealerCards` — and the app opened
+on the **name-entry screen**, because `from_json(RoundRecord&)` reads all six of its fields with `j.at()`
+(`trueCount` and `cardsRemaining` were missing), the throw propagated to `PlayerProfile::load`, and the
+loader's recovery is *"relocate the file, start fresh"*. The profile was gone before the first frame drew,
+so every screenshot in the run showed the same unrelated screen and every crop compared **0**.
+
+That is B24's **stated limitation**, live: the `jsonOr*` guards cover the top-level fields; nested reads
+(`RoundRecord`, `HandOutcome`) are still strict. Two consequences for anyone writing a scenario:
+
+1. Seed complete nested records, or the app silently starts from an empty profile.
+2. **Check the run log for `Corrupt profile ... relocated` before trusting a black/blank/unexpected
+   screenshot.** The symptom here was a plausible screen, not a crash — the same shape as README trap 2.
 
 ## Measuring pixels, not just looking at them
 
