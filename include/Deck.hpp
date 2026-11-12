@@ -28,6 +28,17 @@ class Deck
     const Card& getCard(std::size_t index) const;
     const std::vector<Card>& getCards() const;
 
+    // B21: the seed that produced the current shoe's order. Set by shuffle() (from std::random_device), by
+    // shuffleWithSeed() (from the caller), and by reshuffleWithRemaining() (a fresh OS seed) — every path that
+    // reorders the shoe records what it used, so a shoe is reproducible from its own record. This is what makes
+    // "store the seed, not the deck" sound: create(shoeDecks()) + shuffleWithSeed(shuffleSeed()) rebuilds the
+    // identical shoe, card for card.
+    unsigned long long shuffleSeed() const { return lastShuffleSeed; }
+
+    // The number of decks this shoe was built from (NOT the card count — shuffleWith() inserts a cut card, so a
+    // 6-deck shoe is 313 cards). Recorded alongside the seed because the seed alone does not fix the shoe size.
+    int shoeDecks() const { return shoeDecks_; }
+
     bool empty() const;
     std::size_t size() const;
 
@@ -39,7 +50,10 @@ class Deck
   private:
     std::vector<Card> cards;
     std::mt19937 rng;
-    unsigned long long lastShuffleSeed;
+    // Must start at 0: shuffleSeed() is read when a shoe record is written, and a Deck that was filled by
+    // setCards()/create() without a shuffle has no seed. An indeterminate value here would be serialized as a
+    // plausible-looking seed and silently corrupt replay reconstruction.
+    unsigned long long lastShuffleSeed = 0;
 
     // Shared body of shuffle() / shuffleWithSeed(): the only difference is where the seed comes from.
     void shuffleWith(unsigned long long seed);

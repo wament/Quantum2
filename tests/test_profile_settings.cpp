@@ -1,5 +1,6 @@
 #include <catch2/catch_all.hpp>
 #include <Constants.hpp>
+#include <Deck.hpp>
 #include <PlayerProfile.hpp>
 #include <Serialization.hpp>
 #include <filesystem>
@@ -236,23 +237,24 @@ TEST_CASE("B12: when both keys are present the corrected key wins over the typo'
     fs::remove(path);
 }
 
-// T1 (schema half). Every saved shoe carried a full copy of its 313-card deck. The ONLY consumer of that array is
-// Replay, and it reads just its SIZE (src/Replay.cpp:157) -- so the array bought one integer, and on the real capped
-// profile it cost 792,200 of 9,591,391 bytes. These lock the compact schema AND, above all, that legacy saves which DO
-// carry the array still load: from_json used j.at("initialDeck"), a REQUIRED key, so making the field optional is the
-// part that decides whether old profiles survive.
+// T1 + B21 (schema). Every saved shoe used to carry a full copy of its 313-card deck; the ONLY consumer of that array
+// was Replay, and it read just the shoe's SIZE (src/Replay.cpp). On the real capped profile the array cost 792,200 of
+// 9,591,391 bytes. A shoe is now stored as the two integers that rebuild it -- the number of decks it was created from
+// and the seed that shuffle used. B21 is what makes that sound: the seed used to be serialized as a constant 0 because
+// nothing assigned it. History was reset alongside this change, so there is no legacy "initialDeck" reader left -- the
+// array, the field and its compatibility branch are all removed.
 namespace {
 
-ShoeRecord shoeWithDeck(int cards)
+// Builds a record the way production does: shuffle a real shoe, then capture what the Deck reports.
+ShoeRecord recordFromShuffle(int decks)
 {
+    Deck deck;
+    deck.create(decks);
+    deck.shuffle();
+
     ShoeRecord s;
-    for (int i = 0; i < cards; ++i)
-    {
-        Card c;
-        c.value = 2 + (i % 13);
-        c.suit = static_cast<Suit>(i % 4);
-        s.initialDeck.push_back(c);
-    }
+    s.shoeDecks = deck.shoeDecks();
+    s.shuffleSeed = deck.shuffleSeed();
     RoundRecord r;
     r.timestamp = 1;
     s.rounds.push_back(r);
@@ -260,44 +262,68 @@ ShoeRecord shoeWithDeck(int cards)
     return s;
 }
 
+// Rebuilds the shoe a record describes -- exactly what Replay::buildSteps() does.
+std::vector<Card> shoeFromRecord(const ShoeRecord& s)
+{
+    Deck deck;
+    deck.create(s.shoeDecks);
+    deck.shuffleWithSeed(s.shuffleSeed);
+    return deck.getCards();
+}
+
+bool sameShoe(const std::vector<Card>& a, const std::vector<Card>& b)
+{
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if (a[i].value != b[i].value || a[i].suit != b[i].suit) return false;
+    return true;
+}
+
 } // namespace
 
-TEST_CASE("T1: a saved shoe stores the deck size, not the deck itself", "[Profile][History][T1]")
+TEST_CASE("T1: a saved shoe stores the seed and deck count, never the cards", "[Profile][History][T1]")
 {
-    const ShoeRecord s = shoeWithDeck(313);
+    const ShoeRecord s = recordFromShuffle(6);
     const json j = s;
 
-    CHECK_FALSE(j.contains("initialDeck"));          // the 313-card array is gone from NEW writes
-    REQUIRE(j.contains("initialDeckSize"));
-    CHECK(j["initialDeckSize"].get<int>() == 313);
+    CHECK_FALSE(j.contains("initialDeck"));                        // the 313-card array is gone from the schema
+    REQUIRE(j.contains("shuffleSeed"));
+    REQUIRE(j.contains("shoeDecks"));
+    CHECK(j["shuffleSeed"].get<unsigned long long>() != 0ull);     // B21: a real seed, not the old constant 0
+    CHECK(j["shoeDecks"].get<int>() == 6);
 
     const ShoeRecord back = j.get<ShoeRecord>();
-    CHECK(back.deckSize() == 313);                   // what Replay actually needs
+    CHECK(back.shuffleSeed == s.shuffleSeed);
+    CHECK(back.shoeDecks == 6);
     CHECK(back.bankrollAtShoeEnd == 1234);
     REQUIRE(back.rounds.size() == 1u);
 }
 
-TEST_CASE("T1: a legacy save that stores the full deck still loads", "[Profile][History][T1][Legacy]")
+TEST_CASE("B21: a record's seed rebuilds the shoe Replay counts cards against", "[Profile][History][B21]")
 {
-    // Exactly the shape pre-T1 profiles on disk have: an "initialDeck" array, no "initialDeckSize".
-    json j;
-    j["initialDeck"] = json::array();
-    for (int i = 0; i < 313; ++i)
-        j["initialDeck"].push_back({{"value", 9}, {"suit", 3}});
-    j["rounds"] = json::array();
-    j["completed"] = true;
+    Deck original;
+    original.create(6);
+    original.shuffle();
 
-    const ShoeRecord s = j.get<ShoeRecord>();
-    CHECK(s.initialDeck.size() == 313u);             // legacy array preserved, not discarded
-    CHECK(s.deckSize() == 313);                      // size derived from it
+    ShoeRecord s;
+    s.shoeDecks = original.shoeDecks();
+    s.shuffleSeed = original.shuffleSeed();
+
+    const ShoeRecord back = json(s).get<ShoeRecord>();             // through JSON and back
+    const std::vector<Card> rebuilt = shoeFromRecord(back);
+
+    CHECK(rebuilt.size() == 313u);                                 // 312 + cut card: drives cardsRemaining/trueCount
+    CHECK(sameShoe(rebuilt, original.getCards()));                 // the shoe that was actually dealt
 }
 
-TEST_CASE("T1: a shoe with neither deck field is not silently treated as a full shoe", "[Profile][History][T1]")
+TEST_CASE("B21: a record written without a seed still rebuilds a valid shoe", "[Profile][History][B21]")
 {
     json j;
     j["rounds"] = json::array();
     const ShoeRecord s = j.get<ShoeRecord>();
-    CHECK(s.deckSize() == 0);
+    CHECK(s.shoeDecks == Constants::NUM_DECKS);
+    CHECK(s.shuffleSeed == 0ull);
+    CHECK(shoeFromRecord(s).size() == 313u);   // seed 0 is deterministic, not a crash and not garbage
 }
 
 TEST_CASE("T1: the profile is written compact, not pretty-printed", "[Profile][Save][T1]")
@@ -305,7 +331,7 @@ TEST_CASE("T1: the profile is written compact, not pretty-printed", "[Profile][S
     const fs::path path = test_support::temp_path("t1compact", "profile");
     {
         PlayerProfile p("William");
-        p.addShoeRecord(shoeWithDeck(313));
+        p.addShoeRecord(recordFromShuffle(6));
         p.save(path.string());
     }
 
@@ -318,15 +344,15 @@ TEST_CASE("T1: the profile is written compact, not pretty-printed", "[Profile][S
     CHECK(text.size() < 20000);                      // one shoe; the stored deck array alone was ~8 KB of JSON
 }
 
-TEST_CASE("T1: dropping the stored deck is what shrinks a capped 100-shoe history", "[Profile][History][T1]")
+TEST_CASE("T1: storing a shoe as seed + deck count is what shrinks a capped 100-shoe history", "[Profile][History][T1]")
 {
     json arr = json::array();
     for (int i = 0; i < 100; ++i)
-        arr.push_back(shoeWithDeck(313));
+        arr.push_back(recordFromShuffle(6));
     const std::size_t bytes = json(arr).dump().size();
 
     // Measured on the real profile: the 100 stored decks alone were 792,200 bytes. Rounds here are one trivial
-    // record per shoe, so anything near the old figure means the array crept back into the schema.
-    CHECK(bytes < 200000);
+    // record per shoe, so anything near that figure means the array crept back into the schema.
+    CHECK(bytes < 20000);
 }
 

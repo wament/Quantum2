@@ -199,7 +199,10 @@ constexpr int MAXIMUM_BET = 1000;
 // MAXIMUM_BET (see HUD::computeAxisMax, §10 decision #8). The histogram always shows the same number of evenly spaced
 // bars instead of one bar per distinct bet size.
 constexpr int BET_BUCKET_COUNT = 10;
-constexpr int BET_BUCKET_WIDTH = MAXIMUM_BET / BET_BUCKET_COUNT;
+// BET_BUCKET_WIDTH was removed 2026-11-12: it was MAXIMUM_BET / BET_BUCKET_COUNT, i.e. a FIXED axis width, and U12
+// replaced that model with an axis that grows with the largest wager in the view window. The live bucket width is
+// therefore computed per view (HUD.cpp: (axisHi - axisLo) / BET_BUCKET_COUNT), so a compile-time constant cannot
+// describe it. It had zero users when deleted.
 
 // Kelly betting constants. f* = edge / variance, with BLACKJACK_VARIANCE ~1.37 (std-dev ~1.14 per bet).
 constexpr float BLACKJACK_VARIANCE = 1.37f;

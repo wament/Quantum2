@@ -166,35 +166,28 @@ inline void from_json(const json& j, RoundRecord& r)
 // ShoeRecord serialization
 inline void to_json(json& j, const ShoeRecord& s)
 {
-    // T1: writes the deck's CARD COUNT, not the 313-card array. The array's only consumer (src/Replay.cpp) reads
-    // just its size, and on the real capped profile the array was 792,200 of 9,591,391 bytes.
+    // T1/B21: the shoe is stored as (shoeDecks, shuffleSeed) -- two integers that rebuild it exactly -- not as a
+    // copy of its 313 cards, which was 792,200 of the real profile's 9,591,391 bytes.
     j = {
-        {"initialDeckSize", s.deckSize()},
+        {"shoeDecks", s.shoeDecks},
+        {"shuffleSeed", s.shuffleSeed},
         {"rounds", s.rounds},
         {"completed", s.completed},
-        {"bankrollAtShoeEnd", s.bankrollAtShoeEnd},
-        {"shuffleSeed", s.shuffleSeed}
+        {"bankrollAtShoeEnd", s.bankrollAtShoeEnd}
     };
 }
 
 inline void from_json(const json& j, ShoeRecord& s)
 {
-    // T1: "initialDeckSize" is the compact field new saves write. "initialDeck" is now OPTIONAL and legacy-only --
-    // it used to be j.at("initialDeck"), a REQUIRED key, so leaving it required would make every save written by the
-    // compact schema throw on load. Profiles that carry the array keep it (and derive the count from it).
-    s.initialDeckSize = j.value("initialDeckSize", 0);
-    if (j.contains("initialDeck"))
-    {
-        j.at("initialDeck").get_to(s.initialDeck);
-        if (s.initialDeckSize == 0)
-            s.initialDeckSize = static_cast<int>(s.initialDeck.size());
-    }
     j.at("rounds").get_to(s.rounds);
+    // Defaults keep a hand-edited or partially written file from throwing; they are not legacy-schema support --
+    // the pre-T1 "initialDeck" array is gone, and history was reset with the schema change.
+    s.shoeDecks = j.value("shoeDecks", Constants::NUM_DECKS);
+    s.shuffleSeed = j.value("shuffleSeed", 0ull);
     if (j.contains("completed"))
         j.at("completed").get_to(s.completed);
-    // additive: absent "completed" keeps its default (true); old profiles still load.
-    s.shuffleSeed = j.value("shuffleSeed", 0ull);
-    // additive: missing key falls back to 0 (unknown bankroll); old saves still load.
+    // additive: absent "completed" keeps its default (true).
+    // additive: missing key falls back to 0 (unknown bankroll).
     s.bankrollAtShoeEnd = j.value("bankrollAtShoeEnd", 0);
 }
 

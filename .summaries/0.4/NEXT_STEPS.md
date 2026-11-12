@@ -887,25 +887,31 @@ stale test IDs; each correction is noted inline.
 - [x] B5–B8, B14 and B15 fixed. (`4f85d37`, `584aa4b`, `11b187b`, `11f6f50`, `9d1d125`, `9a89185`) B15 landed before
       B12/B13 as required. `src/Serialization.hpp` no longer exists, so the two-copies trap that clause guarded is
       gone — there is a single `include/Serialization.hpp` today.
-- [x] B9 overlay indexing guarded (`facea14` / **#299/#300** — the "#296/#297" this line used to cite is stale, see
-      §13) and logger flush fixed (`d6d6436`) — both clauses of the overlay+flush DoD met. The unreproducible
-      `R`-time crash itself remains Open (see PHASE 2 note).
+- [x] B9 **fully closed 2026-11-12**: logger flush (`d6d6436`), overlay bounds guard (`facea14`), and the
+      intermittent `R`-time crash — which the developer confirmed came from **their own manual playtesting**, and that
+      is precisely why it never produced a clean record. No product-code change was made for the crash; the repro
+      scaffold at `tests/test_analytics.cpp:575` drives the reported play → quit-to-menu → dashboard flow and passes.
+      If it ever reappears from ordinary play, reopen it as a new ID with a clean capture.
 - [x] B10–B12 resolved (`69cd9e8`; B11 and B12 carry no hash in §11); legacy profiles verified to still load —
-      re-verified 2026-11-12 against the developer's real pre-T1 file and locked by **#254**.
+      re-verified 2026-11-12 against the developer's real pre-T1 file (100 shoes, 1,688 rounds recovered).
 - [x] U1, U2, U3, U7 addressed — the four a new player hits within five minutes. (U7 `e157052`; U1/U2/U3 resolved
       2026-11-09. The old text said "U1/U2/U3 still Open".)
-- [x] Persistence round-trip + renderer-string extraction tests exist. (#253–#257, including the legacy-schema
-      round-trip; #339 asserts every string reaching `sf::Text` is ASCII-only.)
-- [x] Full suite green — **340/340** (the old text said "currently **277/277**"), at or above baseline and growing as
-      each fix adds its regression test. Verified clean **4/4 at `ctest -j8`** after the B20 fix.
+- [x] Persistence round-trip + renderer-string extraction tests exist. (#257–#261 cover the shoe-record round trip,
+      seed→shoe reconstruction and the compact writer; #13–#16 cover the shuffle-seed property. The ASCII-only
+      renderer-string test is #343.)
+- [x] Full suite green — **344/344** (the old text said "currently **277/277**"), at or above baseline and growing as
+      each fix adds its regression test. Verified clean at `-j4` and `-j8` after the B20 fix.
 - [x] `.summaries/0.4/CONTEXT.md` §11 status table and §10 decisions updated before handoff. (§10 rows 1–6 were
       missing their Resolved markers, and row 3's stated default of $1,000 contradicted the shipped
       `STARTING_BANKROLL = 10000`; both corrected 2026-11-12.)
 
-**Phase 0.4 is functionally complete.** What remains in §11 is not fixable by the same method: **B9** is Partial
-because the intermittent `R`-time crash is genuinely unreproducible, so no test can be written for it and it cannot
-satisfy a test-gated DoD; **B21** is latent (a serialized field that is never assigned) and documented; and
-`Constants::BET_BUCKET_WIDTH` is a dead constant superseded by U12's axis model.
+**Phase 0.4 is complete.** The B-series, the U-series and T1/T2 are all Resolved; the last Partial (B9) closed once
+its cause was attributed, and B21 closed with the seed wired in both directions. `Constants::BET_BUCKET_WIDTH` is
+deleted. Nothing in §11 is Open.
+
+**Reading these documents:** inserting tests renumbers every later ID, and the shift is not uniform across citations
+made on different dates (the U12 session test is #179 today, cited as #175; B17's isolation test is #344, cited as
+#327). Treat numeric IDs as **provenance, not addresses** — locate a test by its **name**.
 
 # Explicitly out of scope
 

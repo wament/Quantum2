@@ -38,6 +38,7 @@ float Replay::playerRevealAt(int handIndex, int cardIndex)
 #include "FontManager.hpp"
 #include "Hand.hpp"
 #include "Card.hpp"
+#include "Deck.hpp"  // B21: rebuilds a recorded shoe from the seed stored in its record
 #include "ReplayView.hpp"
 #include "ReplayLayout.hpp"
 #include <algorithm>
@@ -154,8 +155,13 @@ Replay::buildSteps(const ShoeRecord &shoe)
     std::vector<ReplayInternals::ReplayStep> result;
     int shoeProfit = 0;
     int runningCount = 0; // track count incrementally
-    // T1: deckSize() covers both schemas -- a new save (count only, no array) and a legacy one (array, no count).
-    int totalCards = shoe.deckSize();
+    // B21: the shoe is rebuilt from the record's own seed rather than stored inside it. The record carries the
+    // number of decks it was built from and the seed that shuffle used, which reproduce the shoe exactly --
+    // including the cut card, which is why the count is 313 for a 6-deck shoe and drives cardsRemaining/trueCount.
+    Deck shoeDeck;
+    shoeDeck.create(shoe.shoeDecks);
+    shoeDeck.shuffleWithSeed(shoe.shuffleSeed);
+    int totalCards = static_cast<int>(shoeDeck.size());
     int cardsDealtSoFar = 0;
 
     // Helper to add a step and update count after a card is dealt

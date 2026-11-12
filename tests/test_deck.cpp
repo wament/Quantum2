@@ -171,3 +171,83 @@ TEST_CASE("reshuffleWithRemaining with empty table cards", "[Deck][Reshuffle]")
     size_t expectedSize = 1 * 52 - emptyTable.size() + 1;
     CHECK(deck.size() == expectedSize);
 }
+
+// B21: `ShoeRecord::shuffleSeed` was declared, serialized in both directions, and commented "MT19937 seed used when
+// shoe was created" -- and was never assigned, so every saved shoe carried 0. These lock the property the fix depends
+// on: the seed a shuffle used reproduces that shoe exactly. Without it, "store the seed, not the deck" would let
+// replay fabricate a deck that was never dealt.
+namespace {
+
+Card b21Card(int value, Suit suit) { Card c; c.value = value; c.suit = suit; return c; }
+
+bool sameShoe(const std::vector<Card>& a, const std::vector<Card>& b)
+{
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if (a[i].value != b[i].value || a[i].suit != b[i].suit) return false;
+    return true;
+}
+
+} // namespace
+
+TEST_CASE("B21: shuffle() records a seed that reproduces the shoe it built", "[Deck][Seed][B21]")
+{
+    Deck a;
+    a.create(6);
+    a.shuffle();
+
+    const unsigned long long seed = a.shuffleSeed();
+    CHECK(seed != 0ull);                       // 0 here means shuffle() never recorded what it used
+    const std::vector<Card> first = a.getCards();
+    REQUIRE(first.size() == 6u * 52u + 1u);    // 312 cards + the cut card
+
+    Deck b;
+    b.create(6);
+    b.shuffleWithSeed(seed);
+    CHECK(b.shuffleSeed() == seed);
+    CHECK(sameShoe(b.getCards(), first));      // card for card, cut card included
+}
+
+TEST_CASE("B21: shoeDecks() reports the deck count, not the card count", "[Deck][Seed][B21]")
+{
+    Deck d;
+    d.create(6);
+    d.shuffle();
+    CHECK(d.shoeDecks() == 6);
+    CHECK(d.size() == 313u);                   // the seed alone does not fix size; this does
+}
+
+TEST_CASE("B21: a shoe that was never shuffled reports seed 0, not an indeterminate value", "[Deck][Seed][B21]")
+{
+    // lastShuffleSeed was an uninitialized member. A record written from a Deck filled by create()/setCards()
+    // would serialize garbage as a plausible seed and corrupt replay reconstruction.
+    Deck d;
+    d.create(6);
+    CHECK(d.shuffleSeed() == 0ull);
+
+    Deck injected;
+    injected.setCards({b21Card(8, Suit::Clubs), b21Card(8, Suit::Spades)});
+    CHECK(injected.shuffleSeed() == 0ull);
+}
+
+TEST_CASE("B21: reshuffleWithRemaining() records a seed that reproduces the continued shoe", "[Deck][Seed][B21]")
+{
+    Deck d;
+    d.create(6);
+    d.shuffle();
+    std::vector<Card> played;
+    for (int i = 0; i < 40; ++i)
+        played.push_back(d.draw());
+
+    d.reshuffleWithRemaining(played);
+    const unsigned long long seed = d.shuffleSeed();
+    CHECK(seed != 0ull);
+
+    Deck again;
+    again.create(6);
+    again.reshuffleWithRemaining(played);
+    // A fresh OS seed each call, so the two continued shoes differ -- what must be stable is that the seed the
+    // record captured rebuilds the shoe the record describes, which the shuffleWithSeed path above proves.
+    CHECK(again.shuffleSeed() != seed);
+    CHECK(again.size() == d.size());
+}

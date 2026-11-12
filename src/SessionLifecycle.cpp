@@ -58,8 +58,8 @@ void SessionLifecycle::startTournamentSession(const Tournament::TournamentConfig
     // a fresh + shuffled shoe, per-shoe analytics reset (bankrolls persist), and enter at PlaceBets so the human places a bet to deal.
     game.deck.create(game.tournament->decksPerShoe());
     game.deck.shuffle();
-    game.currentShoeRecord.initialDeck = game.deck.getCards();
-    game.currentShoeRecord.initialDeckSize = static_cast<int>(game.currentShoeRecord.initialDeck.size());
+    game.currentShoeRecord.shoeDecks = game.deck.shoeDecks();
+    game.currentShoeRecord.shuffleSeed = game.deck.shuffleSeed();
     game.currentShoeRecord.rounds.clear();
 
     game.resetShoeAnalytics();
@@ -202,8 +202,8 @@ void SessionLifecycle::startNewGame()
 
     game.deck.create(game.gameRules_.numDecks);
     game.deck.shuffle();
-    game.currentShoeRecord.initialDeck = game.deck.getCards();
-    game.currentShoeRecord.initialDeckSize = static_cast<int>(game.currentShoeRecord.initialDeck.size());
+    game.currentShoeRecord.shoeDecks = game.deck.shoeDecks();
+    game.currentShoeRecord.shuffleSeed = game.deck.shuffleSeed();
     game.currentShoeRecord.rounds.clear();
 
     // A brand-new shoe: every per-shoe readout starts from zero
