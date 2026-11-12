@@ -166,8 +166,10 @@ inline void from_json(const json& j, RoundRecord& r)
 // ShoeRecord serialization
 inline void to_json(json& j, const ShoeRecord& s)
 {
+    // T1: writes the deck's CARD COUNT, not the 313-card array. The array's only consumer (src/Replay.cpp) reads
+    // just its size, and on the real capped profile the array was 792,200 of 9,591,391 bytes.
     j = {
-        {"initialDeck", s.initialDeck},
+        {"initialDeckSize", s.deckSize()},
         {"rounds", s.rounds},
         {"completed", s.completed},
         {"bankrollAtShoeEnd", s.bankrollAtShoeEnd},
@@ -177,7 +179,16 @@ inline void to_json(json& j, const ShoeRecord& s)
 
 inline void from_json(const json& j, ShoeRecord& s)
 {
-    j.at("initialDeck").get_to(s.initialDeck);
+    // T1: "initialDeckSize" is the compact field new saves write. "initialDeck" is now OPTIONAL and legacy-only --
+    // it used to be j.at("initialDeck"), a REQUIRED key, so leaving it required would make every save written by the
+    // compact schema throw on load. Profiles that carry the array keep it (and derive the count from it).
+    s.initialDeckSize = j.value("initialDeckSize", 0);
+    if (j.contains("initialDeck"))
+    {
+        j.at("initialDeck").get_to(s.initialDeck);
+        if (s.initialDeckSize == 0)
+            s.initialDeckSize = static_cast<int>(s.initialDeck.size());
+    }
     j.at("rounds").get_to(s.rounds);
     if (j.contains("completed"))
         j.at("completed").get_to(s.completed);

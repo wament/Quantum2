@@ -405,6 +405,7 @@ void Game::startNewShoeWith(std::optional<unsigned long long> seed)
         deck.shuffle();
     currentShoeRecord = {};
     currentShoeRecord.initialDeck = deck.getCards();
+    currentShoeRecord.initialDeckSize = static_cast<int>(currentShoeRecord.initialDeck.size());
     resetShoeAnalytics();
 }
 
@@ -1540,6 +1541,7 @@ void Game::handleEmptyDeck()
     // Start fresh shoe record, marked as continuation
     currentShoeRecord = {};
     currentShoeRecord.initialDeck = deck.getCards();
+    currentShoeRecord.initialDeckSize = static_cast<int>(currentShoeRecord.initialDeck.size());
     currentShoeRecord.isContinuation = true;
 
     // A reshuffled continuation is a new shoe: same reset the other boundaries use

@@ -176,6 +176,18 @@ struct ShoeRecord
     bool completed = true; // true if cut card reached, false if player quit mid-shoe
     int bankrollAtShoeEnd = 0; // player's bankroll when the shoe record was finalized (backs the lifetime bankroll progression)
     unsigned long long shuffleSeed = 0; // MT19937 seed used when shoe was created
+
+    // T1: the card count of the shoe as dealt. New saves write THIS instead of the 313-card `initialDeck` array, because
+    // the array's only consumer (src/Replay.cpp) reads just its size -- on the real capped profile the array was 792,200
+    // of 9,591,391 bytes. Defaults to 0 and is additive, so legacy saves (which carry the array, not this) still load.
+    int initialDeckSize = 0;
+
+    // The shoe's card count: the compact field when present, else derived from a legacy stored deck. Use this, not
+    // `initialDeck.size()`, so a newly-saved shoe (no array) and a legacy one (array, no count) both report correctly.
+    int deckSize() const
+    {
+        return initialDeckSize > 0 ? initialDeckSize : static_cast<int>(initialDeck.size());
+    }
 };
 
 // Aggregate of the record-derivable career counters for every shoe that has rolled OFF the longHistory cap (T2). Stored so a

@@ -59,6 +59,7 @@ void SessionLifecycle::startTournamentSession(const Tournament::TournamentConfig
     game.deck.create(game.tournament->decksPerShoe());
     game.deck.shuffle();
     game.currentShoeRecord.initialDeck = game.deck.getCards();
+    game.currentShoeRecord.initialDeckSize = static_cast<int>(game.currentShoeRecord.initialDeck.size());
     game.currentShoeRecord.rounds.clear();
 
     game.resetShoeAnalytics();
@@ -202,6 +203,7 @@ void SessionLifecycle::startNewGame()
     game.deck.create(game.gameRules_.numDecks);
     game.deck.shuffle();
     game.currentShoeRecord.initialDeck = game.deck.getCards();
+    game.currentShoeRecord.initialDeckSize = static_cast<int>(game.currentShoeRecord.initialDeck.size());
     game.currentShoeRecord.rounds.clear();
 
     // A brand-new shoe: every per-shoe readout starts from zero

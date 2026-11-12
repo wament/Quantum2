@@ -154,7 +154,8 @@ Replay::buildSteps(const ShoeRecord &shoe)
     std::vector<ReplayInternals::ReplayStep> result;
     int shoeProfit = 0;
     int runningCount = 0; // track count incrementally
-    int totalCards = static_cast<int>(shoe.initialDeck.size());
+    // T1: deckSize() covers both schemas -- a new save (count only, no array) and a legacy one (array, no count).
+    int totalCards = shoe.deckSize();
     int cardsDealtSoFar = 0;
 
     // Helper to add a step and update count after a card is dealt

@@ -879,16 +879,33 @@ never cleared" (catches B2 — grep every `hudState.` field for a reset path).
 
 # Definition of done (phase 0.4)
 
-- [ ] B1–B4 and B13 fixed, each with a named regression test that fails without the fix.
-- [ ] B5–B8, B14 and B15 fixed, or explicitly deferred with a written rationale in CONTEXT.md §5.
-      (B15 must land **before** B12/B13 — they edit the header it duplicates.)
-- [x] B9 overlay indexing guarded (`facea14` / #296/#297) and logger flush fixed (`d6d6436`) — both clauses of the overlay+flush DoD met. The unreproducible `R`-time crash itself remains Open (see PHASE 2 note).
-- [ ] B10–B12 resolved; legacy profiles verified to still load.
-- [ ] U1, U2, U3, U7 addressed — the four a new player hits within five minutes. (U7 done 2026-11-07 `e157052`; U1/U2/U3 still Open.)
-- [ ] Persistence round-trip + renderer-string extraction tests exist.
-- [ ] Full suite green (currently **277/277**) with a test count at or above the current baseline, growing as each fix adds
-      its regression test.
-- [ ] `.summaries/0.4/CONTEXT.md` §11 status table and §10 decisions updated before handoff.
+Ticked 2026-11-12 against the §11 status table. The old list was entirely unchecked and carried stale counts and
+stale test IDs; each correction is noted inline.
+
+- [x] B1–B4 and B13 fixed, each with a named regression test that fails without the fix. (`5107aa7`, `f3aeb1f`,
+      `c7978f1`, `3924b56`, `387a3e0`)
+- [x] B5–B8, B14 and B15 fixed. (`4f85d37`, `584aa4b`, `11b187b`, `11f6f50`, `9d1d125`, `9a89185`) B15 landed before
+      B12/B13 as required. `src/Serialization.hpp` no longer exists, so the two-copies trap that clause guarded is
+      gone — there is a single `include/Serialization.hpp` today.
+- [x] B9 overlay indexing guarded (`facea14` / **#299/#300** — the "#296/#297" this line used to cite is stale, see
+      §13) and logger flush fixed (`d6d6436`) — both clauses of the overlay+flush DoD met. The unreproducible
+      `R`-time crash itself remains Open (see PHASE 2 note).
+- [x] B10–B12 resolved (`69cd9e8`; B11 and B12 carry no hash in §11); legacy profiles verified to still load —
+      re-verified 2026-11-12 against the developer's real pre-T1 file and locked by **#254**.
+- [x] U1, U2, U3, U7 addressed — the four a new player hits within five minutes. (U7 `e157052`; U1/U2/U3 resolved
+      2026-11-09. The old text said "U1/U2/U3 still Open".)
+- [x] Persistence round-trip + renderer-string extraction tests exist. (#253–#257, including the legacy-schema
+      round-trip; #339 asserts every string reaching `sf::Text` is ASCII-only.)
+- [x] Full suite green — **340/340** (the old text said "currently **277/277**"), at or above baseline and growing as
+      each fix adds its regression test. Verified clean **4/4 at `ctest -j8`** after the B20 fix.
+- [x] `.summaries/0.4/CONTEXT.md` §11 status table and §10 decisions updated before handoff. (§10 rows 1–6 were
+      missing their Resolved markers, and row 3's stated default of $1,000 contradicted the shipped
+      `STARTING_BANKROLL = 10000`; both corrected 2026-11-12.)
+
+**Phase 0.4 is functionally complete.** What remains in §11 is not fixable by the same method: **B9** is Partial
+because the intermittent `R`-time crash is genuinely unreproducible, so no test can be written for it and it cannot
+satisfy a test-gated DoD; **B21** is latent (a serialized field that is never assigned) and documented; and
+`Constants::BET_BUCKET_WIDTH` is a dead constant superseded by U12's axis model.
 
 # Explicitly out of scope
 

@@ -4,6 +4,8 @@
 #include <Serialization.hpp>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <string>
 #include "test_support.hpp"
 
 using namespace Constants;
@@ -232,5 +234,99 @@ TEST_CASE("B12: when both keys are present the corrected key wins over the typo'
     CHECK(loaded.gameRules.resplitTensAllowed == false);   // corrected key wins; typo'd key is only the fallback
 
     fs::remove(path);
+}
+
+// T1 (schema half). Every saved shoe carried a full copy of its 313-card deck. The ONLY consumer of that array is
+// Replay, and it reads just its SIZE (src/Replay.cpp:157) -- so the array bought one integer, and on the real capped
+// profile it cost 792,200 of 9,591,391 bytes. These lock the compact schema AND, above all, that legacy saves which DO
+// carry the array still load: from_json used j.at("initialDeck"), a REQUIRED key, so making the field optional is the
+// part that decides whether old profiles survive.
+namespace {
+
+ShoeRecord shoeWithDeck(int cards)
+{
+    ShoeRecord s;
+    for (int i = 0; i < cards; ++i)
+    {
+        Card c;
+        c.value = 2 + (i % 13);
+        c.suit = static_cast<Suit>(i % 4);
+        s.initialDeck.push_back(c);
+    }
+    RoundRecord r;
+    r.timestamp = 1;
+    s.rounds.push_back(r);
+    s.bankrollAtShoeEnd = 1234;
+    return s;
+}
+
+} // namespace
+
+TEST_CASE("T1: a saved shoe stores the deck size, not the deck itself", "[Profile][History][T1]")
+{
+    const ShoeRecord s = shoeWithDeck(313);
+    const json j = s;
+
+    CHECK_FALSE(j.contains("initialDeck"));          // the 313-card array is gone from NEW writes
+    REQUIRE(j.contains("initialDeckSize"));
+    CHECK(j["initialDeckSize"].get<int>() == 313);
+
+    const ShoeRecord back = j.get<ShoeRecord>();
+    CHECK(back.deckSize() == 313);                   // what Replay actually needs
+    CHECK(back.bankrollAtShoeEnd == 1234);
+    REQUIRE(back.rounds.size() == 1u);
+}
+
+TEST_CASE("T1: a legacy save that stores the full deck still loads", "[Profile][History][T1][Legacy]")
+{
+    // Exactly the shape pre-T1 profiles on disk have: an "initialDeck" array, no "initialDeckSize".
+    json j;
+    j["initialDeck"] = json::array();
+    for (int i = 0; i < 313; ++i)
+        j["initialDeck"].push_back({{"value", 9}, {"suit", 3}});
+    j["rounds"] = json::array();
+    j["completed"] = true;
+
+    const ShoeRecord s = j.get<ShoeRecord>();
+    CHECK(s.initialDeck.size() == 313u);             // legacy array preserved, not discarded
+    CHECK(s.deckSize() == 313);                      // size derived from it
+}
+
+TEST_CASE("T1: a shoe with neither deck field is not silently treated as a full shoe", "[Profile][History][T1]")
+{
+    json j;
+    j["rounds"] = json::array();
+    const ShoeRecord s = j.get<ShoeRecord>();
+    CHECK(s.deckSize() == 0);
+}
+
+TEST_CASE("T1: the profile is written compact, not pretty-printed", "[Profile][Save][T1]")
+{
+    const fs::path path = test_support::temp_path("t1compact", "profile");
+    {
+        PlayerProfile p("William");
+        p.addShoeRecord(shoeWithDeck(313));
+        p.save(path.string());
+    }
+
+    std::ifstream in(path);
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    fs::remove(path);
+
+    // dump(2) emitted one line per key (the real profile was 427,145 lines, 64.6% whitespace); compact emits none.
+    CHECK(text.find('\n') == std::string::npos);
+    CHECK(text.size() < 20000);                      // one shoe; the stored deck array alone was ~8 KB of JSON
+}
+
+TEST_CASE("T1: dropping the stored deck is what shrinks a capped 100-shoe history", "[Profile][History][T1]")
+{
+    json arr = json::array();
+    for (int i = 0; i < 100; ++i)
+        arr.push_back(shoeWithDeck(313));
+    const std::size_t bytes = json(arr).dump().size();
+
+    // Measured on the real profile: the 100 stored decks alone were 792,200 bytes. Rounds here are one trivial
+    // record per shoe, so anything near the old figure means the array crept back into the schema.
+    CHECK(bytes < 200000);
 }
 

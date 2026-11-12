@@ -187,7 +187,9 @@ void PlayerProfile::save(const std::string& filename) const
             return;
         }
         json out_json = reconciled;
-        out << out_json.dump(2);
+        // T1: compact, not dump(2). Pretty-printing was 64.6% of the real profile (6,199,262 of 9,591,391 bytes,
+        // 427,145 lines) for a file no human reads; the load path parses either form identically.
+        out << out_json.dump();
     }
 
     std::error_code ec;
