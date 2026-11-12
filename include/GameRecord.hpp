@@ -143,7 +143,7 @@ struct HandOutcome
     int insuranceBet = 0;          // insurance wager (only on first hand of round)
     bool insuranceTaken = false;   // whether insurance was taken
     int playerIndex = 0;           // which player this hand belongs to
-    std::string playerName = "";   // human-readable seat name (William or an NPC)
+    std::string playerName = "";   // human-readable seat name (the player's entered name, or an NPC)
 
     // the side bet attached to this hand, resolved independently of the main-hand payout above.
     SideBetKind sideBetKind = SideBetKind::None;

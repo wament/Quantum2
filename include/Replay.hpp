@@ -72,7 +72,7 @@ namespace ReplayInternals
             bool isDoubledDown = false;
             bool isSurrendered = false;
             std::vector<std::string> actionsTaken;
-            std::string playerName = "";  // seat identity (William or an NPC name)
+            std::string playerName = "";  // seat identity (the player's entered name, or an NPC name)
 
             // Computed properties: derive them from Hand on demand, or cache lazily:
             bool isBlackjack() const { return cards.isBlackjack(); }

@@ -36,7 +36,7 @@ void SessionLifecycle::startTournamentSession(const Tournament::TournamentConfig
     // player's progress while a tournament is a competition, not career play -- contrast startNewGame(), which also loads the real
     // profile rather than fabricating an ephemeral one. markPersistable(false) stops every saveProfile() during the run from writing
     // these throwaway chips/stats over the on-disk career file (the B1 bug).
-    game.players.push_back(Player("William"));
+    game.players.push_back(Player(Constants::DEFAULT_PLAYER_NAME));
     game.players[0].setPersistable(false);
     game.players[0].setBankroll(config.startingChips);
 
@@ -186,8 +186,9 @@ void SessionLifecycle::startNewGame()
 
     game.players.clear();
 
-    // Human player (William) - always first
-    game.players.push_back(Player("William"));
+    // Human player - always first. The name is a placeholder: Player's loading constructor adopts the persisted
+    // profile name, and the name-entry screen collects it on first startup.
+    game.players.push_back(Player(Constants::DEFAULT_PLAYER_NAME));
 
     for (int i = 0; i < GameConfig::NPC_COUNT && i + 1 < game.playerCount; i++)
     {

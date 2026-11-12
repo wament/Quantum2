@@ -109,7 +109,7 @@ Game::Game()
       achievementFeeder_(*this)
 {
     window.setView(gameView);
-    players.push_back(Player("William"));
+    players.push_back(Player(Constants::DEFAULT_PLAYER_NAME));
     // Open the main menu on the settings this player actually uses instead of the compile-time defaults.
     applySavedTableSettings();
     npcActionTimer = 0.0f;
@@ -779,7 +779,7 @@ void Game::startTestRound(int seats)
 {
     // In-memory seats (NPC constructor: no disk read/write), so tests stay hermetic.
     players.clear();
-    players.emplace_back("William", GameConfig::STARTING_BANKROLL);
+    players.emplace_back(Constants::DEFAULT_PLAYER_NAME, GameConfig::STARTING_BANKROLL);
 
     for (int i = 0; i + 1 < seats; ++i)
     {

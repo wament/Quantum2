@@ -56,9 +56,13 @@ So a shoe code is reproducible across builds of the *same* standard library, and
 `IDEAS.md` flagged this in one sentence under #4 and moved on. It is now load-bearing: the seed is the shipped
 mechanism, and #4, #9 and #1's shareable puzzles all assume a code means the same shoe on two machines.
 
-**Recommendation, and it is time-sensitive.** Replace the two `std::shuffle` calls with one hand-written Fisher-Yates
-driven directly by the engine, with rejection sampling so the index range is fully specified by the program. About ten
-lines, two call sites, and a seed then means the same shoe **forever and everywhere**.
+**DONE 2026-11-12, same day.** The two `std::shuffle` calls were replaced with a local `shuffleShoe()` in `Deck.cpp`:
+hand-written Fisher-Yates drawing indices straight from `std::mt19937` through `uniformIndex()`, which does its own
+**rejection sampling** so the index range is specified by the program rather than by a library distribution. mt19937's
+output is fixed by the standard, so a seed now means the same shoe on every platform. The window was still open when
+this landed — history had been wiped hours earlier, so no existing shoe order needed preserving. Frozen by **#18**
+`[Golden]`, which pins the first eight cards and the cut-card index for seed `0xC0FFEE`; a future change to the order
+fails loudly instead of silently redefining every seed ever written.
 
 **Why now:** shoe order only has to be preserved for shoes already on disk. History was wiped today, so there is
 **nothing to invalidate**. Change the shuffle after the player has accumulated a hundred shoes and every pre-change
@@ -249,7 +253,7 @@ second feature, because both are cheap today and expensive tomorrow:
 |---|---|---|---|
 | 1 | **#6 Bankroll Chart** | S | Cheapest real feature; its only trap is gone; the chart primitives are reused by #2, #5 and #9 |
 | 2 | **`Game::persistsProgress()`** | S | Not in the list, and it unblocks #1, #2, #4, #8, #10 (§B.3). Build it before the first of them |
-| 3 | **Fixed Fisher-Yates in `Deck`** | S | §B.1. Costs nothing while history is empty; costs a silent-corruption migration later |
+| 3 | ~~**Fixed Fisher-Yates in `Deck`**~~ **DONE 2026-11-12** | S | §B.1 shipped the same day, while history was empty. Locked by #18 `[Golden]` |
 | 4 | **#4 Shoe Codes** | S–M | Half of it shipped today. Cheaper than #3 now |
 | 5 | **#3 Leak Report** | M | Unblocked, self-contained, makes existing tracking legible |
 | 6 | **#1 Decision Fork** | L | The riskiest third is already built and tested |
@@ -284,15 +288,18 @@ second feature, because both are cheap today and expensive tomorrow:
 
 ## G. Decisions this review hands back
 
-1. **Schema policy going forward.** The additive-JSON contract was broken deliberately today. Do future phases get to
-   add **required** fields, or is today a one-off reset and additive-optional returns? Every idea that adds a profile
-   field (#4, #5, #7, #8, #10) depends on the answer. Recommend: required fields, with a version bump and a
-   wipe-and-rebuild path, since the project has just paid once for silent schema drift.
-2. **Do the shuffle-portability fix now?** §B.1. The window is open only while history is empty.
+1. ~~**Schema policy going forward.**~~ **ANSWERED 2026-11-12**: future features *will* add profile fields. Policy
+   recorded in `CONTEXT.md` §5 — write unconditionally, read with `j.value(key, default)` (a partial-write guard, not
+   legacy support), never keep a reader for a field that is no longer written, and bump-and-wipe when a field's
+   **meaning** changes rather than adding a translation branch. Every idea that adds a field (#4, #5, #7, #8, #10) can
+   proceed on that basis.
+2. ~~**Do the shuffle-portability fix now?**~~ **DONE 2026-11-12**, same day — see §B.1 and #18 `[Golden]`.
 3. **Is the Daily wanted at all?** `IDEAS.md` calls its own justification the weakest in the document. The **code**
    half is unambiguously valuable and is now nearly free; the Daily is a separate product decision.
-4. **Lift name entry out of #10?** Four hard-coded `"William"` sites, a `name` field that already round-trips, and a
-   shipped cosmetic defect. It is an S, not an L.
+4. ~~**Lift name entry out of #10?**~~ **DONE 2026-11-12, and it was a defect, not a feature.** The name-entry screen
+   already existed (U7) and worked; the four hard-coded `"William"` sites were what suppressed the identity on screen.
+   Removing them exposed **B23** — the loading constructor never synced the seat's display name from the profile, so
+   the entered name was persisted but never shown. Fixed; #10 is now purely the scripted tutorial.
 5. **Which feature is the phase 0.5 flagship?** The list's own answer (#1, the fork) is now better positioned than when
    it was written, because the hardest part of it shipped as a side effect of closing a storage bug.
 

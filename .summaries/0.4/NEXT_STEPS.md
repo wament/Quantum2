@@ -899,7 +899,7 @@ stale test IDs; each correction is noted inline.
 - [x] Persistence round-trip + renderer-string extraction tests exist. (#257–#261 cover the shoe-record round trip,
       seed→shoe reconstruction and the compact writer; #13–#16 cover the shuffle-seed property. The ASCII-only
       renderer-string test is #343.)
-- [x] Full suite green — **345/345** (the old text said "currently **277/277**"), at or above baseline and growing as
+- [x] Full suite green — **349/349** (the old text said "currently **277/277**"), at or above baseline and growing as
       each fix adds its regression test. Verified clean at `-j4` and `-j8` after the B20 fix.
 - [x] `.summaries/0.4/CONTEXT.md` §11 status table and §10 decisions updated before handoff. (§10 rows 1–6 were
       missing their Resolved markers, and row 3's stated default of $1,000 contradicted the shipped
@@ -907,9 +907,10 @@ stale test IDs; each correction is noted inline.
 
 **Phase 0.4 is complete.** The B-series, the U-series and T1/T2 are all Resolved; the last Partial (B9) closed once
 its cause was attributed, and B21 closed with the seed wired in both directions. `Constants::BET_BUCKET_WIDTH` is
-deleted. Nothing in §11 is Open. The last row added was **B22** (2026-11-12), a second never-assigned/never-serialized
-shoe field found while testing the B21 continuation case — it also caught a B21 regression, so read §13's third entry
-before touching `ShoeRecord`.
+deleted. Nothing in §11 is Open. Three rows were added on 2026-11-12 after the storage work: **B22** (a shoe field
+never read and never serialized, which also caught a B21 regression), **B23** (the player's displayed name was
+hard-coded and never synced from the profile), and the shuffle-portability fix in §5. **Read §13's third and fourth
+entries before touching `ShoeRecord` or `Deck`'s shuffle** — both changed the meaning of persisted data.
 
 **Reading these documents:** inserting tests renumbers every later ID, and the shift is not uniform across citations
 made on different dates (the U12 session test is #179 today, cited as #175; B17's isolation test is #344, cited as

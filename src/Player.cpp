@@ -32,6 +32,12 @@ Player::Player(const std::string& playerName)
 
     // Try to load existing profile; otherwise create new
     profile = PlayerProfile::load(savePath);
+
+    // U7: the profile is the source of truth for identity. Construction sites pass a neutral placeholder, and a
+    // returning player's name lives in the profile -- so adopt it here. Without this the seat kept the placeholder and
+    // the on-screen seat label showed it on every launch while the profile held the name the player typed.
+    if (!profile.getName().empty())
+        name = profile.getName();
     // U8 parity: a brand-new / recovered profile (empty name == never played, or bankroll explicitly zero) starts at the standard
     // starting bankroll so it matches an NPC seat -- not the stale $1000 default that had humans starting with 1/10th of every
     // opponent's stack. Only the in-memory bankroll is reseeded; profile.name stays empty so needsNameEntry() still prompts on a

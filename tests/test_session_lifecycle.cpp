@@ -29,7 +29,7 @@ TEST_CASE("#8 delegation: startNewGame() builds a reset, playable session", "[Ga
     REQUIRE(game.getAppModeForTest() == AppMode::Playing);   // session started, not left parked on the menu
     auto& seats = game.playersForTest();
     REQUIRE(seats.size() >= 1);                             // at least the human seat exists
-    REQUIRE(seats[0].getName() == "William");               // the human is always seat index 0
+    REQUIRE(seats[0].getName() == Constants::DEFAULT_PLAYER_NAME);   // the human is always seat index 0
     REQUIRE(game.deckSizeForTest() > 0);                    // the shoe was created + shuffled
 
     game.startNewGame();                                    // a second reset re-runs the per-shoe reset

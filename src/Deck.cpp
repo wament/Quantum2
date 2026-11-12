@@ -3,7 +3,37 @@
 #include "Logger.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <random>
+
+namespace {
+
+// A uniform index in [0, n) drawn straight from the engine, with rejection sampling so it is unbiased.
+// Deliberately NOT std::uniform_int_distribution: the standard leaves that distribution's algorithm
+// implementation-defined, and that is what made a recorded shuffleSeed pin a shoe only within one standard library.
+// Everything here is fixed by this program -- mt19937's output is fixed by the standard, and the loop below is fixed
+// by us -- so a seed means the same shoe on every platform and every future libstdc++ build.
+std::size_t uniformIndex(std::mt19937& rng, std::size_t n)
+{
+    const std::uint64_t range = static_cast<std::uint64_t>(rng.max()) - static_cast<std::uint64_t>(rng.min()) + 1;
+    const std::uint64_t limit = range - (range % n);   // largest multiple of n inside the engine's range
+    std::uint64_t value;
+    do
+    {
+        value = static_cast<std::uint64_t>(rng()) - static_cast<std::uint64_t>(rng.min());
+    } while (value >= limit);
+    return static_cast<std::size_t>(value % n);
+}
+
+// Fisher-Yates (Durstenfeld): swap each slot with a uniformly chosen earlier one, walking down from the last.
+// Replaces std::shuffle at both shoe-construction sites. Callers must pass a non-empty vector.
+void shuffleShoe(std::vector<Card>& cards, std::mt19937& rng)
+{
+    for (std::size_t i = cards.size(); i > 1; --i)
+        std::swap(cards[i - 1], cards[uniformIndex(rng, i)]);
+}
+
+} // namespace
 
 void Deck::create(int numberOfDecks)
 {
@@ -52,7 +82,7 @@ void Deck::shuffleWith(unsigned long long seed)
 
     lastShuffleSeed = seed;
     rng = std::mt19937(static_cast<std::mt19937::result_type>(lastShuffleSeed));
-    std::shuffle(cards.begin(), cards.end(), rng);
+    shuffleShoe(cards, rng);
 
     cutCardReached = false;
 
@@ -108,7 +138,7 @@ void Deck::reshuffleWithRemaining(const std::vector<Card>& playedCards)
     // Reseed from the OS RNG so the continued shoe's order is unpredictable.
     lastShuffleSeed = std::random_device{}();
     rng = std::mt19937(static_cast<std::mt19937::result_type>(lastShuffleSeed));
-    std::shuffle(cards.begin(), cards.end(), rng);
+    shuffleShoe(cards, rng);
 
     // Cut card sits 25 from the end (clamped for very small shoes)
     const std::size_t cutInsertAt = 25;

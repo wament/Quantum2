@@ -288,3 +288,41 @@ TEST_CASE("B21: a continuation shoe is smaller than a fresh shoe and the seed ca
     CHECK(static_cast<int>(rebuilt.size()) == back.shoeDecks * 52 + 1);
     CHECK_FALSE(sameShoe(rebuilt.getCards(), d.getCards()));  // the seed describes a shoe that was never dealt
 }
+
+// The shoe order must be defined by THIS PROGRAM, not by the standard library. Deck used std::shuffle, whose swap
+// sequence is specified but which draws its indices through std::uniform_int_distribution -- and that distribution's
+// algorithm is implementation-defined. A recorded shuffleSeed therefore pinned a shoe only within one standard
+// library, which is exactly what #4 Shoe Codes, #9 Ghost Rival and #1's shareable forks need to cross machines.
+// Deck::shuffleWith() now runs a hand-written Fisher-Yates over the engine, so the order is fully specified.
+// This test freezes that order: if a future change moves it, this fails loudly instead of silently redefining every
+// seed the app has ever written.
+TEST_CASE("B21: a seed pins an exact card order independent of the standard library", "[Deck][Seed][Golden]")
+{
+    Deck d;
+    d.create(6);
+    d.shuffleWithSeed(0xC0FFEEULL);
+
+    const std::vector<Card>& shoe = d.getCards();
+    REQUIRE(shoe.size() == 313u);
+
+    // Frozen first eight cards of the 0xC0FFEE six-deck shoe, plus the tail (the cut card is at index 25 and must
+    // survive in the same place).
+    // Frozen first eight cards of the 0xC0FFEE six-deck shoe. Regenerate deliberately (never by "fixing" a red test):
+    // a change here means every seed the app has ever written now describes a different shoe.
+    const int expValue[8] = {12, 7, 13, 3, 1, 7, 4, 6};
+    const int expSuit[8]  = { 3, 1,  1, 3, 0, 1, 0, 2};
+    for (int i = 0; i < 8; ++i)
+    {
+        INFO("index " << i << " got value=" << shoe[i].value << " suit=" << static_cast<int>(shoe[i].suit));
+        CHECK(shoe[i].value == expValue[i]);
+        CHECK(static_cast<int>(shoe[i].suit) == expSuit[i]);
+    }
+
+    CHECK(shoe[25].value == Constants::CUT_CARD_VALUE);   // the cut card position is part of the contract
+
+    // Same seed, second Deck => identical order. Cheap, and it is the property every seed consumer depends on.
+    Deck again;
+    again.create(6);
+    again.shuffleWithSeed(0xC0FFEEULL);
+    CHECK(sameShoe(again.getCards(), shoe));
+}

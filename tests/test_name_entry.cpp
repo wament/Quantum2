@@ -78,3 +78,45 @@ TEST_CASE("commitPlayerName persists the name through save/load", "[NameEntry][P
     REQUIRE(reloaded.needsNameEntry() == false);
     CHECK(reloaded.testPlayer().getProfile().getName() == "Ada");
 }
+
+// The gap the tests above left open: they assert the PERSISTED name, and that part worked. The seat's DISPLAY name came
+// from the constructor argument, and every construction site passed a hard-coded personal name, so the loading
+// constructor never synced it -- the screen kept showing that name after a restart while the profile held "Ada".
+// GameRenderer.cpp:564 draws getName() as the seat label, so this was visible on every launch.
+TEST_CASE("U7: a reopened seat displays the persisted name, not a hard-coded placeholder", "[NameEntry][Persistence]")
+{
+    test_support::IsolatedHome home("name_display");
+    {
+        Game game(true);
+        game.startNewGame();
+        game.commitPlayerName("Ada");
+    }
+
+    Game reloaded(true);
+    reloaded.startNewGame();
+    CHECK(reloaded.testPlayer().getProfile().getName() == "Ada");   // persisted (was already true)
+    CHECK(reloaded.testPlayer().getName() == "Ada");                // displayed (this is the fix)
+}
+
+TEST_CASE("U7: a fresh seat carries the neutral placeholder and still asks for a name", "[NameEntry]")
+{
+    test_support::IsolatedHome home("name_placeholder");
+    Game game(true);
+    game.startNewGame();
+
+    CHECK(game.testPlayer().getName() == Constants::DEFAULT_PLAYER_NAME);
+    CHECK(game.testPlayer().getProfile().getName().empty());
+    CHECK(game.needsNameEntry() == true);
+}
+
+TEST_CASE("U7: an explicit commit overrides the placeholder in the live seat", "[NameEntry]")
+{
+    test_support::IsolatedHome home("name_commit");
+    Game game(true);
+    game.startNewGame();
+    REQUIRE(game.testPlayer().getName() == Constants::DEFAULT_PLAYER_NAME);
+
+    game.commitPlayerName("Grace O'Malley");
+    CHECK(game.testPlayer().getName() == "Grace O'Malley");
+    CHECK(game.testPlayer().getProfile().getName() == "Grace O'Malley");
+}

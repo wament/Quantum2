@@ -128,6 +128,12 @@ constexpr unsigned WINDOW_HEIGHT = 900;
 // Max characters a player may enter on the name-entry screen (U7). Kept as a named constant so InputHandler's clamp and the
 // renderer's "n chars" hint read from one value instead of two magic numbers.
 constexpr unsigned MAX_PLAYER_NAME_LENGTH = 24;
+
+// The neutral display name for a human seat that has not been named yet. It is a PLACEHOLDER only: the name-entry
+// screen (AppMode::NameEntry) replaces it on first startup, and Player's loading constructor adopts the persisted
+// profile name on every later launch. No production site may hard-code a personal name -- the seat label at
+// GameRenderer.cpp:564 draws Player::getName(), so a hard-coded name reappears on screen on every launch.
+constexpr const char* DEFAULT_PLAYER_NAME = "Player";
 constexpr const char* WINDOW_TITLE = "Blackjack";
 
 // Panel layout
