@@ -620,6 +620,16 @@ void InputHandler::processGameEvents(const sf::Event& event)
             game.pauseSelection = PauseOption::Resume;
         }
 
+        // U12 session view: 'G' cycles the side-panel graphs between per-shoe and per-session accumulation. Handled here,
+        // before the auto-play / non-human returns below, so it works at any round state (including auto-play) -- viewing a
+        // chart never needs to be an action you take with the hand.
+        if (key->code == sf::Keyboard::Key::G)
+        {
+            game.cycleGraphView();
+            Logger::info() << "Side-panel graph view: "
+                           << (game.hudState.graphView == HUDState::GraphViewMode::Session ? "session" : "per-shoe") << ".";
+        }
+
         // In auto-play mode (AutoPlay or refresh-rate Gamer), player cannot take actions (except R and Escape handled above)
         if (GameTiming::isAutoPlaying(game.gameSpeed))
             return;
