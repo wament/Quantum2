@@ -9,7 +9,7 @@ architecture and guardrails.
 The suite is **303/303 green**. Every defect (B1–B16) has a dedicated fix commit + passing regression test — see the
 Status column below for each commit hash and test ID. The only genuinely still-OPEN work now is B9's unreproducible
 `R`-time crash (never reproducibly captured, so no deterministic test can close it) plus the UI/UX backlog (U1–U12), of
-which U4, U5, U7, U8, U9 and U10 are Resolved, and **U1, U2, U3, U6 and U11 were Resolved on 2026-11-09 and verified on screen with an Xvfb screenshot harness**. The single remaining UI item is **U12** (side-panel graph toggles + session view + bet-axis bounds), which needs a bucket-bounds decision first. That gap — everything
+which U4, U5, U7, U8, U9 and U10 are Resolved, and **U1, U2, U3, U6 and U11 were Resolved on 2026-11-09 and verified on screen with an Xvfb screenshot harness**. **U12** (side-panel graph toggles + session view + bet-axis bounds) was the single remaining UI item; it was **Resolved on 2026-11-12** once §10 #8/#9 were decided, so the UI/UX backlog U1–U13 is **closed**. That gap — everything
 remaining lives in the presentation/lifecycle seam the headless-first contract
 deliberately leaves untested — is still the theme of this phase; see §11 for the full open list.
 
@@ -105,9 +105,10 @@ count than you started.
 | B10 | 🟡 Medium | `maxSplitHands` is dead config (no UI row, not serialized) | `src/GameRules.cpp:15-27` / `include/GameRules.hpp` `to_json` | 3 | ✅ Resolved `69cd9e8` (#280/#282) |
 | B11 | 🟡 Medium | Startup control banner mislabels Left/Right | `src/Game.cpp:162-163` | 3 | ✅ Resolved `140e9b5` (#295) |
 | B12 | 🟡 Medium | Save-schema typo `resplitTentsAllowed` ("Tens") | `include/GameRules.hpp` | 3 | ✅ Resolved `31a3703` (#241–243) |
-| U1–U12 | 🟡 Medium | UI/UX defects (see Phase 4) | various | 4 | ✅ Resolved this phase: U4 (#307–#308), U5 (#309–#311), U7 (#287 + #289–#291), U8 (#70), U9 (#312–#315), U10 (#282/#283), **U1 (#317), U2 (#318), U3 (#319–#320), U6 (#321–#322), U11 (#323–#325)** — the last five verified on screen with the Xvfb harness. Open: **U12 only**. **U13** (non-ASCII → SFML mojibake, found by screenshot) #326 Resolved |
+| U1–U12 | 🟡 Medium | UI/UX defects (see Phase 4) | various | 4 | ✅ Resolved this phase: U4 (#307–#308), U5 (#309–#311), U7 (#287 + #289–#291), U8 (#70), U9 (#312–#315), U10 (#282/#283), **U1 (#317), U2 (#318), U3 (#319–#320), U6 (#321–#322), U11 (#323–#325)** — the last five verified on screen with the Xvfb harness — and **U12 (#301–#304, #175/#176, #241–#244) on 2026-11-12**, closing the UI set. **U13** (non-ASCII → SFML mojibake, found by screenshot) #326 Resolved. **Open UI: none.** |
 | T1–T2 | 🟢 Low | Save-write amplification; unbounded history | `src/HandEvaluator.cpp:297` | 5 | ✅ Resolved `1abda8f`,`fbaea91` (#302/#303 / #298) |
 | B16 | 🟡 Medium | `reconstructDeckAtRound()` is dead code and reconstructs from the wrong end | `include/GameRecord.hpp:307-329` | 5 | ✅ Resolved `5f81d48` (dead-code deletion; no dedicated regression test) |
+| B20 | 🟡 Medium | Test **#175** flaked under `ctest -j8`: `startNewShoeForTest()` → `startNewShoe()` discards the test's seeded deck and shuffles from the **OS RNG**, so post-boundary rounds varied per process | `tests/test_analytics.cpp` (U12 session-accumulator case) | 2 | ✅ Resolved 2026-11-12 — B18 pattern: re-seed the deterministic deck after the shoe boundary. Measured **12/120 → 0/120** over 120 single-test runs; baseline confirmed pre-existing on a clean `HEAD` worktree. Test-only |
 
 **Every "Primary site" above was re-checked against `96fd416` on 2026-11-06 and is correct**, as is every
 `file:line` citation in the body of this document — the citations are the reliable part of these docs. What the
@@ -793,11 +794,35 @@ hint's U+2022 bullets. *Fix:* ASCII labels, or build `sf::String(U"…")`/`std::
 `tests/test_presentation_layout.cpp` **#326** (red verified against the exact pre-fix byte sequences). Recorded, not
 fixed: `Card::getSuitSymbol()` returns `u8"♠"[0]` — a single truncated byte, dead code, no callers.
 
-**U12 — DEFERRED by decision on 2026-11-09** (the phase stopped with the U-series closed; U12 is the only UI item left, and it
-is the largest: three sub-parts, two of which need §10 decisions #8 (histogram bounds) and #9 (session = new dataset vs view)
-answered first). Original finding follows.
+**U12 — RESOLVED 2026-11-12, all three parts.** It was the last open UI item of the phase; it unblocked when §10 #8
+(histogram bounds → option a) and #9 (session = a NEW dataset → option a) were decided on 2026-11-11. What shipped is
+summarised immediately below, and the original finding is kept underneath it as written.
 
 **U12 — Side-panel graphs: no per-graph visibility toggle, only a per-shoe view (no session view), and Bets Placed X-axis is
+**What shipped** (side panel; `HUD::drawCharts`, `HUD::cycleGraphScope`, `Game::cycleGraphView`, `SessionAnalytics`):
+
+- **(3) Axis** — `HUD::computeAxisMax` spans `[MINIMUM_BET, 100]` and grows to the largest wager placed in the active
+  view window, hard-capped at `MAXIMUM_BET`. Tests #301–#304.
+- **(2) Session view** — a NEW `SessionAnalytics` accumulator (`GameRecord.hpp:127`) covering one open play window: it
+  runs across every shoe in it and resets only on open/close, so it is distinct from both per-shoe `ShoeAnalytics` and
+  career `longHistory`, exactly as §10 #9a required. `G` cycles the window's view. Tests #175, #176.
+- **(1) Per-graph control** — each pane is its own **per-shoe ↔ per-session** switch. A left click inside a pane moves
+  ONLY that pane (`HUD::cycleGraphScope`, hit-tested through `chartPaneBounds()`); `G` applies one view to all three at
+  once (`HUD::setAllGraphScope`), and a click still refines any single pane afterwards. Tests **#241–#244**.
+- **Deviation from the original plan, decided and recorded (CONTEXT §5, 2026-11-12):** part (1) was specified as a
+  per-series **visibility** toggle (hide a graph). What shipped is a per-graph **view** toggle instead, and that is the
+  accepted semantics: the session view is what needed per-graph control, a hideable pane leaves a hole in a 240px panel
+  and teaches nothing, and the per-pane axis only makes sense with a per-pane view. Do not "restore" the visibility
+  reading without a new decision.
+- **Verification, both ways:** headless **#243/#244** assert the *dataset selection* through the same
+  `HUD::activeBankrollSeries()/activeEdgeSeries()/activeBetHistogram()/activeBetBucketWidth()/activeBetAxisLo()`
+  accessors `drawCharts()` draws from (verified red by mutating the selection — the flag-only tests #241/#242 stayed
+  green, which is why the accessors exist), and `tools/visual_check/check_u12_click.py` proves on screen by ImageMagick
+  `compare` AE that one click changes exactly one pane's title strip (bank=947, edge=0, bets=0) and that `G` changes the
+  other two while leaving the already-session pane at 0. Screenshots read "Session Bankroll Curve" /
+  "Session Edge Over Time" / "N bets (session)".
+
+
 the full [0, MAXIMUM_BET] instead of the intended 10–100 scaling range.** 🟡 Vision-critical. Three parts, all on the side panel
 (`StatsDashboard` drawn at `GameRenderer.cpp:74`; HUDState series in `HUDState.hpp:55-56`, Bets Placed histogram per-shoe):
 (1) **Toggle each graph** — `bankrollSeries`/`edgeSeries` + the histogram are always drawn; add per-series visibility flags to
