@@ -1,5 +1,6 @@
 #pragma once
 
+#include "DailyChallenge.hpp"  // Daily::DailyResult + dailyRules() + seedForDateKey(); no Game dependency
 #include "Tournament.hpp"  // for Tournament::TournamentConfig in startTournamentSession(). Tournament.hpp has no Game dep
 
 // Feature (Game.cpp god-class split: Follow-up #8 "Session lifecycle" stage): the session entry points and table-settings
@@ -20,6 +21,16 @@ class SessionLifecycle
     // enter the Playing state. The one method that touches the most Game state; all of it stays in Game
     void startNewGame();
 
+    // Session kinds are mutually exclusive, and each entry point must clear the flags the others set.
+    // Called at the top of every entry point that builds a table, BEFORE it sets its own.
+    //
+    // This is B25. `tournamentActive_` was set true by startTournamentSession() and cleared by nothing
+    // except the Daily's own entry point, so tournament -> quit to menu -> Play Game ran the "ordinary"
+    // game with tournament AI advice (Game.cpp:1432), the tournament's escalating minimum bet, and
+    // finishTournamentShoe() at the shoe boundary. The Daily's flag has the identical shape, so the fix
+    // is the rule rather than two patches.
+    void beginExclusiveSession();
+
     // begin/restart a training session. Guards against nullptr
     // builds the trainer, can't crash when the menu calls this.
     void startTrainerSession(int deckCount, int secondsPerSession);
@@ -31,6 +42,19 @@ class SessionLifecycle
     // begin/restart the dashboard from the main menu by flattening completed-shoe history plus any
     // current-shoe rounds into one round-history list and feeding it to the dashboard with the player's career stats. Guards against nullptr.
     void startStatsSession();
+
+    // Begin a Daily Challenge shoe for `dateKey`: the fixed rule set, a shoe seeded from the date, the
+    // fixed starting bankroll, exactly one seat, and markPersistable(false). The seat is ephemeral for
+    // three separate reasons, each of which is a leak if it persists: the Daily's fixed chips are not
+    // the career bankroll; the run's stats/history are not career progress; and rememberTableSettings()
+    // stamps gameRules_ onto the profile at every save point, so a persisting Daily seat would
+    // overwrite the player's CUSTOM rules with the Daily's fixed ones.
+    void startDailySession(const std::string& dateKey, bool practice);
+
+    // Book a finished Daily on the career profile ON DISK: load it, commit the result, save it. This is
+    // a read-modify-write of the real file, deliberately not a seat save -- the seat cannot write, and
+    // this path touches the Daily fields and nothing else.
+    void commitDailyResult(const Daily::DailyResult& result);
 
     // Restore saved table settings (player count / speed / counting style + custom rules) from the human seat's profile onto live state.
     void applySavedTableSettings();

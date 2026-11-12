@@ -93,9 +93,22 @@ class Player
     PlayerStats& getStats();
     PlayerProfile updateProfile(PlayerProfile profile);
     void saveProfile();
+
+    // The on-disk career profile path, resolved by the same $HOME logic saveProfile() uses. Exposed
+    // because a feature whose own seat is EPHEMERAL may still need to write the real career file --
+    // the Daily Challenge books its streak there while its seat must never touch it. Duplicating the
+    // $HOME fallback at that call site is how a second, subtly-different path gets born.
+    static std::string savePath();
+
     // When false, saveProfile() is a no-op: the seat's in-memory state must never be written to disk. The human session persists
-    // (default true); NPCs and the ephemeral tournament run set it false so their throwaway chips/stats cannot clobber the career file.
+    // (default true); NPCs, the ephemeral tournament run and the Daily Challenge set it false so their throwaway chips/stats/rules
+    // cannot clobber the career file.
     void setPersistable(bool value) { persistable = value; }
+
+    // The Daily streak straight off the seat's profile. A cheap accessor, deliberately: the main-menu
+    // row shows the streak, and getProfile() returns the profile BY VALUE -- copying a capped 100-shoe
+    // history every rendered frame to read one int is not acceptable in a draw loop.
+    int dailyStreak() const { return profile.dailyStreak; }
 
     // Escrow bookkeeping for the round in progress. getAvailableBankroll() is bankroll minus both committed amounts and is the one
     // predicate every bet clamp + HUD hint reads, so a main bet + side bet can never be double-counted against one bankroll (B5).

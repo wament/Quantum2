@@ -248,3 +248,83 @@ PlayerStats PlayerProfile::applyRollup() const
     out.greatestSessionLoss = static_cast<int>(std::min(static_cast<long long>(rollup.carriedGreatestSessionLoss), base + out.greatestSessionLoss));
     return out;
 }
+
+// =============================================================================
+// Daily Challenge bookkeeping. Pure profile logic: no clock is read here, every function takes the
+// epoch/date-key it needs, so the streak rules are fully assertable headlessly with fabricated dates.
+// =============================================================================
+
+bool PlayerProfile::dailyHasActiveShoe() const { return dailyStartedOn != 0; }
+
+bool PlayerProfile::dailyScoredOn(const std::string& dateKey) const
+{
+    return !dailyLastPlayed.empty() && dailyLastPlayed == dateKey;
+}
+
+void PlayerProfile::beginDailyShoe(const std::string& dateKey, long long nowEpochSeconds, unsigned long long seed)
+{
+    dailyStartedOn = nowEpochSeconds;
+    dailyActiveSeed = seed;
+    dailyActiveDateKey = dateKey;
+    // dailyLastPlayed is deliberately NOT written here: the shoe is in progress, and the one-attempt
+    // gate keys on the day it STARTED. Marking today scored at the start would lock the player out of
+    // finishing the shoe they are mid-way through.
+}
+
+void PlayerProfile::clearDailyShoe()
+{
+    dailyStartedOn = 0;
+    dailyActiveSeed = 0;
+    dailyActiveDateKey.clear();
+}
+
+void PlayerProfile::commitDailyResult(const Daily::DailyResult& result, long long nowEpochSeconds)
+{
+    (void)nowEpochSeconds; // the result carries its own date key; the epoch is kept for call-site symmetry
+
+    // Newest first, then capped, so the save file cannot grow without bound.
+    dailyHistory.insert(dailyHistory.begin(), result);
+    const std::size_t cap = static_cast<std::size_t>(Constants::Daily::MAX_HISTORY_RESULTS);
+    if (dailyHistory.size() > cap)
+        dailyHistory.resize(cap);
+
+    clearDailyShoe();
+
+    // A practice replay of a past Daily is recorded for the history view but must never move the
+    // streak or the best score: the streak is only ever a count of distinct consecutive days scored.
+    if (result.practice)
+        return;
+
+    dailyBest = std::max(dailyBest, result.net);
+
+    if (dailyLastPlayed.empty())
+    {
+        dailyStreak = 1;
+        dailyLastPlayed = result.dateKey;
+        return;
+    }
+
+    const long long gap = Daily::daysBetweenKeys(dailyLastPlayed, result.dateKey);
+    if (gap == 1)
+    {
+        // Consecutive day: the streak continues.
+        dailyStreak += 1;
+        dailyLastPlayed = result.dateKey;
+    }
+    else if (gap > 1)
+    {
+        // A lapse restarts the streak at 1, not 0: missing a day should not wipe the reward for
+        // playing today.
+        dailyStreak = 1;
+        dailyLastPlayed = result.dateKey;
+    }
+    else if (gap == 0)
+    {
+        // Already scored today (the gate should prevent reaching this). Streak and anchor unchanged.
+    }
+    else
+    {
+        // gap < 0: a result dated in the past, i.e. a clock rollback. Never extend the streak, and
+        // never rewind the anchor -- the safe direction is to leave the streak alone.
+    }
+}

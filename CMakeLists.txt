@@ -108,6 +108,7 @@ target_sources(Blackjack2 PRIVATE
     src/RoundDealer.cpp
     src/RoundEngine.cpp
     src/SessionLifecycle.cpp
+    src/DailyChallenge.cpp
 )
 
 # Copy assets to build output (for local testing)
@@ -159,6 +160,7 @@ add_executable(Blackjack2Tests
     src/RoundDealer.cpp
     src/RoundEngine.cpp
     src/SessionLifecycle.cpp
+    src/DailyChallenge.cpp
     tests/test_card.cpp
     tests/test_deck.cpp
     tests/test_deck_empty_draw.cpp
@@ -178,6 +180,7 @@ add_executable(Blackjack2Tests
     tests/test_rendering.cpp
     tests/test_replay_layout.cpp
     tests/test_session_lifecycle.cpp
+    tests/test_daily_challenge.cpp
     tests/test_hud_layout.cpp
     tests/test_profile_settings.cpp
     tests/test_sound_manager.cpp

@@ -237,6 +237,69 @@ inline void from_json(const json& j, RollupCarry& r)
 }
 
 // PlayerProfile serialization
+// ---------------------------------------------------------------------------
+// Type-tolerant profile reads.
+//
+// nlohmann's j.value(key, default) applies the default ONLY when the key is ABSENT. A key that is
+// present with the WRONG TYPE THROWS (type_error.302) -- and PlayerProfile::load's recovery for a
+// throw is "relocate the whole file, start fresh". So one corrupt field destroys the player's
+// bankroll, shoe history and achievements: a data-loss bug whose blast radius is the entire profile,
+// triggered by a single field.
+//
+// These helpers treat a wrong-typed field exactly like a missing one: fall back to the default and
+// keep everything else. Found by the Daily schema test, which wrote a non-string "dailyLastPlayed"
+// and watched the loader discard a profile that was 99% readable.
+//
+// LIMITATION, stated rather than hidden: these guard the TOP-LEVEL fields. A nested object whose own
+// members are wrong-typed (e.g. "stats" present and an object, but stats.wins is a string) still
+// throws and still relocates the file. Making nested reads tolerant is a separate change.
+// ---------------------------------------------------------------------------
+inline std::string jsonOrString(const json& j, const char* key, const std::string& fallback)
+{
+    if (!j.is_object() || !j.contains(key) || !j.at(key).is_string())
+        return fallback;
+    return j.at(key).get<std::string>();
+}
+
+inline int jsonOrInt(const json& j, const char* key, int fallback)
+{
+    if (!j.is_object() || !j.contains(key) || !j.at(key).is_number_integer())
+        return fallback;
+    return j.at(key).get<int>();
+}
+
+inline long long jsonOrLongLong(const json& j, const char* key, long long fallback)
+{
+    if (!j.is_object() || !j.contains(key) || !j.at(key).is_number_integer())
+        return fallback;
+    return j.at(key).get<long long>();
+}
+
+inline unsigned long long jsonOrUnsignedLongLong(const json& j, const char* key, unsigned long long fallback)
+{
+    // is_number_unsigned, not is_number_integer: a negative value cannot name a shuffle seed, and
+    // narrowing one into an unsigned long long would silently become a huge one.
+    if (!j.is_object() || !j.contains(key) || !j.at(key).is_number_unsigned())
+        return fallback;
+    return j.at(key).get<unsigned long long>();
+}
+
+inline bool jsonOrBool(const json& j, const char* key, bool fallback)
+{
+    if (!j.is_object() || !j.contains(key) || !j.at(key).is_boolean())
+        return fallback;
+    return j.at(key).get<bool>();
+}
+
+template <typename T>
+inline std::vector<T> jsonOrArray(const json& j, const char* key, const std::vector<T>& fallback)
+{
+    if (!j.is_object() || !j.contains(key) || !j.at(key).is_array())
+        return fallback;
+    return j.at(key).get<std::vector<T>>();
+}
+
+
 inline void to_json(json& j, const PlayerProfile& p)
 {
     j = {
@@ -256,6 +319,17 @@ inline void to_json(json& j, const PlayerProfile& p)
         {"preferredMusicVolume", p.preferredMusicVolume},
         {"preferredMuted", p.preferredMuted}
     };
+    // Daily Challenge fields: written UNCONDITIONALLY per the schema policy (CONTEXT.md §5). These are
+    // fields this program always writes, so the j.value() reads below are a partial-write guard (a save
+    // interrupted mid-write keeps its present fields, per B14), not legacy support. A profile saved
+    // before the Daily existed has none of these keys and loads with an empty history and zero streak.
+    j["dailyLastPlayed"] = p.dailyLastPlayed;
+    j["dailyStreak"] = p.dailyStreak;
+    j["dailyBest"] = p.dailyBest;
+    j["dailyStartedOn"] = p.dailyStartedOn;
+    j["dailyActiveDateKey"] = p.dailyActiveDateKey;
+    j["dailyActiveSeed"] = p.dailyActiveSeed;
+    j["dailyHistory"] = p.dailyHistory;
     // additive schema: persist unlocked ids only when non-empty
     if (!p.unlockedAchievementIds.empty())
         j["unlockedAchievementIds"] = p.unlockedAchievementIds;
@@ -268,25 +342,39 @@ inline void from_json(const json& j, PlayerProfile& p)
     // Core fields read additively (j.value with the struct's own default) so a file missing one key degrades instead of
     // throwing -- consistent with every other additive field, and required by B14 so a partial save keeps its present
     // fields rather than being discarded to a fresh profile. name/bankroll/stats/longHistory all carry defaults below.
-    p.name = j.value("name", std::string{});
-    p.bankroll = j.value("bankroll", 1000);
-    p.stats = j.value("stats", PlayerStats{});
-    p.longHistory = j.value("longHistory", std::vector<ShoeRecord>{});
+    p.name = jsonOrString(j, "name", std::string{});
+    p.bankroll = jsonOrInt(j, "bankroll", 1000);
+    // Nested objects are guarded by an is_object() check: a present-but-non-object "stats"/"rollup"
+    // would otherwise throw and take the whole profile down with it.
+    if (j.is_object() && j.contains("stats") && j.at("stats").is_object())
+        j.at("stats").get_to(p.stats);
+    p.longHistory = jsonOrArray<ShoeRecord>(j, "longHistory", std::vector<ShoeRecord>{});
     // additive: absent "currentHistory" keeps its default (empty) so legacy mid-shoe-quit saves before this field still load.
-    p.currentHistory = j.value("currentHistory", std::vector<RoundRecord>{});
+    p.currentHistory = jsonOrArray<RoundRecord>(j, "currentHistory", std::vector<RoundRecord>{});
     // additive: missing "rollup" loads a zero RollupCarry (the applyRollup merge identity) so pre-T2 saves keep their stats verbatim.
-    p.rollup = j.value("rollup", RollupCarry{});
+    if (j.is_object() && j.contains("rollup") && j.at("rollup").is_object())
+        j.at("rollup").get_to(p.rollup);
     // additive: missing key falls back to default; pre-table-settings profiles still load.
-    p.preferredPlayerCount = j.value("preferredPlayerCount", GameConfig::DEFAULT_PLAYER_COUNT);
-    p.preferredSpeed = j.value("preferredSpeed", static_cast<int>(GameSpeed::Normal));
-    p.preferredCountingStyle = j.value("preferredCountingStyle", 1);
+    p.preferredPlayerCount = jsonOrInt(j, "preferredPlayerCount", GameConfig::DEFAULT_PLAYER_COUNT);
+    p.preferredSpeed = jsonOrInt(j, "preferredSpeed", static_cast<int>(GameSpeed::Normal));
+    p.preferredCountingStyle = jsonOrInt(j, "preferredCountingStyle", 1);
     // additive: missing key falls back to sensible defaults (match Constants::Sound); pre-sound profiles still load.
-    p.preferredSoundVolume = j.value("preferredSoundVolume", 100);
-    p.preferredMusicVolume = j.value("preferredMusicVolume", 60);
-    p.preferredMuted = j.value("preferredMuted", false);
+    p.preferredSoundVolume = jsonOrInt(j, "preferredSoundVolume", 100);
+    p.preferredMusicVolume = jsonOrInt(j, "preferredMusicVolume", 60);
+    p.preferredMuted = jsonOrBool(j, "preferredMuted", false);
     // additive: missing key falls back to an empty list; pre-Achievement profiles still load unchanged.
-    p.unlockedAchievementIds = j.value("unlockedAchievementIds", std::vector<int>{});
+    p.unlockedAchievementIds = jsonOrArray<int>(j, "unlockedAchievementIds", std::vector<int>{});
     // additive: missing key keeps struct defaults; pre-Rules profiles load unchanged (nested GameRules also falls back).
-    if (j.contains("gameRules"))
+    if (j.is_object() && j.contains("gameRules") && j.at("gameRules").is_object())
         j.at("gameRules").get_to(p.gameRules);
+    // Daily Challenge: same additive, type-tolerant reads. A pre-Daily profile has none of these keys
+    // and lands on the struct defaults (no streak, no history, no active shoe), so it loads exactly
+    // as before.
+    p.dailyLastPlayed = jsonOrString(j, "dailyLastPlayed", std::string{});
+    p.dailyStreak = jsonOrInt(j, "dailyStreak", 0);
+    p.dailyBest = jsonOrInt(j, "dailyBest", 0);
+    p.dailyStartedOn = jsonOrLongLong(j, "dailyStartedOn", 0);
+    p.dailyActiveDateKey = jsonOrString(j, "dailyActiveDateKey", std::string{});
+    p.dailyActiveSeed = jsonOrUnsignedLongLong(j, "dailyActiveSeed", 0);
+    p.dailyHistory = jsonOrArray<Daily::DailyResult>(j, "dailyHistory", std::vector<Daily::DailyResult>{});
 }

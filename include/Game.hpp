@@ -29,7 +29,12 @@ enum class MenuOption
     Tournament,
     Achievements,
     GameRules,
-    Statistics
+    Statistics,
+    // The Daily Challenge. Appended rather than inserted: the enum's numeric order is used by
+    // InputHandler::navigateMenu()'s step-back fallback, so inserting mid-list would silently
+    // renumber every option. Menu DISPLAY order comes from mainMenuItems(), which is the source of
+    // truth for rows, hover bands and clicks -- navigation is index-driven off that table.
+    DailyChallenge
 };
 enum class PauseOption
 {
@@ -120,6 +125,9 @@ class Game
     // read the current shoe's card count so a configurable deck count can be asserted
     // headlessly after startNewShoeForTest() rebuilds the shoe with gameRules_.numDecks.
     int deckSizeForTest() const { return static_cast<int>(deck.size()); }
+    // The shoe's card order. Needed to prove the Daily's core promise end to end -- the same date must
+    // produce the same shoe through the real session path, not just the same seed from the hash.
+    std::vector<Card> deckCardsForTest() const { return deck.getCards(); }
     RoundState roundStateForTest() const { return roundState; }
     // Test-only: drive the round-state machine directly
     // without running a full deal/turn/settle cycle. Mirrors setGameSpeedForTest / setGameRulesForTest.
@@ -148,6 +156,10 @@ class Game
     int shoeGenerationForTest() const { return shoeGeneration; }
     // Drive the real shoe boundary (the same path the R key and auto-play advance take) from a test.
     void startNewShoeForTest() { startNewShoe(); }
+    // Drives the Daily shoe boundary directly. The full path (deal to the cut card) needs a whole shoe
+    // dealt through the round machine, which is what the B18 seeded tests do at length; this hook lets
+    // the Daily's OWN behaviour -- book the result, deal no further shoe -- be asserted on its own.
+    void finishDailyShoeForTest(bool shoeWasContinuation) { finishDailyShoe(shoeWasContinuation); }
     // Deterministic variant (B18): builds the shoe exactly as startNewShoe() does — create + shuffle + shoe record +
     // resetShoeAnalytics — but shuffles from `seed` instead of the OS RNG. For tests that need a REAL shuffled shoe
     // (not an injected card list) with a reproducible order; production never calls it.
@@ -267,6 +279,25 @@ class Game
     // headless construction (which never builds the dashboard) can't crash when the menu calls this; on first entry it seeds
     // the dashboard from the player's career stats + flattened round history.
     void startStatsSession();
+    // ---- Daily Challenge --------------------------------------------------
+    // Begin a Daily shoe for `dateKey` ("YYYY-MM-DD"): the FIXED rule set, a shoe seeded from the date
+    // so it is the same shoe on every machine, a fixed starting bankroll, one player, and an EPHEMERAL
+    // seat. Ephemeral is what makes the Daily safe: the fixed rules, the fixed chips and the run's
+    // stats are all session state that must never reach the career file -- and rememberTableSettings()
+    // writes gameRules_ to the profile at every save point, so a persisting Daily seat would silently
+    // replace the player's custom rules with the Daily's.
+    // `practice` replays a past Daily: same shoe, recorded in history, never moves the streak.
+    void startDailySession(const std::string& dateKey, bool practice = false);
+    bool dailyActive() const;    // a Daily shoe is running (finished or not)
+    bool dailyComplete() const;  // the Daily shoe ran out; the result is booked, no new shoe will deal
+    bool dailyPractice() const;
+    const std::string& dailyDateKey() const;
+    int dailyNet() const; // chips over Daily::kStartingBankroll, valid once complete
+    // Books a finished Daily on the REAL career file. Deliberately a read-modify-write of the profile
+    // on disk rather than a save of the seat: the seat is ephemeral and cannot write, and this path
+    // touches the Daily fields only.
+    void commitDailyResult(const Daily::DailyResult& result);
+
     // Name-entry screen (U7): editing state + commit/gate. m_nameBuffer_ holds the text currently being typed; append/backspace
     // mutate it with a hard max-length clamp so both headless tests and InputHandler share one source of truth, and GameRenderer
     // reads nameEntryText() to draw it. needsNameEntry() gates the automatic "enter your name before the main menu" prompt on
@@ -378,6 +409,14 @@ class Game
     // opponents' modified basic strategy); consulted at each betting/NPC/shoe-boundary seam in Game.cpp so ordinary play is
     // byte-identical when false. The Tournament controller holds all the rule state; Game owns it as a unique_ptr like Replay.
     bool tournamentActive_ = false;
+
+    // Daily Challenge session state. The seat is ephemeral, so none of this can reach the career file;
+    // the only durable write is commitDailyResult(), which reads and writes the Daily fields.
+    bool dailyActive_ = false;
+    bool dailyComplete_ = false;
+    bool dailyPractice_ = false;
+    std::string dailyDateKey_;
+    int dailyNet_ = 0;
 
     int playerCount = GameConfig::DEFAULT_PLAYER_COUNT;
 
@@ -497,6 +536,12 @@ class Game
     // the higher stage minimum) when another remains, or mark the tournament complete once the final stage has run out. Called
     // from dealerTurn() after the last hand of a stage's shoe while tournamentActive_. Private; Game.cpp owns the logic.
     void finishTournamentShoe();
+
+    // Daily-only shoe boundary: book the run (net over the fixed starting bankroll, plus whether the
+    // shoe continued on deck exhaustion) and stop. Unlike ordinary play this does NOT open a new shoe:
+    // one shoe per day is the whole feature. `shoeWasContinuation` must be captured by the caller
+    // BEFORE currentShoeRecord is reset, because the reset erases the flag.
+    void finishDailyShoe(bool shoeWasContinuation);
 
     void deal();
 

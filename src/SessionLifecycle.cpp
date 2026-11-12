@@ -1,6 +1,7 @@
 #include "SessionLifecycle.hpp"
 
 #include <algorithm>
+#include <chrono>  // dailyNowEpochSeconds(): the Daily's only clock read
 #include "Game.hpp"            // complete Game type: all moved methods read/write its members (friend).
 #include "Logger.hpp"          // Logger::info used by startNewGame() and applySavedTableSettings().
 #include "StatsDashboard.hpp"   // make_unique<StatsDashboard>() + feed(): forward-declared in Game.hpp, complete here.
@@ -25,6 +26,10 @@ void SessionLifecycle::startTrainerSession(int deckCount, int secondsPerSession)
 // construction can't crash when the menu calls this.
 void SessionLifecycle::startTournamentSession(const Tournament::TournamentConfig& config)
 {
+    // Clears the other session kinds (including the Daily) before this one claims the table. B25:
+    // tournamentActive_ used to be set here and cleared nowhere, so a later ordinary game inherited it.
+    beginExclusiveSession();
+
     if (!game.tournament)
         game.tournament = std::make_unique<Tournament>();
     game.tournament->start(config);
@@ -177,12 +182,29 @@ void SessionLifecycle::startStatsSession()
 
 // begin/restart a whole session. Delegates verbatim: fresh seats + shuffled shoe, per-shoe readouts reset to zero (the
 // bankroll is the one value that persists), counting/strategies cleared, and enter Playing. All state stays in Game.
+// Clears every session-kind flag. Each entry point that builds a table calls this first, then sets the
+// one kind it owns. Without it, a session's flags outlive the session: the next ordinary game inherits
+// them and plays under the previous mode's rules. See the header note (B25).
+void SessionLifecycle::beginExclusiveSession()
+{
+    game.tournamentActive_ = false;
+    game.dailyActive_ = false;
+    game.dailyComplete_ = false;
+    game.dailyPractice_ = false;
+    game.dailyDateKey_.clear();
+    game.dailyNet_ = 0;
+}
+
 void SessionLifecycle::startNewGame()
 {
     Logger::info("Starting new game");
 
     // Remember what was just chosen before the profile is re-read below
     game.rememberTableSettings();
+
+    // An ordinary game owns no session kind, so clearing is the whole job. This is the line that was
+    // missing for tournaments (B25).
+    beginExclusiveSession();
 
     game.players.clear();
 
@@ -297,3 +319,92 @@ void SessionLifecycle::rememberTableSettings()
     game.players[0].updateProfile(profile);
     game.players[0].saveProfile();
 }
+
+// =============================================================================
+// Daily Challenge
+// =============================================================================
+
+// Static "now" in epoch seconds. Kept out of the streak logic (PlayerProfile takes the epoch as a
+// parameter) so the state machine stays testable with fabricated dates; this is the only place the
+// Daily reads a clock.
+static long long dailyNowEpochSeconds()
+{
+    return static_cast<long long>(
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
+void SessionLifecycle::startDailySession(const std::string& dateKey, bool practice)
+{
+    const unsigned long long seed = Daily::seedForDateKey(dateKey);
+
+    beginExclusiveSession();
+
+    game.dailyActive_ = true;
+    game.dailyComplete_ = false;
+    game.dailyPractice_ = practice;
+    game.dailyDateKey_ = dateKey;
+    game.dailyNet_ = 0;
+
+    // The fixed rule set, applied to LIVE session rules. Comparison is meaningless if two players run
+    // different rules, so the player's custom rules are ignored here. Safe to overwrite gameRules_
+    // because the seat below is ephemeral: rememberTableSettings() stamps gameRules_ into the profile
+    // at every save point, and that in-memory profile is discarded with the seat, never written.
+    game.gameRules_ = Daily::dailyRules();
+
+    game.players.clear();
+    // One seat: the Daily is a solo race against the shoe, not a table. The name is a placeholder --
+    // Player's loading constructor adopts the persisted profile name, exactly as in startNewGame.
+    game.players.push_back(Player(Constants::DEFAULT_PLAYER_NAME));
+    game.players[0].setPersistable(false);
+    game.players[0].setBankroll(Daily::kStartingBankroll);
+
+    // A shoe seeded from the date. Portable across standard libraries because Deck's shuffle is
+    // program-defined (see CONTEXT.md "Shuffle determinism") -- which is the entire premise of a Daily.
+    game.deck.create(game.gameRules_.numDecks);
+    game.deck.shuffleWithSeed(seed);
+    game.currentShoeRecord.shoeDecks = game.deck.shoeDecks();
+    game.currentShoeRecord.shuffleSeed = game.deck.shuffleSeed();
+    game.currentShoeRecord.shoeCardCount = static_cast<int>(game.deck.size());
+    game.currentShoeRecord.rounds.clear();
+
+    game.resetShoeAnalytics();
+    game.sessionCumulativeWinLoss = 0;
+    game.handActions.clear();
+    game.handActions.resize(1);
+    game.handDeviations_.clear();
+    game.handDeviations_.resize(1);
+    game.advisorFeedback = AdvisorFeedback::None;
+    game.advisorAction = 0;
+    game.dealer.clear();
+    game.players[0].resetRound(0);
+    game.nextRound();
+
+    // Mark the shoe STARTED on the career profile. The one-attempt gate keys on the day the shoe
+    // began, not the day it ends, so a player who crosses midnight mid-shoe finishes the shoe they
+    // started instead of being handed a new one; and a quit mid-shoe resumes the same seed.
+    const std::string path = Player::savePath();
+    PlayerProfile career = PlayerProfile::load(path);
+    career.beginDailyShoe(dateKey, dailyNowEpochSeconds(), seed);
+    career.save(path);
+
+    game.appMode = AppMode::Playing;
+
+    Logger::info() << "Daily Challenge " << dateKey << (practice ? " (practice)" : "") << ": "
+                   << game.gameRules_.numDecks << "-deck shoe, seed " << seed << ", "
+                   << Daily::kStartingBankroll << " chips.";
+}
+
+void SessionLifecycle::commitDailyResult(const Daily::DailyResult& result)
+{
+    // Read-modify-write of the career file. Deliberately NOT a seat save: the Daily seat is ephemeral
+    // and cannot write, and this path touches the Daily fields only -- career bankroll, stats, history
+    // and achievements on disk are left exactly as they were.
+    const std::string path = Player::savePath();
+    PlayerProfile career = PlayerProfile::load(path);
+    career.commitDailyResult(result, dailyNowEpochSeconds());
+    career.save(path);
+
+    Logger::info() << "Daily " << result.dateKey << (result.practice ? " (practice)" : "") << " booked: net "
+                   << result.net << ", streak " << career.dailyStreak << ", best " << career.dailyBest << ".";
+}
+

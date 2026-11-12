@@ -291,6 +291,51 @@ void Game::startStatsSession()
     sessionLifecycle_.startStatsSession();
 }
 
+// ---- Daily Challenge -------------------------------------------------------
+void Game::startDailySession(const std::string& dateKey, bool practice)
+{
+    sessionLifecycle_.startDailySession(dateKey, practice);
+}
+
+void Game::commitDailyResult(const Daily::DailyResult& result)
+{
+    sessionLifecycle_.commitDailyResult(result);
+}
+
+bool Game::dailyActive() const { return dailyActive_; }
+bool Game::dailyComplete() const { return dailyComplete_; }
+bool Game::dailyPractice() const { return dailyPractice_; }
+const std::string& Game::dailyDateKey() const { return dailyDateKey_; }
+int Game::dailyNet() const { return dailyNet_; }
+
+// The Daily shoe boundary: book the run and STOP. Ordinary play opens a new shoe at this point; the
+// Daily must not, because one shoe per day is the feature. The result is written to the career file
+// by commitDailyResult, which is the Daily's only durable write.
+void Game::finishDailyShoe(bool shoeWasContinuation)
+{
+    dailyNet_ = players.empty() ? 0 : players[0].getBankroll() - Daily::kStartingBankroll;
+
+    Daily::DailyResult result;
+    result.dateKey = dailyDateKey_;
+    result.net = dailyNet_;
+    result.isContinuation = shoeWasContinuation;
+    result.practice = dailyPractice_;
+
+    commitDailyResult(result);
+
+    // Sync the seat from the career file. The seat's in-memory profile was loaded BEFORE this booking,
+    // and the main-menu row reads the streak off the seat -- without this the menu shows the streak
+    // from before the run, which is exactly B23's shape (a consumer reading a value nothing syncs).
+    // Replacing the whole profile is right here, not merely tolerable: the seat is ephemeral, and the
+    // stats/history it accumulated during the Daily are precisely what must be discarded.
+    if (!players.empty())
+        players[0].updateProfile(PlayerProfile::load(Player::savePath()));
+
+    dailyComplete_ = true;
+    Logger::info() << "Daily " << dailyDateKey_ << " complete: net " << dailyNet_
+                   << (shoeWasContinuation ? " (continued shoe)" : "") << ". No further shoe.";
+}
+
 void Game::startNewGame()
 {
     sessionLifecycle_.startNewGame();
@@ -1697,9 +1742,19 @@ void Game::dealerTurn()
         players[0].updateProfile(profile);
         players[0].saveProfile();
 
+        // Captured BEFORE the reset below erases it: the Daily records whether this shoe continued on
+        // deck exhaustion, so comparing two Daily results stays honest about what was actually dealt.
+        const bool shoeWasContinuation = currentShoeRecord.isContinuation;
+
         currentShoeRecord = {};
 
-        if (tournamentActive_)
+        if (dailyActive_)
+        {
+            // One shoe per day: book the run and stop. No new shoe and no auto-play continuation --
+            // that is the whole feature, and it is why this branch precedes the ordinary-play path.
+            finishDailyShoe(shoeWasContinuation);
+        }
+        else if (tournamentActive_)
         {
             // A tournament stage's shoe has finished: advance to the next stage (fresh 4-deck shoe, higher minimum bet) or,
             // once the final stage has run out, mark the tournament complete so the leaderboard + winner are shown instead.

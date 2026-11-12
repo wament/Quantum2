@@ -25,6 +25,14 @@ static std::string getSavePath()
     return (saveDir / "player_profile.json").string();
 }
 
+// The career profile path, exposed for the one case that needs it: an EPHEMERAL seat (the Daily
+// Challenge) that must write a narrow slice of the real profile without ever being able to write the
+// rest of it. Delegates to the same resolver saveProfile() uses, so there is one $HOME logic.
+std::string Player::savePath()
+{
+    return getSavePath();
+}
+
 Player::Player(const std::string& playerName)
     : name(playerName)
 {

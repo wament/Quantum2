@@ -23,14 +23,15 @@ inline const std::vector<MainMenuItem> &mainMenuItems()
 {
     static const std::vector<MainMenuItem> items = {
         {MenuOption::PlayGame,      220.f},
-        {MenuOption::PlayerCount,   260.f},
-        {MenuOption::GameSpeed,     300.f},
-        {MenuOption::ReviewHistory, 340.f},
-        {MenuOption::StrategyTrainer, 380.f},
-        {MenuOption::Tournament, 420.f},
-        {MenuOption::Achievements, 460.f},
-        {MenuOption::GameRules, 500.f},
-        {MenuOption::Statistics, 540.f},
+        {MenuOption::DailyChallenge, 260.f},
+        {MenuOption::PlayerCount,   300.f},
+        {MenuOption::GameSpeed,     340.f},
+        {MenuOption::ReviewHistory, 380.f},
+        {MenuOption::StrategyTrainer, 420.f},
+        {MenuOption::Tournament, 460.f},
+        {MenuOption::Achievements, 500.f},
+        {MenuOption::GameRules, 540.f},
+        {MenuOption::Statistics, 580.f},
     };
     return items;
 }
@@ -190,6 +191,9 @@ private:
     // Tournament-only overlays: the live "Stage X of N · min bet" banner during play, and the end-of-tournament ranked leaderboard
     // + winner drawn once the final stage has run out. Pure presentation; reads game.tournament through Game's friend link.
     void drawTournamentBanner(Game &game);
+    // Daily Challenge banner: the date + streak while a Daily shoe runs, and the booked result once it
+    // is complete. A no-op outside a Daily session, so it can sit unconditionally in the Playing path.
+    void drawDailyBanner(Game &game);
     void drawTournamentLeaderboard(Game &game);
     void drawDeck(Game &game);
     // thin sound-status indicator (bottom-right corner)

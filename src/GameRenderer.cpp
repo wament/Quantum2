@@ -66,7 +66,14 @@ const std::map<AppMode, ModeEntry>& GameRenderer::modeTable()
     // Shared felt table + HUD + betting/side-bet/summary/achievement readouts, shared by Playing and Tournament (so a tournament
     // renders exactly like an ordinary game with no duplicate rendering). Drawn once per frame by whichever mode is active.
     table[AppMode::Playing] = {std::nullopt, [=](Game& g)
-                               { drawPlaySession(g); }};
+                               {
+                                   drawPlaySession(g);
+                                   // A Daily IS ordinary play on a seeded shoe, so it reuses this screen
+                                   // exactly. The one thing it adds is the banner, which no-ops when no
+                                   // Daily is running -- so ordinary play is byte-for-byte unchanged.
+                                   if (g.dailyActive())
+                                       drawDailyBanner(g);
+                               }};
     // Paused: same felt + HUD readout as Playing but with the pause menu instead of betting/side-bet overlays.
     table[AppMode::Paused] = {std::nullopt, [=](Game& g)
                               {
@@ -1003,6 +1010,45 @@ void GameRenderer::drawTournamentBanner(Game& g)
            16, sf::Color(220, 220, 220), 54.f);
 }
 
+// Daily Challenge banner. While the shoe runs: the date, the streak, and the fixed chips the run is
+// scored on. Once complete: the booked net, the streak, and how to leave. Pure presentation -- it
+// reads Game's Daily accessors and draws nothing that affects play.
+void GameRenderer::drawDailyBanner(Game& g)
+{
+    if (!g.dailyActive())
+        return;
+
+    const float cx = g.window.getSize().x / 2.0f;
+    auto center = [&](const std::string& label, int size, sf::Color color, float y)
+    {
+        sf::Text t(FontManager::get(), label, static_cast<unsigned int>(size));
+        t.setFillColor(color);
+        sf::FloatRect b = t.getLocalBounds();
+        t.setOrigin(sf::Vector2f(b.size.x / 2.0f, b.size.y / 2.0f));
+        t.setPosition(sf::Vector2f(cx, y));
+        g.window.draw(t);
+    };
+
+    const int streak = g.players.empty() ? 0 : g.players[0].dailyStreak();
+    const std::string title = g.dailyPractice() ? "DAILY CHALLENGE (PRACTICE)" : "DAILY CHALLENGE";
+
+    if (!g.dailyComplete())
+    {
+        center(title, 22, sf::Color(255, 215, 0), 34.f);
+        center(g.dailyDateKey() + "   |   Streak: " + std::to_string(streak) + "   |   Start: " +
+                   std::to_string(Daily::kStartingBankroll) + " chips",
+               16, sf::Color(220, 220, 220), 54.f);
+        return;
+    }
+
+    // Shoe finished and booked: show the score, then stop. One shoe per day.
+    center(title + " COMPLETE", 22, sf::Color(255, 215, 0), 34.f);
+    const std::string net = (g.dailyNet() >= 0 ? "+" : "") + std::to_string(g.dailyNet());
+    center(g.dailyDateKey() + "   |   Net: " + net + "   |   Streak: " + std::to_string(streak),
+           16, sf::Color(220, 220, 220), 54.f);
+    center("Press R for the main menu", 14, sf::Color(170, 170, 170), 74.f);
+}
+
 // End-of-tournament ranked leaderboard + winner, drawn once the final stage has run out. Seats are listed richest-first by bankroll
 // (the tournament's real scoring) with the winner highlighted; Escape returns to the menu. Pure presentation.
 void GameRenderer::drawTournamentLeaderboard(Game& g)
@@ -1345,6 +1391,16 @@ void GameRenderer::drawMainMenu(Game& game)
         case MenuOption::PlayGame:
             label = "Play Game";
             break;
+        case MenuOption::DailyChallenge:
+        {
+            // The streak rides on the menu row: it is the whole retention hook, and a player who has
+            // never played sees the plain label rather than a "streak 0" that reads like a defect.
+            // Player::dailyStreak() is a direct field read, not getProfile()'s by-value copy.
+            const int streak = game.players.empty() ? 0 : game.players[0].dailyStreak();
+            label = streak > 0 ? "Daily Challenge   (streak " + std::to_string(streak) + ")"
+                               : std::string("Daily Challenge");
+            break;
+        }
         case MenuOption::PlayerCount:
             label = "Players: " + std::to_string(game.playerCount);
             break;

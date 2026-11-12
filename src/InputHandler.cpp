@@ -41,6 +41,44 @@ void InputHandler::activateMainMenuOption(Game &game, MenuOption option)
         Logger::info() << "Starting game from menu.";
         game.startNewGame();
         break;
+    case MenuOption::DailyChallenge:
+    {
+        // The one-attempt gate. The DECISION is Daily::gateFor(), a pure function that is asserted
+        // directly; this is the dispatch that turns a decision into a session. startDailySession()
+        // sets AppMode::Playing itself, mirroring the other entry points, and marks the seat ephemeral
+        // so the run cannot reach the career file.
+        const std::string today = Daily::todayDateKey();
+        const PlayerProfile profile =
+            game.players.empty() ? PlayerProfile(std::string{}) : game.players[0].getProfile();
+
+        switch (Daily::gateFor(today, profile.dailyHasActiveShoe(), profile.dailyActiveDateKey,
+                               profile.dailyLastPlayed))
+        {
+        case Daily::GateAction::ResumeActive:
+            // Resume THE SHOE THAT WAS STARTED, whatever day it belongs to.
+            Logger::info() << "Resuming the Daily shoe started on " << profile.dailyActiveDateKey << ".";
+            game.startDailySession(profile.dailyActiveDateKey, /*practice=*/false);
+            break;
+        case Daily::GateAction::PracticeYesterday:
+        {
+            // Today is scored: no second scored attempt, so offer yesterday's shoe as PRACTICE --
+            // labelled, recorded in history, and it never moves the streak. Without an escape hatch a
+            // loss is punitive and players stop playing the Daily.
+            const std::string yesterday = Daily::previousDateKey(today);
+            Logger::info() << "Daily already scored today; starting " << yesterday << " as practice.";
+            game.startDailySession(yesterday, /*practice=*/true);
+            break;
+        }
+        case Daily::GateAction::StartToday:
+            Logger::info() << "Entering daily challenge.";
+            game.startDailySession(today, /*practice=*/false);
+            break;
+        case Daily::GateAction::Nothing:
+            Logger::info() << "Daily already scored today; nothing available to replay.";
+            break;
+        }
+        break;
+    }
     case MenuOption::PlayerCount:
     case MenuOption::GameSpeed:
         // Left/Right adjust these values; nothing to activate on Enter/click.
@@ -128,55 +166,41 @@ void InputHandler::activatePauseOption(Game &game, PauseOption option)
     }
 }
 
-// Shared by keyboard arrows and the mouse wheel. `forward` = "advance" (like Down/Right):
-// step once in the main-menu cycle, or bump a value option's speed up one level.
+// Shared by keyboard arrows and the mouse wheel. `forward` = "advance" (like Down/Right): step once
+// around the main-menu cycle.
+//
+// Index-driven off mainMenuItems(), which is already the single source of truth for rows, hover bands
+// and click selection. The previous body was a hand-written switch over every option in both
+// directions, and it is the reason three options (Achievements / Custom Game Rules / Statistics) were
+// unreachable by arrow keys -- a new row had to be added to two switches, and was not. Navigation now
+// cannot drift from the table: adding a row here is the only edit a new menu option needs.
 void InputHandler::navigateMenu(bool forward)
 {
-    if (forward)
+    const auto& items = mainMenuItems();
+    const int n = static_cast<int>(items.size());
+    if (n == 0)
+        return;
+
+    int index = -1;
+    for (int i = 0; i < n; ++i)
     {
-        switch (game.menuSelection)
+        if (items[static_cast<std::size_t>(i)].option == game.menuSelection)
         {
-        case MenuOption::PlayGame:
-            game.menuSelection = MenuOption::PlayerCount;
-            break;
-        case MenuOption::PlayerCount:
-            game.menuSelection = MenuOption::GameSpeed;
-            break;
-        case MenuOption::GameSpeed:
-            game.menuSelection = MenuOption::ReviewHistory;
-            break;
-        case MenuOption::ReviewHistory:
-            game.menuSelection = MenuOption::StrategyTrainer;
-            break;
-        case MenuOption::StrategyTrainer:
-            game.menuSelection = MenuOption::Tournament;
-            break;
-        case MenuOption::Tournament:
-            game.menuSelection = MenuOption::Achievements;
-            break;
-        case MenuOption::Achievements:
-            game.menuSelection = MenuOption::GameRules;
-            break;
-        case MenuOption::GameRules:
-            game.menuSelection = MenuOption::Statistics;
-            break;
-        default: // Statistics wraps to the top.
-            game.menuSelection = MenuOption::PlayGame;
+            index = i;
             break;
         }
     }
-    else
+
+    // A selection that is not in the table (a value option, or a stale value) snaps to the top row
+    // rather than stepping through an index that does not exist.
+    if (index < 0)
     {
-        switch (game.menuSelection)
-        {
-        case MenuOption::PlayGame:
-            game.menuSelection = MenuOption::Statistics; // wrap to the last option
-            break;
-        default: // PlayerCount/GameSpeed/ReviewHistory/StrategyTrainer/Tournament step one option back.
-            game.menuSelection = static_cast<MenuOption>(static_cast<int>(game.menuSelection) - 1);
-            break;
-        }
+        game.menuSelection = items[0].option;
+        return;
     }
+
+    index = (index + (forward ? 1 : -1) + n) % n;
+    game.menuSelection = items[static_cast<std::size_t>(index)].option;
 }
 
 // Single source of truth for cycling the main menu's Speed row (Fast -> Normal -> Slow -> AutoPlay -> Fast).
@@ -612,14 +636,24 @@ void InputHandler::processGameEvents(const sf::Event& event)
         {
             if (game.gameState == GameState::GameOver)
             {
-                // Fresh shoe. startNewShoe() is the single shoe-boundary path shared by auto-play, the mid-shoe
-                // reshuffle and a new game: it rebuilds the shoe AND resets the per-shoe analytics (the
-                // shoeGeneration recalibration signal, the bankroll/edge series and the running count)
-                // Edge % readout and the Edge Over Time curve fall back to their baseline here instead of carrying
-                // the previous shoe's drift forward. The player's bankroll is deliberately kept: this continues the
-                // same session rather than restarting the game.
-                Logger::info() << "Starting new shoe.";
-                game.startNewShoe();
+                if (game.dailyComplete())
+                {
+                    // A finished Daily has no next shoe: one shoe per day is the feature. R returns to
+                    // the menu, where the streak is shown, instead of silently dealing a second shoe.
+                    Logger::info() << "Daily complete: returning to the main menu.";
+                    returnToMainMenu(game, "daily challenge");
+                }
+                else
+                {
+                    // Fresh shoe. startNewShoe() is the single shoe-boundary path shared by auto-play, the mid-shoe
+                    // reshuffle and a new game: it rebuilds the shoe AND resets the per-shoe analytics (the
+                    // shoeGeneration recalibration signal, the bankroll/edge series and the running count)
+                    // Edge % readout and the Edge Over Time curve fall back to their baseline here instead of carrying
+                    // the previous shoe's drift forward. The player's bankroll is deliberately kept: this continues the
+                    // same session rather than restarting the game.
+                    Logger::info() << "Starting new shoe.";
+                    game.startNewShoe();
+                }
             }
             else if (game.roundState == RoundState::Cleanup && game.gameState != GameState::LastHand)
             {

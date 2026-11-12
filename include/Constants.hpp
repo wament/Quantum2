@@ -136,6 +136,14 @@ constexpr unsigned MAX_PLAYER_NAME_LENGTH = 24;
 constexpr const char* DEFAULT_PLAYER_NAME = "Player";
 constexpr const char* WINDOW_TITLE = "Blackjack";
 
+// Daily Challenge. The Daily keeps a capped, newest-first list of results so the save file cannot
+// grow without bound the way an uncapped history would (same reasoning as the 100-shoe longHistory
+// cap). Streak fields themselves are scalars and never grow.
+namespace Daily
+{
+constexpr int MAX_HISTORY_RESULTS = 30;
+} // namespace Daily
+
 // Panel layout
 constexpr float PANEL_MARGIN = 18.f;
 

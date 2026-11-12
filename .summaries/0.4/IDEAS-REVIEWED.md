@@ -149,24 +149,35 @@ stable across shoes. Another reason to derive from the record rather than read t
 
 Effort **M**. Unblocked.
 
-### #4 Shoe Codes + Daily — **half of it shipped today**
+### #4 Shoe Codes + Daily — **the Daily half shipped 2026-11-12; the code half is what is left**
 
 The doc's central observation ("a seed that is stored but not usable — that gap is the whole feature") is closed.
-`shuffleWithSeed` exists; production records the seed; the record round-trips it.
+`shuffleWithSeed` exists; production records the seed; the record round-trips it; and the shuffle is now
+program-defined, so a seed means the same shoe on every machine (§B.1).
+
+**Shipped 2026-11-12 — the Daily.** `include/DailyChallenge.hpp` / `src/DailyChallenge.cpp`: FNV-1a 64-bit
+date→seed written out in full (the salt `Daily::kSeedSalt` is the bump point), civil-date arithmetic written out
+in full, the fixed rule set, and the one-attempt gate as a pure `Daily::gateFor`. `PlayerProfile` carries seven
+additive Daily fields plus the streak state machine; `SessionLifecycle::startDailySession()` builds the seeded
+shoe on an **ephemeral seat**; `Game::finishDailyShoe()` books the run and deals no further shoe. On screen: a
+**Daily Challenge** main-menu row showing the streak, and a banner over the play screen. The doc's cut-card
+gotcha is satisfied by construction, and continuation shoes are **recorded, not disqualifying** — a Daily result
+carries `isContinuation` so comparisons stay honest, which is the better call for a solo app where the shoe
+running out is not the player's fault.
 
 What is left, and it is smaller than the doc estimated:
 - `ShoeCode` encode/decode + checksum. A code is now tiny: deck count + a 64-bit seed, base32, plus a checksum —
-  roughly 12–14 characters, not "a few hundred bytes."
-- The Daily (date → seed) and the streak bookkeeping.
-- **Refuse continuation shoes** (§B.2) — mandatory, and detectable now that B22 persists the flag.
-- **Round-trip the cut card.** With option (a) the cut card is *implied* by `shuffleWith()` inserting it at position
-  25, so it round-trips automatically — the doc's gotcha is satisfied by construction, which is worth stating because
-  it removes a whole class of bug from the implementation.
-- **The portability decision (§B.1) must be made here, before codes leave the machine.** The doc's option (b) —
-  encode the order — is the portable one; the fixed-Fisher-Yates fix makes option (a) portable too, and cheaper.
+  roughly 12–14 characters, not "a few hundred bytes." **A Daily needs no code at all: the date *is* the seed.**
+- **The Daily's comparison half.** "Your result vs the original result" has no server to rank against, so it means
+  a ghost (#9) racing the same shoe. What shipped is the shoe, the gate, the streak and practice — not the
+  comparison. This is the part that remains a product decision, and the doc's own honesty about it ("the weakest
+  justification here") still holds.
+- **Forks and deck-preview must be disabled inside a Daily.** The app can reconstruct any shoe from a seed, so the
+  Daily is a solved puzzle to anyone who knows that. Label it study. §B.2's continuation guard applies to #1, #4
+  and #9, and the Daily records the flag rather than refusing.
 
-Effort drops from **M** toward **S** for the code half. The Daily half remains a separate product decision, and the
-doc's own honesty about it ("the weakest justification here") still holds.
+Effort for the remaining code half stays **S**. `persistsProgress()` (§B.3) was **not** needed for the Daily — the
+ephemeral seat covers it — and is still owed to the features that run on the *live* `Game`.
 
 ### #5 Bet Spread Designer — unchanged, still gated on #2
 
@@ -252,12 +263,13 @@ second feature, because both are cheap today and expensive tomorrow:
 | Order | Item | Size | Why here |
 |---|---|---|---|
 | 1 | **#6 Bankroll Chart** | S | Cheapest real feature; its only trap is gone; the chart primitives are reused by #2, #5 and #9 |
-| 2 | **`Game::persistsProgress()`** | S | Not in the list, and it unblocks #1, #2, #4, #8, #10 (§B.3). Build it before the first of them |
+| 2 | **`Game::persistsProgress()`** | S | Not in the list, and it unblocks #1, #2, #4, #8, #10 (§B.3). Build it before the first of them. **The Daily did not need it** — an ephemeral seat covers a session that builds its own table; the predicate is owed to features that run on the *live* `Game` |
 | 3 | ~~**Fixed Fisher-Yates in `Deck`**~~ **DONE 2026-11-12** | S | §B.1 shipped the same day, while history was empty. Locked by #18 `[Golden]` |
-| 4 | **#4 Shoe Codes** | S–M | Half of it shipped today. Cheaper than #3 now |
-| 5 | **#3 Leak Report** | M | Unblocked, self-contained, makes existing tracking legible |
-| 6 | **#1 Decision Fork** | L | The riskiest third is already built and tested |
-| 7 | **#2 Sim Lab** → **#5**, **#9**, **#8**, **#7**, **#10** | | #8 and #10's name-entry half are each an S and can be lifted out early |
+| 4 | ~~**#4 Daily: date→seed, streak, gate, menu entry**~~ **DONE 2026-11-12** | S–M | Shipped with the main-menu row. Found **B24** (one wrong-typed save field destroyed the whole profile) and made menu navigation index-driven. Left: `ShoeCode` encode/decode + checksum, and the comparison half (needs #9) |
+| 5 | **#4 Shoe Codes** | S | Encode/decode + checksum only. A Daily needs no code — the date *is* the seed |
+| 6 | **#3 Leak Report** | M | Unblocked, self-contained, makes existing tracking legible |
+| 7 | **#1 Decision Fork** | L | The riskiest third is already built and tested |
+| 8 | **#2 Sim Lab** → **#5**, **#9**, **#8**, **#7**, **#10** | | #8 and #10's name-entry half are each an S and can be lifted out early |
 
 ---
 
