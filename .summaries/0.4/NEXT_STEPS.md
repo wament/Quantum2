@@ -925,6 +925,18 @@ must now say which mode it reads** (§A's new row — `getLongHistory()` alone s
 play); and **§F's `file:line` citations have a half-life of one feature** — eight of them had drifted in a single
 day, one of them flatly false, so re-verify against source before building on any of them.
 
+**First idea built: `IDEAS.md` #6, the Progress dashboard tab — 2026-11-12.** A fourth tab (`Tab::Progress`, appended)
+drawing bankroll-at-shoe-end across shoes with drawdown shaded from the **running peak**, and the live per-round curve
+below it, on a pure geometry module (`ChartPrimitives.hpp/cpp`) so the maths is headless-testable. **§G #6 is closed by
+this**: Source (Career / Daily / Tournament, `Up`/`Down`) and Scope (Shoe / Session, `S`) are **separate controls**,
+never one list, and each chart's title strip names its own axis — the two are never offered as siblings. Not built,
+recorded: hover-a-point → that round's cards, click → Replay, and the `edgeSeries` overlay (all need a chart hit-test
+layer this pass did not build). Verifying it on screen found **U14** — the dashboard laid out against `window.getSize()`
+while drawing into the fixed 1600×900 `gameView`, so at 900×560 the whole panel drew at 56% scale into the top-left of
+the window; `GameRenderer.cpp`'s U11 world-units rule had never been applied to `StatsDashboard`. Fixed, and
+`Replay.cpp` / `ReplayView.cpp` are recorded as carrying the same defect with no harness coverage. **Suite 395 → 416**;
+`tools/visual_check/check_progress_tab.py` is the 21-check on-screen proof. See `CONTEXT.md` §13's final entry.
+
 **Reading these documents:** inserting tests renumbers every later ID, and the shift is not uniform across citations
 made on different dates (the U12 session test is #179 today, cited as #175; B17's isolation test is #344, cited as
 #327). Treat numeric IDs as **provenance, not addresses** — locate a test by its **name**.

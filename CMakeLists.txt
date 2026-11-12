@@ -109,6 +109,7 @@ target_sources(Blackjack2 PRIVATE
     src/RoundEngine.cpp
     src/SessionLifecycle.cpp
     src/DailyChallenge.cpp
+    src/ChartPrimitives.cpp
 )
 
 # Copy assets to build output (for local testing)
@@ -161,6 +162,7 @@ add_executable(Blackjack2Tests
     src/RoundEngine.cpp
     src/SessionLifecycle.cpp
     src/DailyChallenge.cpp
+    src/ChartPrimitives.cpp
     tests/test_card.cpp
     tests/test_deck.cpp
     tests/test_deck_empty_draw.cpp
@@ -205,6 +207,8 @@ add_executable(Blackjack2Tests
     tests/test_shoe_mode.cpp
     tests/test_history_browser.cpp
     tests/test_persists_progress.cpp
+    tests/test_chart_primitives.cpp
+    tests/test_progress_tab.cpp
 )
 
 target_include_directories(Blackjack2Tests PRIVATE include)

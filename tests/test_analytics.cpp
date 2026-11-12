@@ -529,8 +529,13 @@ TEST_CASE("StatsDashboard: JSON and CSV export stay populated for any history", 
     CHECK(csv.find("10") != std::string::npos);
 }
 
-TEST_CASE("StatsDashboard: tab cycling wraps Overview->Hands->Profits->Overview", "[Feature4][Tab]")
+TEST_CASE("StatsDashboard: tab cycling wraps Overview->Hands->Profits->Progress->Overview",
+          "[Feature4][Tab]")
 {
+    // Updated when the Progress tab was added: the cycle is four tabs, so the backward wrap from
+    // Overview lands on Progress, not Profits. The test's contract is "cycling wraps in both
+    // directions and visits every tab", and Progress is APPENDED to the enum, so the existing three
+    // tabs keep their indices -- only the wrap endpoint moves.
     StatsDashboard dash;
     CHECK(dash.currentTabForTest() == StatsDashboard::Tab::Overview);
 
@@ -539,10 +544,19 @@ TEST_CASE("StatsDashboard: tab cycling wraps Overview->Hands->Profits->Overview"
     dash.prevTabForTest();   // Hands -> Overview
     CHECK(dash.currentTabForTest() == StatsDashboard::Tab::Overview);
 
-    dash.prevTabForTest();   // wrap backward: Overview -> Profits
-    CHECK(dash.currentTabForTest() == StatsDashboard::Tab::Profits);
-    dash.nextTabForTest();   // forward wrap: Profits -> Overview
+    dash.prevTabForTest();   // wrap backward: Overview -> Progress
+    CHECK(dash.currentTabForTest() == StatsDashboard::Tab::Progress);
+    dash.nextTabForTest();   // forward wrap: Progress -> Overview
     CHECK(dash.currentTabForTest() == StatsDashboard::Tab::Overview);
+
+    // A full forward cycle visits all four and returns to the start.
+    const StatsDashboard::Tab expected[] = {StatsDashboard::Tab::Hands, StatsDashboard::Tab::Profits,
+                                            StatsDashboard::Tab::Progress, StatsDashboard::Tab::Overview};
+    for (const StatsDashboard::Tab tab : expected)
+    {
+        dash.nextTabForTest();
+        CHECK(dash.currentTabForTest() == tab);
+    }
 }
 
 TEST_CASE("StatsDashboard: empty history yields safe zeros and non-empty exports", "[Feature4][Edge]")

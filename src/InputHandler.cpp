@@ -413,6 +413,23 @@ void InputHandler::processStatsDashboardEvents(const sf::Event& event)
             if (game.statsDashboard)
                 game.statsDashboard->nextTabForTest();
             break;
+        // The Progress tab's two axes, on two separate controls. Up/Down moves the SOURCE (which
+        // recorded history the top chart reads); S moves the SCOPE (this shoe vs this session, the U12
+        // axis). They are deliberately not one switch: a source names a recorded history and a scope
+        // names a play window, and offering them as siblings is offering two incommensurable things
+        // (IDEAS-REVIEWED §G #6, decided in CONTEXT §5).
+        case sf::Keyboard::Key::Up:
+            if (game.statsDashboard)
+                game.statsDashboard->cycleProgressSource();
+            break;
+        case sf::Keyboard::Key::Down:
+            if (game.statsDashboard)
+                game.statsDashboard->cycleProgressSource();
+            break;
+        case sf::Keyboard::Key::S:
+            if (game.statsDashboard)
+                game.statsDashboard->toggleProgressScope();
+            break;
         case sf::Keyboard::Key::Escape:
             returnToMainMenu(game, "statistics dashboard");
             break;

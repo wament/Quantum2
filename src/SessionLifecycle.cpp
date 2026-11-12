@@ -179,6 +179,20 @@ void SessionLifecycle::startStatsSession()
             rounds.push_back(round);
 
     game.statsDashboard->feed(game.players[0].getStats(), rounds);
+
+    // The Progress tab reads SHOE records, and it has to say WHICH MODE's records it reads: career
+    // longHistory is Regular-only, so Daily and tournament shoes live in their own capped vectors
+    // (MS1). Feeding all three and letting the tab name the one it drew is the whole point -- a chart
+    // that reads getLongHistory() alone silently omits Daily and tournament play.
+    StatsDashboard::ProgressData progress;
+    progress.career = profile.getLongHistory();
+    progress.daily = profile.getDailyShoes();
+    progress.tournament = profile.getTournamentShoes();
+    // The live curves are the within-window (U12) axis, kept in their own fields so they can never be
+    // offered as a sibling of the source switch.
+    progress.shoeBankroll.assign(game.shoe_.bankrollSeries.begin(), game.shoe_.bankrollSeries.end());
+    progress.sessionBankroll.assign(game.session_.bankrollSeries.begin(), game.session_.bankrollSeries.end());
+    game.statsDashboard->setProgressData(progress);
 }
 
 // begin/restart a whole session. Delegates verbatim: fresh seats + shuffled shoe, per-shoe readouts reset to zero (the

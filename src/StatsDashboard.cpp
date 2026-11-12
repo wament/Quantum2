@@ -9,6 +9,7 @@
 
 #include "Hand.hpp"
 #include "GameRecord.hpp"   // computeCareerStats: single record-derived source of truth for dashboard career totals
+#include "ChartPrimitives.hpp"   // the Progress tab's geometry: pure, window-free, headless-testable
 #include "FontManager.hpp"
 
 using json = nlohmann::json;
@@ -35,6 +36,25 @@ namespace
         return h;
     }
 
+    // The rect this dashboard draws INTO, in WORLD units.
+    //
+    // Game::gameView is a FIXED 1600x900 world rect whose viewport is letterboxed into the OS window
+    // (resizeView), so window pixels and world units coincide at exactly ONE size, 1600x900. The
+    // renderer's own rule (GameRenderer.cpp, U11) is "draw in WORLD units ... every layout call site
+    // must use [the view], never window.getSize()". This file did not follow it: at 900x560 the whole
+    // panel drew at 56% scale into the top-left of the window, with the right 394px and bottom 222px
+    // showing backdrop -- U3's defect class, which the menu/achievements/rules screens were moved off
+    // and the dashboard never was. The view the window is currently drawing with IS the world, so its
+    // size is the layout basis; the guard mirrors worldSizeOf's for a not-yet-created view.
+    sf::Vector2f worldDrawSize(const sf::RenderWindow& window)
+    {
+        const sf::Vector2f view = window.getView().getSize();
+        return (view.x > 0.0f && view.y > 0.0f)
+                   ? view
+                   : sf::Vector2f(static_cast<float>(window.getSize().x),
+                                  static_cast<float>(window.getSize().y));
+    }
+
     // Centered title text with its origin at the top edge
     sf::Text centeredTitle(sf::RenderWindow& window, const std::string& label, unsigned int size, float y, const sf::Color& color)
     {
@@ -42,8 +62,24 @@ namespace
         t.setFillColor(color);
         const auto bounds = t.getLocalBounds();
         t.setOrigin(sf::Vector2f(bounds.size.x / 2.0f, 0.f));
-        t.setPosition(sf::Vector2f(window.getSize().x / 2.0f, y));
+        t.setPosition(sf::Vector2f(worldDrawSize(window).x / 2.0f, y));
         return t;
+    }
+
+    // The recorded-shoe vector for one Progress-tab source. One function, so the chart, the populated
+    // probe and any future reader cannot disagree about which vector a source names.
+    const std::vector<ShoeRecord>& shoesForSource(const StatsDashboard::ProgressData& d, historybrowser::Source source)
+    {
+        switch (source)
+        {
+        case historybrowser::Source::Daily:
+            return d.daily;
+        case historybrowser::Source::Tournament:
+            return d.tournament;
+        case historybrowser::Source::Career:
+            break;
+        }
+        return d.career;
     }
 }
 
@@ -166,6 +202,64 @@ std::string StatsDashboard::toCsv() const
     return os.str();
 }
 
+// ---------------------------------------------------------------------------
+// Progress tab: the two axes, kept apart.
+//
+// The top chart is the ACROSS-SHOES axis and always names the source it reads (Career / Daily
+// Challenge / Tournament) -- the rule MS1 created: career longHistory is Regular-only, so a chart that
+// reads "the history" without saying which one silently omits Daily and tournament play.
+// The bottom chart is the WITHIN-WINDOW axis (U12's per-shoe vs per-session) and always names its
+// scope. The two axes are on separate controls; neither is ever offered as an option of the other.
+// ---------------------------------------------------------------------------
+void StatsDashboard::setProgressData(const ProgressData& data)
+{
+    progress_ = data;
+    // Opening lands on the first NON-EMPTY source, exactly like the Replay browser: a chart that opens
+    // on an empty list reads as a broken feature. Career is preferred when it has shoes.
+    progressSource_ = historybrowser::preferredOpen(historybrowser::Source::Career, progressPopulated());
+    progressSession_ = false;
+}
+
+historybrowser::Populated StatsDashboard::progressPopulated() const
+{
+    historybrowser::Populated populated{};
+    populated[static_cast<int>(historybrowser::Source::Career)] = !progress_.career.empty();
+    populated[static_cast<int>(historybrowser::Source::Daily)] = !progress_.daily.empty();
+    populated[static_cast<int>(historybrowser::Source::Tournament)] = !progress_.tournament.empty();
+    return populated;
+}
+
+void StatsDashboard::cycleProgressSource()
+{
+    // Skipping empty sources is the point: the three histories are populated by three different session
+    // kinds, so "exactly one is non-empty" is the common case. When nothing else has shoes this returns
+    // the current source unchanged, which makes the keypress a no-op rather than a flicker.
+    progressSource_ = historybrowser::nextNonEmpty(progressSource_, progressPopulated());
+}
+
+std::vector<double> StatsDashboard::progressCareerSeries() const
+{
+    // The one function that maps a source to a vector, shared with the populated probe.
+    return chart::careerSeries(shoesForSource(progress_, progressSource_));
+}
+
+std::vector<double> StatsDashboard::progressLiveSeries() const
+{
+    return progressSession_ ? progress_.sessionBankroll : progress_.shoeBankroll;
+}
+
+const char* StatsDashboard::progressLiveLabel() const
+{
+    // ASCII only: this reaches sf::Text (U13 -- SFML 3 decodes std::string as ANSI).
+    return progressSession_ ? "Bankroll this session (one open play window)"
+                            : "Bankroll this shoe (resets at the shoe boundary)";
+}
+
+const char* StatsDashboard::progressSourceLabel() const
+{
+    return historybrowser::label(progressSource_);
+}
+
 void StatsDashboard::update(float deltaTime)
 {
     // Frame pacing for AppMode parity (mirrors Tournament / StrategyTrainer). Pure-logic tests never call this on the
@@ -175,7 +269,7 @@ void StatsDashboard::update(float deltaTime)
 
 void StatsDashboard::advanceTab(bool forward)
 {
-    const int count = static_cast<int>(Tab::Profits) + 1;   // Overview=0, Hands=1, Profits=2
+    const int count = static_cast<int>(Tab::Progress) + 1;   // Overview=0, Hands=1, Profits=2, Progress=3
     int idx = (static_cast<int>(tab_) + (forward ? 1 : -1) + count) % count;
     tab_ = static_cast<Tab>(idx);
 }
@@ -187,19 +281,25 @@ void StatsDashboard::advanceTab(bool forward)
 // ---------------------------------------------------------------------------
 void StatsDashboard::draw(sf::RenderWindow& window) const
 {
-    const float w = static_cast<float>(window.getSize().x);
-    const float h = static_cast<float>(window.getSize().y);
+    // World units, not window pixels -- see worldDrawSize(). Every tab below lays out against this.
+    const sf::Vector2f world = worldDrawSize(window);
+    const float w = world.x;
+    const float h = world.y;
     const float cx = w / 2.0f;
 
     window.clear(sf::Color(15, 22, 30));   // deep-teal backdrop distinct from every other mode
 
     window.draw(centeredTitle(window, "STATISTICS DASHBOARD", 34u, h * 0.08f, sf::Color(255, 215, 0)));
 
-    // Tab bar: three equally-spaced labels with the active one highlighted (navigation lives in InputHandler).
-    const char* tabLabels[static_cast<int>(Tab::Profits) + 1] = {"Overview", "Hands", "Profits"};
+    // Tab bar: equally-spaced labels with the active one highlighted (navigation lives in InputHandler).
+    // The width is DERIVED from the tab count, not a fixed fraction: adding the Progress tab to a
+    // hard-coded 0.28 * w spacing would push the fourth label off the right edge at every resolution
+    // (the U3 class of defect -- layout that only fits one size).
+    const int tabCount = static_cast<int>(Tab::Progress) + 1;
+    const char* tabLabels[static_cast<int>(Tab::Progress) + 1] = {"Overview", "Hands", "Profits", "Progress"};
     const float tabTop = h * 0.16f;
-    const float tabWidth = w * 0.28f;
-    for (int i = 0; i < static_cast<int>(Tab::Profits) + 1; ++i)
+    const float tabWidth = w / static_cast<float>(tabCount);
+    for (int i = 0; i < tabCount; ++i)
     {
         bool active = (tab_ == static_cast<Tab>(i));
         sf::Text t(FontManager::get(), tabLabels[i], active ? 24u : 20u);
@@ -344,9 +444,17 @@ void StatsDashboard::draw(sf::RenderWindow& window) const
         }
         break;
     }
+    case StatsDashboard::Tab::Progress:
+        drawProgressTab(window);
+        break;
     }
 
-    sf::Text hint(FontManager::get(), "Left/Right: tab   Esc: back", 14);
+    // The hint names every control the CURRENT tab responds to. The Progress tab has two extra keys,
+    // and a control that is not printed is a control that is never found.
+    const char* hintText = (tab_ == Tab::Progress)
+        ? "Left/Right: tab   Up/Down: which history   S: shoe / session   Esc: back"
+        : "Left/Right: tab   Esc: back";
+    sf::Text hint(FontManager::get(), hintText, 14);
     hint.setFillColor(sf::Color(140, 150, 160));
     {
         const auto bounds = hint.getLocalBounds();
@@ -355,3 +463,128 @@ void StatsDashboard::draw(sf::RenderWindow& window) const
     hint.setPosition(sf::Vector2f(cx, h - 24.f));
     window.draw(hint);
 }
+
+// ---------------------------------------------------------------------------
+// The Progress tab. Two charts, two axes, every frame derived from window.getSize().
+//
+// Nothing here uses a hard-coded pixel offset. U3 was exactly this defect class: the achievements and
+// rules screens laid out in absolute pixels and their footers overlapped the rows at 900x560 while the
+// table reflowed fine. Every y below is a fraction of h, every x a fraction of w, and the two charts
+// are given DISJOINT vertical bands (0.28-0.55 and 0.66-0.90) so they cannot collide at any size.
+// ---------------------------------------------------------------------------
+void StatsDashboard::drawProgressTab(sf::RenderWindow& window) const
+{
+    // World units, like the rest of draw(). The two charts' bands are fractions of the WORLD rect, so
+    // they stay disjoint and inside the panel at every window size, letterboxed and all.
+    const sf::Vector2f world = worldDrawSize(window);
+    const float w = world.x;
+    const float h = world.y;
+    const float cx = w / 2.0f;
+
+    // A pixel budget for the across-shoes chart. With the T2 cap at 100 shoes the raw series is small,
+    // but the budget keeps the geometry honest if the cap ever grows (IDEAS #3's "downsample long
+    // careers to a fixed pixel budget").
+    constexpr std::size_t kPixelBudget = 240;
+
+    // ---- Top chart: bankroll at shoe end, across shoes, for the SELECTED source ----
+    const std::vector<double> career = progressCareerSeries();
+    const chart::Frame topFrame = chart::frame(world, 0.12f, 0.88f, 0.28f, 0.55f);
+
+    // The title names the source. "Which history am I reading" is not optional on a surface that reads
+    // shoe history: career longHistory is Regular-only, so an unlabelled chart silently omits the Daily
+    // and tournament shoes.
+    {
+        sf::Text title(FontManager::get(), std::string("Bankroll at shoe end - ") + progressSourceLabel(), 17);
+        title.setFillColor(sf::Color(255, 215, 0));
+        title.setPosition(sf::Vector2f(cx - w * 0.34f, topFrame.top - 26.f));
+        window.draw(title);
+    }
+
+    if (career.empty())
+    {
+        sf::Text empty(FontManager::get(), std::string("No ") + progressSourceLabel() + " shoes recorded yet.", 16);
+        empty.setFillColor(sf::Color(150, 160, 170));
+        empty.setPosition(sf::Vector2f(cx - w * 0.20f, (topFrame.top + topFrame.bottom) * 0.5f));
+        window.draw(empty);
+    }
+    else
+    {
+        const std::vector<chart::Extreme> buckets = chart::bucketExtremes(career, kPixelBudget);
+        std::vector<double> maxima, minima;
+        maxima.reserve(buckets.size());
+        minima.reserve(buckets.size());
+        for (const auto& b : buckets)
+        {
+            maxima.push_back(b.max);
+            minima.push_back(b.min);
+        }
+
+        // One scale for both lines and the shading, taken from the FULL series, so downsampling cannot
+        // move the axis.
+        const chart::Range r = chart::range(career);
+
+        // Drawdown shading, measured from the RUNNING peak -- the same base as the Overview tab's
+        // "Max drawdown" number, so the chart and the number can never disagree on screen.
+        const std::vector<sf::Vertex> bands = chart::drawdownBands(career, topFrame, sf::Color(120, 40, 40, 120));
+        if (!bands.empty())
+            window.draw(bands.data(), bands.size(), sf::PrimitiveType::Triangles);
+
+        const std::vector<sf::Vertex> hi = chart::polyline(maxima, topFrame, sf::Color(255, 215, 0));
+        const std::vector<sf::Vertex> lo = chart::polyline(minima, topFrame, sf::Color(255, 150, 90, 150));
+        if (hi.size() >= 2)
+            window.draw(hi.data(), hi.size(), sf::PrimitiveType::Lines);
+        else if (hi.size() == 1)
+            window.draw(hi.data(), 1, sf::PrimitiveType::Points);
+        if (lo.size() >= 2)
+            window.draw(lo.data(), lo.size(), sf::PrimitiveType::Lines);
+
+        // The two charts have different x-axes (shoes vs rounds). IDEAS #6's own note: label them, or
+        // the pair reads as one continuous story.
+        sf::Text xTop(FontManager::get(),
+                      "x: shoes (oldest left)   y: bankroll " + std::to_string(static_cast<long long>(r.lo)) +
+                          " to " + std::to_string(static_cast<long long>(r.hi)), 13);
+        xTop.setFillColor(sf::Color(150, 160, 170));
+        xTop.setPosition(sf::Vector2f(cx - w * 0.34f, topFrame.bottom + 6.f));
+        window.draw(xTop);
+    }
+
+
+    // ---- Bottom chart: the live curve, within ONE open play window ----
+    // This is the U12 SCOPE axis, and it is on its own control. It is never presented as an option
+    // alongside Career / Daily / Tournament, because those name a recorded history and this names a
+    // play window -- the two are different axes (CONTEXT §5, the §G #6 decision).
+    const std::vector<double> live = progressLiveSeries();
+    const chart::Frame bottomFrame = chart::frame(world, 0.12f, 0.88f, 0.66f, 0.90f);
+    {
+        sf::Text title(FontManager::get(), progressLiveLabel(), 17);
+        title.setFillColor(sf::Color(180, 220, 255));
+        title.setPosition(sf::Vector2f(cx - w * 0.34f, bottomFrame.top - 26.f));
+        window.draw(title);
+    }
+
+    if (live.empty())
+    {
+        sf::Text empty(FontManager::get(), "Nothing played in this window yet.", 16);
+        empty.setFillColor(sf::Color(150, 160, 170));
+        empty.setPosition(sf::Vector2f(cx - w * 0.20f, (bottomFrame.top + bottomFrame.bottom) * 0.5f));
+        window.draw(empty);
+    }
+    else
+    {
+        const std::vector<sf::Vertex> curve = chart::polyline(live, bottomFrame, sf::Color(120, 220, 255));
+        if (curve.size() >= 2)
+            window.draw(curve.data(), curve.size(), sf::PrimitiveType::Lines);
+        else
+            window.draw(curve.data(), 1, sf::PrimitiveType::Points);   // a one-point curve renders as a dot
+
+        const chart::Range r = chart::range(live);
+        sf::Text xBottom(FontManager::get(),
+                         "x: rounds this " + std::string(progressSession_ ? "session" : "shoe") +
+                             "   y: net " + std::to_string(static_cast<long long>(r.lo)) + " to " +
+                             std::to_string(static_cast<long long>(r.hi)), 13);
+        xBottom.setFillColor(sf::Color(150, 160, 170));
+        xBottom.setPosition(sf::Vector2f(cx - w * 0.34f, bottomFrame.bottom + 6.f));
+        window.draw(xBottom);
+    }
+}
+

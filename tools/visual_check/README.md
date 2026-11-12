@@ -19,6 +19,7 @@ DISPLAY=:97 python3 tools/visual_check/check_u6.py    # deal -> hit fan -> settl
 DISPLAY=:97 python3 tools/visual_check/check_menu.py  # hover marker glyph at two window sizes
 DISPLAY=:97 python3 tools/visual_check/check_u12_click.py  # per-graph click toggle + 'G' bulk switch (prints PASS/FAIL)
 DISPLAY=:97 python3 tools/visual_check/check_mode_history.py  # MS1: per-mode history browser + mode rows (prints PASS/FAIL)
+DISPLAY=:97 python3 tools/visual_check/check_progress_tab.py  # Progress tab: two axes, disjoint bands, world-unit layout (prints PASS/FAIL)
 ```
 
 Screenshots land in `tools/visual_check/shots/` (git-ignored). Override with `BJ_SHOTS`, `BJ_REPO`, `BJ_BIN`.
@@ -31,6 +32,7 @@ Screenshots land in `tools/visual_check/shots/` (git-ignored). Override with `BJ
 | `check_u6.py` | **U6** 3+ card fan is centred on the seat and shows more than a sliver of each card; hand totals sit on dark pills that stay legible over the felt |
 | `check_menu.py` | The hover marker glyph actually renders (see the font rule below) at 1600×900 and 900×560 |
 | `check_u12_click.py` | **U12 part 1** per-graph view toggle: one click on the Bankroll pane changes **only** that pane's title strip (measured AE 947 / 0 / 0), and `G` changes the two still-per-shoe panes while leaving the already-session pane at 0. Proves the pane hit-test and the per-pane draw selection, not just the flag |
+| `check_progress_tab.py` | **Progress tab (IDEAS #6)** two charts render, each labelled with the axis it shows; `Up`/`Down` moves the **Source** title and leaves the **Scope** title at AE 0, and `S` moves the Scope title and leaves Source at AE 0 — the two axes are independent controls, measured, not asserted; the two chart bands stay **disjoint** at 1600×900, 1280×720 and 900×560 (gap strip = 1 unique colour); four tab labels fit at every size; and the panel lays out in **world units** (footer hint at world `h − 24`). Found **U14**. 21 checks, all verified non-vacuous |
 | `check_mode_history.py` | **MS1** per-mode history: the main-menu rows carry their aggregates (`Daily Challenge (streak 5)`, `Tournament Mode (2 runs, best stage 4)`), the history-list title strip names the source, and `Tab` switches **which history the list shows** — measured on the title strip: Career→Daily 4101, Daily→Tournament 4391, Tournament→Career 3626, and a no-key re-capture of one state diffs **0** (the stability control that makes those non-zeros mean something). The third `Tab` lands on a frame pixel-identical to the first Career frame, proving the cycle wraps rather than drifting |
 
 ## A fifth trap: a hand-authored profile must write EVERY nested required key
@@ -48,6 +50,42 @@ That is B24's **stated limitation**, live: the `jsonOr*` guards cover the top-le
 1. Seed complete nested records, or the app silently starts from an empty profile.
 2. **Check the run log for `Corrupt profile ... relocated` before trusting a black/blank/unexpected
    screenshot.** The symptom here was a plausible screen, not a crash — the same shape as README trap 2.
+
+## A sixth trap: cropping in **window pixels** while the app draws in **world units**
+
+`Game::gameView` is a **fixed 1600×900** rect whose viewport is letterboxed into the OS window by `resizeView()`. Window
+pixels and world units therefore coincide at exactly **one** size, 1600×900. The first version of
+`check_progress_tab.py` cropped in window pixels — the same coordinate-basis error as the defect it was written to
+catch (U14). The result is the worst shape a check can have: **11 checks passed at 1600×900 and proved nothing about
+any other size**, one "failed" at 900×560 by measuring the panel's own bottom edge, and the 1280×720 checks were
+vacuous (they measured a band of empty backdrop and reported flat, which is what a pass looks like).
+
+Crop in **world** space and map through the letterbox:
+
+```python
+WORLD_W, WORLD_H = 1600.0, 900.0
+
+def view_rect(Wp, Hp):                      # resizeView's letterbox, in pixels
+    wr, vr = Wp / Hp, WORLD_W / WORLD_H
+    if wr > vr:
+        s = vr / wr
+        return ((1 - s) / 2 * Wp, 0, s * Wp, Hp)
+    s = wr / vr
+    return (0, (1 - s) / 2 * Hp, Wp, s * Hp)
+```
+
+Two corollaries, both of which cost a run:
+
+1. **A design constant that reaches the right edge by design is not an overflow.** The active tab's underline is
+   `tabWidth - 12` wide with a 6px inset, so it ends at x=1594 of 1600 at every size. A right-edge crop that includes
+   the underline band reports 2 colours and reads as "the fourth label is off-screen". Crop the label band only.
+2. **Never crop at a y that depends on font metrics.** The underline sits at `tabTop + text.getLocalBounds().height + 4`;
+   guessing that height put a strip 8px below the underline and made a passing check look like a failing one. Pick a
+   probe whose position is a pure layout constant — the dashboard's footer hint is at world `h − 24`, which is 191px
+   apart in pixels under the two bases, so it is a sharp coordinate-basis test at 900×560.
+
+**Prove the check is non-vacuous.** Restore the pixel basis in `StatsDashboard::worldDrawSize` (one line), rebuild, and
+watch 4 of the 21 checks go red. A check that passes both ways is measuring nothing.
 
 ## Measuring pixels, not just looking at them
 
